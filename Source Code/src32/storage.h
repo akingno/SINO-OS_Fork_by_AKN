@@ -10,4 +10,7 @@ void storage_init(void);
 void storage_changed(void);
 void storage_poll(void);
 int storage_sync(void);
+/* True for existing descendants serialized into the user snapshot.
+   /home/user itself is recreated by VFS initialization, not serialized. */
+int storage_tracks_node(int);
 #endif

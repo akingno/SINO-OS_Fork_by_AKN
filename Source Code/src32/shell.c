@@ -70,19 +70,24 @@ static int command(Context *c,int argc,char **argv){Sink *out=c->out;char *cmd=a
     if(streq(cmd,"dir"))cmd="ls";if(streq(cmd,"type"))cmd="cat";if(streq(cmd,"cls"))cmd="clear";if(streq(cmd,"md"))cmd="mkdir";if(streq(cmd,"del"))cmd="rm";if(streq(cmd,"copy"))cmd="cp";if(streq(cmd,"ren"))cmd="mv";if(streq(cmd,"."))cmd="source";
     if(streq(cmd,"help")){put(out,
         "SINO SH commands\n"
-        "  ls [-l] [path]   cd [path]   pwd   tree [path]   find [path] [text]\n"
+        "  help (command summary)\n"
+        "  ls [-l|-a|-la] [path]   cd [path]   pwd   tree [path]   find [path] [text]\n"
         "  cat [file]       head/tail [-n N] [file]       stat file\n"
         "  grep [-n] text [file]   wc [-l|-w|-c] [file]   hexdump file\n"
         "  mkdir [-p] path  rmdir path  touch file  rm file  cp/mv source dest\n"
         "  write file text   append file text   echo [-e|-n] text\n"
-        "  run file.f32    source file.sh    sleep seconds\n"
+        "  run file.snx [argument]   run /boot/hello.f32   source file.sh\n"
         "  uname [-a]  ver  mem/free  df  uptime  date  time  ps\n"
         "  history  whoami  hostname [name]  env  which command\n"
+        "  sync   kill PID   sleep seconds   nettest (127.0.0.1 loopback)\n"
+        "  install package.sxp | /quiet:path | /remove:id\n"
         "  clear  about/credits  reboot  halt\n\n"
+        "run .snx reports process creation, not the program exit status.\n"
+        "reboot/halt end the current session; sync saves home data first.\n"
         "Syntax: quotes, $PWD/$HOME/$USER/$?, ;, pipes, <, > and >>\n"
         "Keys: Tab complete; Up/Down history; Left/Right/Home/End edit;\n"
         "      PgUp/PgDn scroll; Ctrl+L clear; Ctrl+C cancel input.\n"
-        "DOS aliases: DIR TYPE CLS MD DEL COPY REN VER\n"
+        "DOS aliases: DIR TYPE CLS MD DEL COPY REN VER; . file.sh = source file.sh\n"
         "Home files are saved to the data disk when one is attached. /tmp is temporary.\n");return 0;}
     if(streq(cmd,"pwd")){char p[VFS_PATH];vfs_path(cwd,p);put(out,p);put(out,"\n");return 0;}
     if(streq(cmd,"cd")){int back=argc>1&&streq(argv[1],"-"),n=back?previous_cwd:vfs_lookup(argc>1?argv[1]:"/home/user");if(n<0)return verror(out,"cd");if(!nodes[n].used||!nodes[n].dir)return error(out,"cd","not a directory");previous_cwd=cwd;cwd=n;if(back){char p[VFS_PATH];vfs_path(cwd,p);put(out,p);put(out,"\n");}return 0;}
@@ -96,7 +101,31 @@ static int command(Context *c,int argc,char **argv){Sink *out=c->out;char *cmd=a
     if(streq(cmd,"rm")||streq(cmd,"rmdir")){if(argc<2)return error(out,cmd,"missing path");for(int i=1;i<argc;i++)if(vfs_remove(argv[i],streq(cmd,"rmdir"))<0)return verror(out,cmd);return 0;}
     if(streq(cmd,"cp")||streq(cmd,"mv")){if(argc!=3)return error(out,cmd,"usage: source destination");int status=streq(cmd,"cp")?vfs_copy(argv[1],argv[2],work):vfs_move(argv[1],argv[2]);return status<0?verror(out,cmd):0;}
     if(streq(cmd,"write")||streq(cmd,"append")){if(argc<3)return error(out,cmd,"usage: file text");u32 n=0;for(int i=2;i<argc;i++){if(i>2)work[n++]=' ';u32 bytes=strlen(argv[i]);if(n+bytes+1>MAX_FILE)return error(out,cmd,"text too long");memcpy(work+n,argv[i],bytes);n+=bytes;}work[n++]='\n';int index=vfs_create(argv[1],0,0);if(index<0||vfs_write(index,work,n,streq(cmd,"append"))<0)return verror(out,cmd);return 0;}
-    if(streq(cmd,"stat")){if(argc!=2)return error(out,cmd,"provide one path");int n=vfs_lookup(argv[1]);if(n<0)return verror(out,cmd);char p[VFS_PATH];vfs_path(n,p);put(out,"Path: ");put(out,p);put(out,"\nType: ");put(out,nodes[n].dir?"directory":"file");put(out,"\nSize: ");num(out,nodes[n].size);put(out," bytes\nStorage: ");put(out,nodes[n].readonly?"FAT12 boot image (read-only)\n":"RAM (temporary)\n");return 0;}
+    if(streq(cmd,"stat")){
+        if(argc!=2)return error(out,cmd,"provide one path");
+        int n=vfs_lookup(argv[1]);
+        if(n<0)return verror(out,cmd);
+        char path[VFS_PATH];
+        vfs_path(n,path);
+        put(out,"Path: ");put(out,path);
+        put(out,"\nType: ");put(out,nodes[n].dir?"directory":"file");
+        put(out,"\nSize: ");num(out,nodes[n].size);put(out," bytes\nStorage: ");
+        if(nodes[n].boot>=0||n==vfs_lookup("/boot")){
+            put(out,"FAT12 boot image (read-only)\n");
+        }else{
+            put(out,nodes[n].readonly?"RAM (read-only)\n":"RAM\n");
+            int tracked=storage_tracks_node(n);
+            int user_root=n==vfs_lookup("/home/user");
+            if(tracked)put(out,"Persistence: user snapshot\n");
+            else if(user_root)put(out,"Persistence: directory recreated at boot; descendants use user snapshots\n");
+            else put(out,"Persistence: none (outside user snapshots)\n");
+            if(tracked||user_root){
+                put(out,storage_ready?"Data disk: ready (use sync to commit changes)\n"
+                                      :"Data disk: unavailable (changes remain in RAM)\n");
+            }
+        }
+        return 0;
+    }
     if(streq(cmd,"head")||streq(cmd,"tail")){u32 lines=10;int a=1;if(argc>2&&streq(argv[1],"-n")){if(!parse_number(argv[2],&lines))return error(out,cmd,"invalid line count");a=3;}const u8 *data;u32 size;if(read_input(c,a<argc?argv[a]:0,&data,&size))return 1;
         if(streq(cmd,"head")){u32 end=0,n=0;while(end<size&&n<lines)if(data[end++]=='\n')n++;emit(out,data,end);}else{u32 n=0,start=size;if(start&&data[start-1]=='\n')start--;while(start&&n<lines){start--;if(data[start]=='\n')n++;}if(n==lines)start++;if(lines)emit(out,data+start,size-start);}return 0;}
     if(streq(cmd,"grep")){int numbered=argc>1&&streq(argv[1],"-n"),a=numbered?2:1;if(a>=argc)return error(out,cmd,"missing literal search text");const char *pattern=argv[a++];const u8 *data;u32 size;if(read_input(c,a<argc?argv[a]:0,&data,&size))return 1;u32 begin=0,row=1;int found=0;for(u32 i=0;i<=size;i++)if(i==size||data[i]=='\n'){if(i>begin&&contains((const char *)data+begin,i-begin,pattern)){if(numbered){num(out,row);put(out,":");}emit(out,data+begin,i-begin);put(out,"\n");found=1;}begin=i+1;row++;}return found?0:1;}
@@ -150,6 +179,96 @@ static int execute(const char *s,Sink *out,int depth){
     }return status;
 }
 static void add_history(void){if(!length)return;if(history_count&&streq(history[(history_count-1)%32],line))return;strcopy(history[history_count%32],line);history_count++;}
+
+/* Development-only COM1 command transport. The normal shell parser and Sink
+   produce the result. UART work is bounded and runs outside interrupt context.
+   Request: "SCS1", id:u32, length:u32, UTF-8 command (all fields little-endian).
+   Reply: "SCR1", id:u32, status:i32, flags:u32, length:u32, captured bytes.
+   flags bit 0 means output overflow. One request is outstanding at a time. */
+#ifdef SINO_SHELL_BRIDGE
+#define BRIDGE_UART 0x3f8
+static u8 bridge_request[12 + LINE_SIZE], bridge_output[PIPE_SIZE + 1];
+static u32 bridge_reply[5];
+static u32 bridge_received, bridge_needed, bridge_sent, bridge_size, bridge_updated;
+
+void shell_bridge_init(void){
+    outb(BRIDGE_UART + 1, 0); /* Polling, no UART IRQ. */
+    outb(BRIDGE_UART + 3, 0x80);
+    outb(BRIDGE_UART, 1); /* 115200 baud, 8N1. */
+    outb(BRIDGE_UART + 1, 0);
+    outb(BRIDGE_UART + 3, 3);
+    outb(BRIDGE_UART + 2, 7);
+    outb(BRIDGE_UART + 4, 3);
+    bridge_received = bridge_sent = bridge_size = 0;
+    bridge_needed = 12;
+    debug("SINO SHELL BRIDGE v1 ready\n");
+}
+
+static void bridge_complete(int status, u32 flags, u32 size){
+    bridge_reply[0] = 0x31524353u; /* SCR1 */
+    bridge_reply[1] = *(u32 *)(bridge_request + 4);
+    bridge_reply[2] = (u32)status;
+    bridge_reply[3] = flags;
+    bridge_reply[4] = size;
+    bridge_size = sizeof(bridge_reply) + size;
+    bridge_sent = 0;
+    bridge_received = 0;
+    bridge_needed = 12;
+}
+
+void shell_bridge_poll(void){
+    /* Never wait for the peer to receive output. */
+    if(bridge_size){
+        for(u32 budget = 0; budget < 128 && bridge_sent < bridge_size; budget++){
+            if(!(inb(BRIDGE_UART + 5) & 0x20))return;
+            u32 offset = bridge_sent++;
+            u8 byte = offset < sizeof(bridge_reply)
+                ? ((u8 *)bridge_reply)[offset] : bridge_output[offset - sizeof(bridge_reply)];
+            outb(BRIDGE_UART, byte);
+        }
+        if(bridge_sent == bridge_size)bridge_size = 0;
+        return;
+    }
+    /* Discard an incomplete frame after two seconds. Host timeout remains
+       responsible for commands that do not return (e.g. halt or sleep). */
+    if(bridge_received && ticks - bridge_updated > 200){
+        bridge_received = 0;
+        bridge_needed = 12;
+    }
+    for(u32 budget = 0; budget < 128 && (inb(BRIDGE_UART + 5) & 1); budget++){
+        bridge_request[bridge_received++] = inb(BRIDGE_UART);
+        bridge_updated = ticks;
+        if(bridge_received == 4 && *(u32 *)bridge_request != 0x31534353u){
+            /* Find a frame boundary after a corrupt prefix. */
+            memcpy(bridge_request, bridge_request + 1, 3);
+            bridge_received = 3;
+        }
+        if(bridge_received == 12){
+            u32 size = *(u32 *)(bridge_request + 8);
+            if(size >= LINE_SIZE){bridge_complete(S_INVALID, 0, 0);return;}
+            bridge_needed = 12 + size;
+        }
+        if(bridge_received == bridge_needed){
+            u32 size = bridge_needed - 12;
+            for(u32 i = 0; i < size; i++){
+                u8 byte = bridge_request[12 + i];
+                if(!byte || byte == '\n' || byte == '\r'){
+                    bridge_complete(S_INVALID, 0, 0);return;
+                }
+            }
+            bridge_request[12 + size] = 0;
+            Sink captured = {bridge_output, 0, PIPE_SIZE, 0};
+            int status = execute((char *)bridge_request + 12, &captured, 0);
+            bridge_complete(status, captured.overflow ? 1u : 0u, captured.length);
+            return;
+        }
+    }
+}
+#else
+void shell_bridge_init(void){}
+void shell_bridge_poll(void){}
+#endif
+
 static void history_move(int direction){u32 count=history_count>32?32:history_count;if(!count)return;if(history_position<0){if(direction<0)return;strcopy(draft,line);history_position=0;}else{history_position+=direction;if(history_position<0){strcopy(line,draft);history_position=-1;length=position=strlen(line);repaint();return;}if((u32)history_position>=count)history_position=(int)count-1;}strcopy(line,history[(history_count-1-(u32)history_position)%32]);length=position=strlen(line);repaint();}
 static void insert(const char *s){u32 n=strlen(s);if(length+n>=LINE_SIZE)return;for(u32 i=length+1;i>position;i--)line[i+n-1]=line[i-1];memcpy(line+position,s,n);position+=n;length+=n;}
 static void complete(void){
@@ -221,7 +340,7 @@ void shell_tests(void){
     test_command("echo \"unterminated", "unclosed quote",2);test_command("echo literal # comment; touch should-not-exist", "literal",0);check(vfs_lookup("should-not-exist")<0,"Comment suppresses commands");
     int large=vfs_create("large.bin",0,0);check(large>=0,"Large RAM file create");for(u32 i=0;i<MAX_FILE;i++)work[i]=(u8)i;u32 before=free_pages;check(vfs_write(large,work,MAX_FILE,0)==0&&free_pages+16==before,"RAM file page allocation");
     check(vfs_write(large,work,1,1)<0&&nodes[large].size==MAX_FILE,"RAM file size limit");test_command("cat large.bin | wc","8192-byte",1);check(vfs_remove("large.bin",0)==0&&free_pages==before,"RAM file page reclamation");
-    test_command("stat notes.txt","RAM (temporary)",0);test_command("grep -n gamma notes.txt","2:gamma",0);test_command("hexdump matches.txt","61 6c 70 68 61",0);
+    test_command("stat notes.txt","Persistence: user snapshot",0);test_command("grep -n gamma notes.txt","2:gamma",0);test_command("hexdump matches.txt","61 6c 70 68 61",0);
     before=free_pages;test_command("run /boot/hello.f32","Returned safely to SINO shell.",0);check(free_pages==before,"Native app page reclamation");
     test_command("source /boot/demo.sh","hello from SINO SH",0);test_command("credits","Not a FreeDOS or Linux kernel fork",0);test_command("date","2026-",0);
     debug("SINO SH FILES PARSER PIPELINES SCRIPTS TEST PASS\n");

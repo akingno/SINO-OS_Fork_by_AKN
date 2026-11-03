@@ -1,3 +1,9 @@
+# AKN host Shell entry
+
+From the repository root on Windows, run `powershell -NoProfile -ExecutionPolicy Bypass -File .\test.ps1 -SelfTest` to build a command-enabled image and check the COM1 Shell transport in a private headless VM. Use `-Command 'echo hello'` for a single command, `-ExpectedExitCode 1` for an expected Shell error, and `-TimeoutSeconds 5` for a command deadline. Results and raw output are under the printed `Build Output/dev/runs/shell-...` directory. See [Shell-Testing.md](../../Documentation/Shell-Testing.md).
+
+This entry is separate from the upstream regression gate. The gate's suite count is unchanged. Normal builds leave the command bridge disabled. Existing GUI/keyboard regression tests remain applicable.
+
 # Build, execution, and regression testing
 
 Host: existing w64devkit GCC/Binutils (override with SINO_TOOLCHAIN), bundled NASM 3.02, and Node.js. No new toolchain or large library is required. Python/Pillow are used only for resource generation and screenshots. Guest: 32-bit x86, 64 MiB RAM, standard VGA/VBE, PS/2, BIOS/MBR, and ATA IDE. Current QEMU runs with networking disabled; the guest loopback stack is independent.

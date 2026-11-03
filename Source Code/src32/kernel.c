@@ -219,6 +219,7 @@ void kmain(void){
     gui_tests();
 #endif
     if(vfs_lookup("/home/user/.sino/rollback/journal")>=0)process_launch_args("/boot/setup.snx",CAP_HOME,"/recover-only");
+    shell_bridge_init();
     debug("SINO desktop ready\n");
-    for(;;){gui_step();net_poll();process_step();cli();sti();halt();}
+    for(;;){gui_step();shell_bridge_poll();net_poll();process_step();cli();sti();halt();}
 }

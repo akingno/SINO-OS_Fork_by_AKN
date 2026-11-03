@@ -1,5 +1,7 @@
 # Build and run the AKN development version / 开发运行
 
+For headless execution of existing Shell commands, use root `test.ps1 -Command 'echo hello'` or `test.ps1 -SelfTest`. This entry builds a dedicated command-enabled ISO and uses a fresh private test disk. See [Shell testing](Shell-Testing.md) for output, status and timeout semantics.
+
 Modify the canonical `Source Code/` tree. On Windows, install Node.js, GCC/GNU Binutils capable of i386 output, and QEMU; NASM is bundled under its retained license. Python/Pillow is needed for font generation and some upstream tests.
 
 在仓库根目录双击 `启动开发版.cmd`，或执行：

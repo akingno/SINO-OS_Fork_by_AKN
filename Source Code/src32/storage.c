@@ -29,12 +29,20 @@ typedef struct {u32 lba,offset,left;} Reader;
 static int read_bytes(Reader *r,u8 *dest,u32 length){
     if(length>r->left)return 0;while(length){if(r->offset==512){r->offset=0;if(!ata_read(r->lba++,io_sector))return 0;}u32 n=512-r->offset;if(n>length)n=length;memcpy(dest,io_sector+r->offset,n);dest+=n;r->offset+=n;r->left-=n;length-=n;}return 1;
 }
-static int user_node(int index){int user=vfs_lookup("/home/user");if(index==user)return 0;for(int n=0;index>0&&n<VFS_NODES;n++,index=nodes[index].parent)if(nodes[index].parent==user)return 1;return 0;}
+int storage_tracks_node(int index){
+    if(index<=0||index>=VFS_NODES||!nodes[index].used)return 0;
+    int user=vfs_lookup("/home/user");
+    if(user<0||index==user)return 0;
+    for(int depth=0;index>0&&depth<VFS_NODES;depth++,index=nodes[index].parent){
+        if(nodes[index].parent==user)return 1;
+    }
+    return 0;
+}
 static int restore(Snapshot s){
     Reader r={BANK_START(s.bank)+1,512,s.bytes};u8 record[160];
     /* Validate the stream before changing any live nodes. */
     for(u32 i=0;i<s.count;i++){if(!read_bytes(&r,record,160)||!record[0]||record[127]!=0)return 0;const char *path=(const char *)record;char canonical[VFS_PATH];if(strlen(path)<11||vfs_canonical(path,canonical)<0||!streq(path,canonical))return 0;const char *prefix="/home/user/";for(u32 j=0;j<11;j++)if(path[j]!=prefix[j])return 0;u32 size=*(u32 *)(record+132);if(size>MAX_FILE||*(u32 *)(record+128)>1||!read_bytes(&r,file_buffer,size))return 0;}if(r.left)return 0;
-    for(int i=1;i<VFS_NODES;i++)if(nodes[i].used&&user_node(i)){for(u32 p=0;p<VFS_PAGES;p++)if(nodes[i].pages[p])page_free(nodes[i].pages[p]);nodes[i].used=0;}
+    for(int i=1;i<VFS_NODES;i++)if(nodes[i].used&&storage_tracks_node(i)){for(u32 p=0;p<VFS_PAGES;p++)if(nodes[i].pages[p])page_free(nodes[i].pages[p]);nodes[i].used=0;}
     r=(Reader){BANK_START(s.bank)+1,512,s.bytes};
     for(u32 i=0;i<s.count;i++){
         if(!read_bytes(&r,record,160))return 0;char *path=(char *)record;u32 size=*(u32 *)(record+132);int dir=*(u32 *)(record+128)!=0;
@@ -51,10 +59,10 @@ static void write_bytes(Writer *w,const u8 *source,u32 length){
 void storage_changed(void){if(storage_ready&&!loading){storage_dirty=1;changed_at=ticks;}}
 int storage_sync(void){
     if(!storage_ready)return 0;if(!storage_dirty)return 1;int bank=current_bank==0?1:0;u32 count=0,total=0;
-    for(int i=1;i<VFS_NODES;i++)if(nodes[i].used&&user_node(i)){count++;total+=160+(nodes[i].dir?0:nodes[i].size);}if(total>(BANK_SECTORS-1)*512){storage_error="Data volume is full";return 0;}
+    for(int i=1;i<VFS_NODES;i++)if(nodes[i].used&&storage_tracks_node(i)){count++;total+=160+(nodes[i].dir?0:nodes[i].size);}if(total>(BANK_SECTORS-1)*512){storage_error="Data volume is full";return 0;}
     memset(io_sector,0,512);if(!ata_write(BANK_START(bank),io_sector)){storage_error="Data disk write failed";return 0;}
     Writer w={BANK_START(bank)+1,0,0,0xffffffff,1,{0}};
-    for(int i=1;i<VFS_NODES&&w.ok;i++)if(nodes[i].used&&user_node(i)){
+    for(int i=1;i<VFS_NODES&&w.ok;i++)if(nodes[i].used&&storage_tracks_node(i)){
         u8 record[160];memset(record,0,sizeof(record));vfs_path(i,(char *)record);*(u32 *)(record+128)=(u32)nodes[i].dir;*(u32 *)(record+132)=nodes[i].dir?0:nodes[i].size;write_bytes(&w,record,160);
         if(!nodes[i].dir){int n=vfs_read(i,file_buffer,MAX_FILE);if(n<0){w.ok=0;break;}write_bytes(&w,file_buffer,(u32)n);}
     }

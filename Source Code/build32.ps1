@@ -1,4 +1,4 @@
-param([switch]$TestImage,[string]$BuildId)
+param([switch]$TestImage,[string]$BuildId,[switch]$ShellBridge)
 $ErrorActionPreference = 'Stop'
 if ($BuildId -and $BuildId -notmatch '^[A-Za-z0-9._-]{1,64}$') { throw 'BuildId must contain 1-64 ASCII letters, digits, dots, underscores or hyphens.' }
 $taskRoot = $PSScriptRoot
@@ -35,6 +35,7 @@ foreach ($variant in $variants) {
     # The kernel owns its mapped stack; Windows stack-guard probing is inapplicable.
     $cflags = @('-m32','-march=i386','-std=c11','-Os','-ffreestanding','-fno-builtin','-fno-pic','-fno-pie','-fno-stack-protector','-fno-asynchronous-unwind-tables','-mno-stack-arg-probe','-mno-sse','-mno-mmx','-msoft-float','-mpreferred-stack-boundary=2','-mincoming-stack-boundary=2','-Wall','-Wextra','-Werror','-Wno-misleading-indentation')
     if ($variant -eq 'test') { $cflags += '-DSELFTEST=1' }
+    if ($ShellBridge) { $cflags += '-DSINO_SHELL_BRIDGE=1' }
     if ($BuildId) { $cflags += @('-include',(Join-Path $buildPath 'build-id.h')) }
     foreach ($source in @('kernel','keyboard','object','process','net','console','vfs','shell','storage','disk','settings','install','graphics','gui')) {
         & $gcc @cflags -c (Join-Path $sourcePath "$source.c") -o (Join-Path $buildPath "$source-$variant.o")

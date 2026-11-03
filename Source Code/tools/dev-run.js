@@ -193,7 +193,9 @@ async function run(directory, verifyOnly) {
     } finally {if(qmp)qmp.close();}
 }
 
-(async()=>{
+module.exports = {qemuPath, sources};
+
+if (require.main === module) (async()=>{
     const [command,value,buildId] = process.argv.slice(2);
     if (command==='check') return check();
     const directory = runPath(value);
