@@ -69,3 +69,9 @@ Older built-in applications remain in kernel mode; only newer native programs ha
 SysBASIC 0.2 (2026-10-24) added the classic docked workbench, output-mode chooser, embedded native resources, software-library integration, and regression tests. No Microsoft VB6 source, binaries, icons, or fonts were imported. BASIC remains an interpreter subset; the standalone output embeds its runtime and project instead of compiling BASIC into new x86 instructions.
 
 SysBASIC 0.3 (2026-10-24) added the keyboard decoder, independent modifier states, eight-handle designer, rectangle drawing, cancellation, First tutorial, and three-folder export. The public release does not bundle QEMU or its firmware/libraries; users install Windows QEMU separately. NASM remains included as a build tool under its BSD license. Font and Pinyin notices remain with the source and runtime resources.
+
+## AKN fork (2026-11-02)
+
+This independently maintained fork is [akingno/SINO-OS_Fork_by_AKN](https://github.com/akingno/SINO-OS_Fork_by_AKN), based on [SkysoftStudio-Felix/SINO-OS](https://github.com/SkysoftStudio-Felix/SINO-OS) at `bf0cad19002adf8f8f6d8be3efce1c044b05e252`. Upstream history, copyright, license text and third-party notices are retained. AKN's modifications use MIT and have a separate copyright line; third-party material is not relicensed.
+
+The initial fork changes add a verified development build/launch workflow, optional build identity, separate development output/data, and `/boot/license.txt` containing the full project MIT text. They do not import Linux implementation code. Early Linux is a teaching and design reference only. See the repository's `Documentation/Licenses/Fork-Provenance.md` and `Documentation/Development.md` for fork-specific details. Earlier version narratives and verification records above describe upstream history, not new verification of this fork.

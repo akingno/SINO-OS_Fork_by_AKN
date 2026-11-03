@@ -1,5 +1,6 @@
-param([switch]$TestImage)
+param([switch]$TestImage,[string]$BuildId)
 $ErrorActionPreference = 'Stop'
+if ($BuildId -and $BuildId -notmatch '^[A-Za-z0-9._-]{1,64}$') { throw 'BuildId must contain 1-64 ASCII letters, digits, dots, underscores or hyphens.' }
 $taskRoot = $PSScriptRoot
 $nasmPath = Join-Path $taskRoot 'tools\nasm-3.02\nasm.exe'
 $toolRoot = $env:SINO_TOOLCHAIN
@@ -15,6 +16,9 @@ $objcopy = Join-Path $toolRoot 'objcopy.exe'
 $env:SINO_TOOLCHAIN = $toolRoot
 $buildPath = Join-Path $taskRoot 'build32'
 New-Item -ItemType Directory -Path $buildPath -Force | Out-Null
+if ($BuildId) {
+    Set-Content -LiteralPath (Join-Path $buildPath 'build-id.h') -Encoding ASCII -Value ('#define SINO_BUILD_ID "' + $BuildId + '"')
+}
 $sourcePath = Join-Path $taskRoot 'src32'
 foreach ($source in @('boot','loader','hello','mbr')) {
     & $nasmPath -f bin -Wall -Werror -w-reloc-abs-word -w-reloc-abs-dword (Join-Path $sourcePath "$source.asm") -o (Join-Path $buildPath "$source.bin") -l (Join-Path $buildPath "$source.lst")
@@ -31,6 +35,7 @@ foreach ($variant in $variants) {
     # The kernel owns its mapped stack; Windows stack-guard probing is inapplicable.
     $cflags = @('-m32','-march=i386','-std=c11','-Os','-ffreestanding','-fno-builtin','-fno-pic','-fno-pie','-fno-stack-protector','-fno-asynchronous-unwind-tables','-mno-stack-arg-probe','-mno-sse','-mno-mmx','-msoft-float','-mpreferred-stack-boundary=2','-mincoming-stack-boundary=2','-Wall','-Wextra','-Werror','-Wno-misleading-indentation')
     if ($variant -eq 'test') { $cflags += '-DSELFTEST=1' }
+    if ($BuildId) { $cflags += @('-include',(Join-Path $buildPath 'build-id.h')) }
     foreach ($source in @('kernel','keyboard','object','process','net','console','vfs','shell','storage','disk','settings','install','graphics','gui')) {
         & $gcc @cflags -c (Join-Path $sourcePath "$source.c") -o (Join-Path $buildPath "$source-$variant.o")
         if ($LASTEXITCODE -ne 0) { throw "C compilation failed: $source ($variant)" }

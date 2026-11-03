@@ -9,6 +9,8 @@ boot.copy(image);loader.copy(image,512);kernel.copy(image,512+4096);
 const fat=Buffer.alloc(4608);fat.set([0xf0,0xff,0xff]);
 function setFat(c,v){const n=c+(c>>1);if(c&1){fat[n]=(fat[n]&15)|((v&15)<<4);fat[n+1]=v>>4;}else{fat[n]=v&255;fat[n+1]=(fat[n+1]&240)|(v>>8);}}
 const entries=['README.TXT','ABOUT.TXT','KERNEL.TXT','SOURCES.TXT','DEMO.SH','UIASSET.BIN','FONT_OFL.TXT','CJK_OFL.TXT','PINYIN.TXT'].map(name=>[name,fs.readFileSync(path.join(root,'disk32',name))]);entries.push(['MBR.BIN',fs.readFileSync(path.join(build,'mbr.bin'))]);entries.push(['HELLO.F32',fs.readFileSync(path.join(build,'hello.bin'))]);
+// Keep the full project copyright and MIT terms with bootable distributions.
+entries.push(['LICENSE.TXT',fs.readFileSync(path.join(root,'LICENSE'))]);
 for(const name of ['FIRST.PRJ','FIRST.FRM','FIRST.BAS'])entries.push([name,fs.readFileSync(path.join(root,'disk32',name))]);
 for(const name of ['probe','fault','iofault','spin','udfault','setup','apps','instest','nettest','bstest','basicrun','tasks'])entries.push([name.toUpperCase()+'.SNX',fs.readFileSync(path.join(build,'user',name+'.snx'))]);
 entries.push(['SYSBASIC.SXP',fs.readFileSync(path.join(build,'user/sysbasic.sxp'))]);

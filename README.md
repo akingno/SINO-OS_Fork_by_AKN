@@ -1,5 +1,7 @@
 # SINO OS
 
+> **AKN fork:** [akingno/SINO-OS_Fork_by_AKN](https://github.com/akingno/SINO-OS_Fork_by_AKN), based on [SkysoftStudio-Felix/SINO-OS](https://github.com/SkysoftStudio-Felix/SINO-OS) at `bf0cad19002adf8f8f6d8be3efce1c044b05e252`. This fork focuses on system reliability, a usable text editor, host development tools and server communication. See [fork provenance and licensing](Documentation/Licenses/Fork-Provenance.md) and the [development workflow](Documentation/Development.md). Release links and historical verification records below refer to upstream, unless explicitly stated otherwise.
+
 **SINO OS 0.10 / SysBASIC 0.3.0 — development preview**
 
 **A small x86 desktop OS where you can design, run and install BASIC applications.**

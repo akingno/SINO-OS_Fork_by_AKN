@@ -1,5 +1,14 @@
 SINO 0.10 / source information
 
+AKN FORK (2026-11-02)
+  Repository: https://github.com/akingno/SINO-OS_Fork_by_AKN
+  Upstream: https://github.com/SkysoftStudio-Felix/SINO-OS
+  Fork base: bf0cad19002adf8f8f6d8be3efce1c044b05e252
+  Upstream project code: Copyright (c) 2026 SINO contributors.
+  Fork modifications: Copyright (c) 2026 akingno (AKN).
+  Full project MIT license: /boot/license.txt.
+  Third-party notices below retain their own licenses.
+
 The bootloader, 32-bit kernel, drivers, memory manager, FAT12 reader, VFS,
 ATA storage, shell, desktop and built-in apps were generated and written
 by the assistant for this project. Project code uses the repository MIT license.

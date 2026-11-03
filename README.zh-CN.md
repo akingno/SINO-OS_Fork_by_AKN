@@ -1,5 +1,7 @@
 # SINO OS
 
+> **AKN 衍生版本：**[akingno/SINO-OS_Fork_by_AKN](https://github.com/akingno/SINO-OS_Fork_by_AKN)，基于 [SkysoftStudio-Felix/SINO-OS](https://github.com/SkysoftStudio-Felix/SINO-OS) 的 `bf0cad19002adf8f8f6d8be3efce1c044b05e252`。本分支优先完善系统可靠性、文本编辑器、宿主机开发工具和服务器通信，详情见 [来源与许可说明](Documentation/Licenses/Fork-Provenance.md) 和 [开发运行说明](Documentation/Development.md)。下文发行下载链接与历史验证记录沿用上游资料，除非明确标注为本 fork 的结果。
+
 **SINO OS 0.10 / SysBASIC 0.3.0 开发预览版**
 
 **一个可以在桌面上设计、运行和安装 BASIC 应用的小型 x86 操作系统。**

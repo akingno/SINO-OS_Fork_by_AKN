@@ -5,3 +5,12 @@
 /Source Code/sino.img
 /Source Code/sino32-test.img
 *.log
+
+# Personal learning notes and local reference material (keep on disk).
+/akn_learning/
+
+# Downloaded/extracted upstream distributions; not development sources.
+/SINO-*-SysBASIC-*-Chinese/
+/SINO-*-SysBASIC-*-English/
+/SINO-*.zip
+/SINO-*.7z

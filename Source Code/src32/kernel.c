@@ -208,6 +208,9 @@ void kernel_tests(void){
 }
 void kmain(void){
     debug("SINO 0.10 native 32-bit kernel entered, CS=0x08\n");
+#ifdef SINO_BUILD_ID
+    debug("SINO BUILD ID: " SINO_BUILD_ID "\n");
+#endif
     arch_init();memory_init();if(!fs_init())panic("FAT12 mount failed",0,0);
     process_init();net_init();kernel_tests();net_tests();shell_init();disk_init();storage_init();settings_init();gui_init();sti();
     u32 begin=ticks;while(ticks-begin<3)halt();debug("TIMER IRQ0 delivered in protected mode\n");
