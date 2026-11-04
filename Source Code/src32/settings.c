@@ -1,3 +1,4 @@
+#include "locale.h"
 /* Persistent display and language preferences, with timed display rollback. */
 #include "settings.h"
 #include "graphics.h"
@@ -11,10 +12,14 @@ static int tab = 1, rw = 1024, rh = 768, rs = 100, rc = 100, rl;
 static int ow, oh, os, oc, ol;
 static int slider_drag;
 static u32 deadline, last_count;
-static const char *status = "选择设置后点击应用。";
+static TextKey settings_status_key =
+    SETTINGS_STATUS_CHOOSE_YOUR_SETTINGS_THEN_SELECT_APPLY;
+static void settings_set_status(TextKey key) {
+  settings_status_key = key;
+}
 static const int modes[][2] = {{800, 600},  {1024, 768}, {1280, 720},
                                {1280, 960}, {1600, 900}, {1920, 1080}};
-static const char *mode_names[] = {"800 x 600",  "1024 x 768", "1280 x 720",
+static const char* mode_names[] = {"800 x 600",  "1024 x 768", "1280 x 720",
                                    "1280 x 960", "1600 x 900", "1920 x 1080"};
 static const int scales[] = {100, 125, 150, 200};
 typedef struct {
@@ -24,7 +29,7 @@ typedef struct {
 static int hit(int x, int y, int a, int b, int w, int h) {
   return x >= a && x < a + w && y >= b && y < b + h;
 }
-static void choice(int x, int y, int w, const char *text, int selected) {
+static void choice(int x, int y, int w, const char* text, int selected) {
   g_round(x, y, w, 30, 4, selected ? 0xdbe9fb : 0xf0f2f6);
   g_box(x, y, w, 30, selected ? BLUE : 0xc7ced8,
         selected ? 0xdbe9fb : 0xf0f2f6);
@@ -35,7 +40,7 @@ void settings_language_set(int language) {
   if (gui_active)
     gui_refresh();
 }
-static int valid(const Preferences *p) {
+static int valid(const Preferences* p) {
   return p->magic == PREF_MAGIC && p->version == 1 && p->width >= 800 &&
          p->width <= 1920 && p->height >= 540 && p->height <= 1200 &&
          p->scale >= 100 && p->scale <= 200 && p->contrast >= 60 &&
@@ -45,10 +50,10 @@ void settings_init(void) {
   Preferences p;
   int n = vfs_lookup("/home/user/.sino-settings");
   int found =
-      n >= 0 && vfs_read(n, (u8 *)&p, sizeof(p)) == (int)sizeof(p) && valid(&p);
-  if (!found && *(volatile u8 *)0x4f0c >= 0x80) {
+      n >= 0 && vfs_read(n, (u8*)&p, sizeof(p)) == (int)sizeof(p) && valid(&p);
+  if (!found && *(volatile u8*)0x4f0c >= 0x80) {
     u8 sector[512];
-    int d = storage_disk >= 0 ? storage_disk : *(volatile u8 *)0x4f0c - 0x80;
+    int d = storage_disk >= 0 ? storage_disk : *(volatile u8*)0x4f0c - 0x80;
     if (d < 4 && disk_read(d, 1, sector)) {
       memcpy(&p, sector, sizeof(p));
       found = valid(&p);
@@ -80,7 +85,7 @@ static void stage_current(void) {
 void settings_open(void) {
   if (!settings_pending) {
     stage_current();
-    status = "选择设置后点击应用。";
+    settings_set_status(SETTINGS_STATUS_CHOOSE_YOUR_SETTINGS_THEN_SELECT_APPLY);
   }
 }
 static void persist(void) {
@@ -95,16 +100,20 @@ static void persist(void) {
   int n = vfs_lookup("/home/user/.sino-settings");
   if (n < 0)
     n = vfs_create("/home/user/.sino-settings", 0, 0);
-  if (n < 0 || vfs_write(n, (const u8 *)&p, sizeof(p), 0) < 0) {
-    status = "设置保存失败，请检查数据磁盘。";
+  if (n < 0 || vfs_write(n, (const u8*)&p, sizeof(p), 0) < 0) {
+    settings_set_status(
+        SETTINGS_ERROR_SETTINGS_COULD_NOT_BE_SAVED_CHECK_THE_DATA_DISK);
     return;
   }
   if (!storage_ready) {
-    status = "设置已应用，本次会话有效（无数据磁盘）。";
+    settings_set_status(
+        SETTINGS_STATUS_APPLIED_FOR_THIS_SESSION_NO_PERSISTENT_DISK);
     return;
   }
-  status = storage_sync() ? "设置已保存，重启后仍然生效。"
-                          : "设置保存失败，请检查数据磁盘。";
+  settings_set_status(
+      storage_sync()
+          ? SETTINGS_STATUS_SETTINGS_SAVED_AND_WILL_SURVIVE_A_RESTART
+          : SETTINGS_ERROR_SETTINGS_COULD_NOT_BE_SAVED_CHECK_THE_DATA_DISK);
 }
 void settings_cancel(void) {
   if (!settings_pending)
@@ -113,7 +122,7 @@ void settings_cancel(void) {
   settings_language = ol;
   settings_pending = 0;
   stage_current();
-  status = "已恢复之前的显示设置。";
+  settings_set_status(SETTINGS_STATUS_PREVIOUS_DISPLAY_SETTINGS_RESTORED);
   gui_refresh();
 }
 static void apply(void) {
@@ -125,14 +134,15 @@ static void apply(void) {
   oc = display_contrast;
   ol = settings_language;
   if (!graphics_mode(rw, rh, rs, rc)) {
-    status = "此分辨率与缩放组合不可用，请选择其他组合。";
+    settings_set_status(
+        SETTINGS_ERROR_THIS_RESOLUTION_AND_SCALE_COMBINATION_IS_UNAVAILABLE);
     return;
   }
   settings_language = rl;
   settings_pending = 1;
   deadline = ticks + 1500;
   last_count = 16;
-  status = "";
+  settings_set_status(TEXT_NONE);
   gui_refresh();
 }
 int settings_poll(void) {
@@ -170,8 +180,10 @@ int settings_mouse(int x, int y, int held) {
 void settings_draw(int w, int h) {
   g_fill(2, 30, w - 4, h - 32, 0xf9fafc);
   g_fill(2, 30, 155, h - 32, 0xebeff5);
-  g_text(1, 18, 48, "系统设置", INK);
-  const char *tabs[] = {"系统", "显示", "语言", "关于"};
+  g_text(1, 18, 48, locale_text(SETTINGS_LABEL_SETTINGS), INK);
+  const char* tabs[] = {
+      locale_text(SETTINGS_LABEL_SYSTEM), locale_text(SETTINGS_LABEL_DISPLAY),
+      locale_text(SETTINGS_LABEL_LANGUAGE), locale_text(SETTINGS_LABEL_ABOUT)};
   for (int i = 0; i < 4; i++) {
     if (tab == i)
       g_round(10, 99 + i * 44, 137, 36, 4, 0xd4e3f6);
@@ -180,29 +192,34 @@ void settings_draw(int w, int h) {
   int x = 181;
   g_text(1, x, 48, tabs[tab], INK);
   if (tab == 0) {
-    g_text(0, x, 100, "SINO 操作系统", INK);
-    g_text(0, x, 140, "版本 0.10  /  SINO32", BLUE);
-    g_text(0, x, 178, "32 位 x86，自行编写的内核、驱动和桌面。", INK);
-    g_text(0, x, 216,
-           *(volatile u8 *)0x4f0c >= 0x80 ? "启动来源：硬盘安装版"
-                                          : "启动来源：ISO 光盘 / 体验模式",
+    g_text(0, x, 100, locale_text(SETTINGS_LABEL_SINO_OPERATING_SYSTEM), INK);
+    g_text(0, x, 140, locale_text(SETTINGS_LABEL_VERSION_0_10_SINO32), BLUE);
+    g_text(0, x, 178,
+           locale_text(
+               SETTINGS_LABEL_32_BIT_X86_CUSTOM_KERNEL_DRIVERS_AND_DESKTOP),
            INK);
-    g_text(
-        0, x, 254,
-        storage_ready ? "个人文件：持久化数据磁盘" : "个人文件：内存临时模式",
-        INK);
+    g_text(0, x, 216,
+           *(volatile u8*)0x4f0c >= 0x80
+               ? locale_text(SETTINGS_LABEL_BOOT_SOURCE_INSTALLED_HARD_DISK)
+               : locale_text(SETTINGS_LABEL_BOOT_SOURCE_ISO_LIVE_SESSION),
+           INK);
+    g_text(0, x, 254,
+           storage_ready
+               ? locale_text(SETTINGS_LABEL_HOME_FILES_PERSISTENT_DATA_VOLUME)
+               : locale_text(SETTINGS_LABEL_HOME_FILES_TEMPORARY_MEMORY_ONLY),
+           INK);
     char b[16];
     number(free_pages * 4, b);
-    g_text(0, x, 292, "空闲内存（KB）", INK);
+    g_text(0, x, 292, locale_text(SETTINGS_LABEL_FREE_MEMORY_KB), INK);
     g_text(0, x + 160, 292, b, BLUE);
-    choice(x, 345, 165, "显示设置", 0);
-    choice(x + 180, 345, 165, "语言设置", 0);
+    choice(x, 345, 165, locale_text(SETTINGS_LABEL_DISPLAY_SETTINGS), 0);
+    choice(x + 180, 345, 165, locale_text(SETTINGS_LABEL_LANGUAGE_SETTINGS), 0);
   } else if (tab == 1) {
-    g_text(0, x, 96, "屏幕分辨率", INK);
+    g_text(0, x, 96, locale_text(SETTINGS_LABEL_SCREEN_RESOLUTION), INK);
     for (int i = 0; i < 6; i++)
       choice(x + (i % 3) * 166, 126 + (i / 3) * 38, 155, mode_names[i],
              rw == modes[i][0] && rh == modes[i][1]);
-    g_text(0, x, 212, "缩放比例", INK);
+    g_text(0, x, 212, locale_text(SETTINGS_LABEL_SCALE), INK);
     for (int i = 0; i < 4; i++) {
       char b[16];
       number((u32)scales[i], b);
@@ -211,45 +228,83 @@ void settings_draw(int w, int h) {
       b[n + 1] = 0;
       choice(x + i * 110, 242, 99, b, rs == scales[i]);
     }
-    g_text(0, x, 296, "对比度", INK);
+    g_text(0, x, 296, locale_text(SETTINGS_LABEL_CONTRAST), INK);
     g_fill(x + 4, 343, 350, 4, 0xc4ccd7);
     int pos = x + 4 + (rc - 60) * 350 / 80;
     g_round(pos - 6, 335, 13, 21, 5, BLUE);
     char b[16];
     number((u32)rc, b);
     g_text(0, x + 381, 335, b, INK);
-    g_text(0, x, 381, "缩放会调整文字、控件和可用桌面空间。", 0x667388);
+    g_text(0, x, 381,
+           locale_text(
+               SETTINGS_LABEL_SCALE_CHANGES_TEXT_CONTROLS_AND_DESKTOP_SPACE),
+           0x667388);
   } else if (tab == 2) {
-    g_text(0, x, 100, "系统显示语言", INK);
-    choice(x, 145, 212, "简体中文", rl == 0);
+    g_text(0, x, 100, locale_text(SETTINGS_LABEL_DISPLAY_LANGUAGE), INK);
+    choice(x, 145, 212, locale_text(SETTINGS_LABEL_CHINESE_SIMPLIFIED),
+           rl == 0);
     choice(x + 228, 145, 212, "English", rl == 1);
-    g_text(0, x, 211, "语言切换不改变个人文件名或正文。", 0x667388);
-    g_text(0, x, 257, "中文输入：Ctrl+空格切换拼音。", INK);
-    g_text(0, x, 293, "空格选首字，1-7 选字，[ ] 翻页。", INK);
-    g_text(0, x, 329, "支持单字及常用词，暂不支持整句预测。", 0x667388);
+    g_text(
+        0, x, 211,
+        locale_text(
+            SETTINGS_LABEL_YOUR_FILENAMES_AND_DOCUMENT_CONTENTS_REMAIN_UNCHANGED),
+        0x667388);
+    g_text(0, x, 257,
+           locale_text(SETTINGS_LABEL_CHINESE_INPUT_CTRL_SPACE_TOGGLES_PINYIN),
+           INK);
+    g_text(0, x, 293, locale_text(SETTINGS_LABEL_SPACE_SELECTS_1_7_CHOOSE_PAGE),
+           INK);
+    g_text(
+        0, x, 329,
+        locale_text(
+            SETTINGS_LABEL_CHARACTERS_AND_COMMON_PHRASES_NO_SENTENCE_PREDICTION),
+        0x667388);
   } else {
     g_text(1, x, 104, "SINO 0.10", BLUE);
-    g_text(0, x, 153, "内核、桌面、安装程序：项目自写 C / 汇编。", INK);
-    g_text(0, x, 195, "开源组件：QEMU、Unifont、经典字库。", INK);
-    g_text(0, x, 237, "拼音单字数据：pinyin-data（MIT）。", INK);
-    g_text(0, x, 279, "BIOS / MBR 启动，SINO 自有数据文件系统。", INK);
-    g_text(0, x, 321, "原生应用在用户态，旧版内置应用仍在内核。", 0x667388);
-    g_text(0, x, 359, "源代码及各组件许可证随系统保留。", 0x667388);
+    g_text(
+        0, x, 153,
+        locale_text(SETTINGS_LABEL_KERNEL_DESKTOP_INSTALLER_CUSTOM_C_ASSEMBLY),
+        INK);
+    g_text(
+        0, x, 195,
+        locale_text(SETTINGS_LABEL_OPEN_SOURCE_QEMU_UNIFONT_AND_CLASSIC_FONTS),
+        INK);
+    g_text(0, x, 237,
+           locale_text(SETTINGS_LABEL_PINYIN_CHARACTER_DATA_PINYIN_DATA_MIT),
+           INK);
+    g_text(
+        0, x, 279,
+        locale_text(SETTINGS_LABEL_BIOS_MBR_BOOT_NATIVE_SINO_DATA_FILESYSTEM),
+        INK);
+    g_text(
+        0, x, 321,
+        locale_text(
+            SETTINGS_LABEL_NATIVE_APPS_USE_USER_MODE_LEGACY_APPS_REMAIN_IN_KERNEL),
+        0x667388);
+    g_text(
+        0, x, 359,
+        locale_text(SETTINGS_LABEL_SOURCE_AND_COMPONENT_LICENSES_ARE_INCLUDED),
+        0x667388);
   }
   if (settings_pending) {
     int y = h - 149;
     g_box(174, y, w - 190, 136, BLUE, 0xe8f0fc);
-    g_text(0, 190, y + 12, "保留这些显示设置？超时将自动还原。", INK);
+    g_text(
+        0, 190, y + 12,
+        locale_text(
+            SETTINGS_LABEL_KEEP_THESE_DISPLAY_SETTINGS_THEY_REVERT_AUTOMATICALLY),
+        INK);
     char b[12];
     number((deadline - ticks + 99) / 100, b);
     g_text(0, 190, y + 40, b, BLUE);
-    g_text(0, 227, y + 40, "秒", BLUE);
-    choice(w - 266, y + 85, 112, "还原", 0);
-    choice(w - 142, y + 85, 112, "保留更改", 1);
+    g_text(0, 227, y + 40, locale_text(SETTINGS_LABEL_SECONDS), BLUE);
+    choice(w - 266, y + 85, 112, locale_text(SETTINGS_LABEL_REVERT), 0);
+    choice(w - 142, y + 85, 112, locale_text(SETTINGS_LABEL_KEEP_CHANGES), 1);
   } else {
-    g_cliptext(x, h - 88, w - x - 18, status, 0x667388);
-    choice(w - 266, h - 49, 112, "恢复默认", 0);
-    choice(w - 142, h - 49, 112, "应用", 1);
+    g_cliptext(x, h - 88, w - x - 18, locale_text(settings_status_key),
+               0x667388);
+    choice(w - 266, h - 49, 112, locale_text(SETTINGS_LABEL_DEFAULTS), 0);
+    choice(w - 142, h - 49, 112, locale_text(SETTINGS_LABEL_APPLY), 1);
   }
 }
 int settings_click(int x, int y, int w, int h) {
@@ -273,7 +328,8 @@ int settings_click(int x, int y, int w, int h) {
     rh = 768;
     rs = rc = 100;
     rl = 0;
-    status = "点击应用以恢复默认设置。";
+    settings_set_status(
+        SETTINGS_STATUS_SELECT_APPLY_TO_RESTORE_THE_DEFAULT_SETTINGS);
     return 1;
   }
   if (hit(x, y, w - 142, h - 49, 112, 30)) {
@@ -312,21 +368,4 @@ int settings_click(int x, int y, int w, int h) {
       rl = 1;
   }
   return 1;
-}
-
-/* Only translate immutable UI literals. RAM-backed filenames/text are exempt.
- */
-extern char __locale_literals_start[], __locale_literals_end[];
-typedef struct {
-  const char *zh, *en;
-} Translation;
-#include "locale.inc"
-const char *settings_text(const char *text) {
-  if (!settings_language || (u32)text < (u32)__locale_literals_start ||
-      (u32)text >= (u32)__locale_literals_end)
-    return text;
-  for (u32 i = 0; i < sizeof(translations) / sizeof(translations[0]); i++)
-    if (streq(text, translations[i].zh))
-      return translations[i].en;
-  return text;
 }

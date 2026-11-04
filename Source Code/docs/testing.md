@@ -6,7 +6,19 @@ This entry is separate from the upstream regression gate. The gate's suite count
 
 # Build, execution, and regression testing
 
-Host: existing w64devkit GCC/Binutils (override with SINO_TOOLCHAIN), bundled NASM 3.02, and Node.js. No new toolchain or large library is required. Python/Pillow are used only for resource generation and screenshots. Guest: 32-bit x86, 64 MiB RAM, standard VGA/VBE, PS/2, BIOS/MBR, and ATA IDE. Current QEMU runs with networking disabled; the guest loopback stack is independent.
+## src32 infrastructure contracts
+
+Run `node 'Source Code/tools/test-src32-refactor.js'` from the repository root. Set `SINO_TOOLCHAIN` to the GCC/Binutils bin directory; Python is selected through `SINO_PYTHON` or the existing host-tools lookup. Optional `SINO_REFACTOR_REPORT_DIR` selects the output folder; by default a new `Build Output/dev/runs/src32-contract-*` folder is used.
+
+This standalone suite has 43 checks. It compiles the actual `storage.c` with only BIOS handoff address reads replaced by host variables, using an in-memory disk and a controlled VFS boundary. It also tests the actual klog byte/hex output and locale query/format code, including UTF-8 names and capacity errors. The resource generator runs in a private copy, where missing/duplicate keys and bad parameters must be rejected. No runtime source or daily disk is modified. Source hashes and each result are saved to `src32-refactor-report.json`.
+
+The seven pre-refactor defects are repaired and no longer exempted. Every failed assertion exits nonzero, including when the historical `--baseline` option is supplied. This suite remains separate from the 21-suite system gate. See [runtime-infrastructure.md](runtime-infrastructure.md) for the resource source and logging contracts.
+
+For the system baseline, build both normal and SELFTEST images, use the ISO and matching symbols from that build, then run `verify-system.js`; run both host Shell self-test suites separately. VM suites use private disks as described below.
+
+## Build environment and existing regression gate
+
+Host: existing w64devkit GCC/Binutils (override with SINO_TOOLCHAIN), bundled NASM 3.02, Node.js and Python for build-time locale validation/generation (override with SINO_PYTHON). Pillow is used for screenshots. No new large library is required. Guest: 32-bit x86, 64 MiB RAM, standard VGA/VBE, PS/2, BIOS/MBR, and ATA IDE. Current QEMU runs with networking disabled; the guest loopback stack is independent.
 
     powershell -NoProfile -ExecutionPolicy Bypass -File build.ps1 -TestImage
     node build-iso.js

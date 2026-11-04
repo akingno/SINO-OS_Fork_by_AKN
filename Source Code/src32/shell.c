@@ -1,3 +1,4 @@
+#include "klog.h"
 #include "rtc.h"
 /* SINO SH: project-specific shell, separate from the SINO32 kernel. */
 #include "console.h"
@@ -11,15 +12,15 @@
 #define PIPE_SIZE 8192u
 #define SCRIPT_DEPTH 4
 typedef struct {
-  u8 *data;
+  u8* data;
   u32 length, capacity;
   int overflow;
 } Sink;
 typedef struct {
-  const u8 *input;
+  const u8* input;
   u32 input_length;
   int input_present;
-  Sink *out;
+  Sink* out;
   int depth;
 } Context;
 typedef struct {
@@ -34,8 +35,8 @@ static u8 work[MAX_FILE + 1], pipes[SCRIPT_DEPTH][2][PIPE_SIZE + 1];
 static char scripts[SCRIPT_DEPTH][4096];
 u32 native_base, native_size;
 int native_running;
-static Sink *native_sink;
-static const char *commands[] = {
+static Sink* native_sink;
+static const char* commands[] = {
     "help",    "ls",     "cd",       "pwd",     "cat",     "echo",   "clear",
     "uname",   "ver",    "mem",      "free",    "uptime",  "date",   "time",
     "history", "whoami", "hostname", "env",     "which",   "touch",  "mkdir",
@@ -43,17 +44,17 @@ static const char *commands[] = {
     "tail",    "wc",     "grep",     "hexdump", "stat",    "tree",   "find",
     "df",      "run",    "source",   "sleep",   "ps",      "about",  "credits",
     "reboot",  "halt",   "sync",     "install", "nettest", "kill",   0};
-static void strcopy(char *d, const char *s) {
+static void strcopy(char* d, const char* s) {
   while ((*d++ = *s++)) {
   }
 }
-static int starts(const char *s, const char *prefix) {
+static int starts(const char* s, const char* prefix) {
   while (*prefix)
     if (*s++ != *prefix++)
       return 0;
   return 1;
 }
-static int contains(const char *s, u32 length, const char *pattern) {
+static int contains(const char* s, u32 length, const char* pattern) {
   u32 n = strlen(pattern);
   if (n > length)
     return 0;
@@ -66,8 +67,8 @@ static int contains(const char *s, u32 length, const char *pattern) {
   }
   return 0;
 }
-static void emit(Sink *sink, const void *bytes, u32 n) {
-  const u8 *p = bytes;
+static void emit(Sink* sink, const void* bytes, u32 n) {
+  const u8* p = bytes;
   if (sink && sink->data) {
     if (n > sink->capacity - sink->length) {
       sink->overflow = 1;
@@ -78,30 +79,30 @@ static void emit(Sink *sink, const void *bytes, u32 n) {
     sink->data[sink->length] = 0;
   } else {
     for (u32 i = 0; i < n; i++) {
-      outb(0xe9, p[i]);
+      klog_write_bytes(p + i, 1);
       con_put((char)p[i]);
     }
   }
 }
-static void put(Sink *s, const char *text) {
+static void put(Sink* s, const char* text) {
   emit(s, text, strlen(text));
 }
-static void num(Sink *s, u32 n) {
+static void num(Sink* s, u32 n) {
   char b[11];
   number(n, b);
   put(s, b);
 }
-static int error(Sink *s, const char *command, const char *reason) {
+static int error(Sink* s, const char* command, const char* reason) {
   put(s, command);
   put(s, ": ");
   put(s, reason);
   put(s, "\n");
   return 1;
 }
-static int verror(Sink *s, const char *command) {
+static int verror(Sink* s, const char* command) {
   return error(s, command, vfs_error);
 }
-void native_write(const char *s, u32 n) {
+void native_write(const char* s, u32 n) {
   emit(native_sink, s, n);
 }
 static void prompt(void) {
@@ -128,7 +129,7 @@ static void repaint(void) {
   painted = length;
   con_flush();
 }
-static const char *variable(const char *name, char *buffer) {
+static const char* variable(const char* name, char* buffer) {
   if (streq(name, "PWD")) {
     vfs_path(cwd, buffer);
     return buffer;
@@ -151,13 +152,13 @@ static const char *variable(const char *name, char *buffer) {
   }
   return "";
 }
-static int token_char(Token *t, u32 *n, char c) {
+static int token_char(Token* t, u32* n, char c) {
   if (*n >= LINE_SIZE - 1)
     return 0;
   t->text[(*n)++] = c;
   return 1;
 }
-static int tokenize(const char *s, Token *t) {
+static int tokenize(const char* s, Token* t) {
   int count = 0;
   u32 i = 0;
   while (s[i]) {
@@ -167,7 +168,7 @@ static int tokenize(const char *s, Token *t) {
       break;
     if (count >= TOKENS)
       return -1;
-    Token *v = &t[count];
+    Token* v = &t[count];
     v->type = 0;
     u32 n = 0;
     if (s[i] == '|' || s[i] == ';' || s[i] == '<' || s[i] == '>') {
@@ -233,7 +234,7 @@ static int tokenize(const char *s, Token *t) {
           if (!token_char(v, &n, '$'))
             return -1;
         } else
-          for (const char *value = variable(name, buffer); *value; value++)
+          for (const char* value = variable(name, buffer); *value; value++)
             if (!token_char(v, &n, *value))
               return -1;
         continue;
@@ -250,9 +251,9 @@ static int tokenize(const char *s, Token *t) {
   }
   return count;
 }
-static int execute(const char *, Sink *, int);
-static int read_input(Context *c, const char *path, const u8 **data,
-                      u32 *size) {
+static int execute(const char*, Sink*, int);
+static int read_input(Context* c, const char* path, const u8** data,
+                      u32* size) {
   if (!path) {
     if (!c->input_present)
       return error(c->out, "input", "provide a file or pipe");
@@ -271,7 +272,7 @@ static int read_input(Context *c, const char *path, const u8 **data,
   *size = (u32)bytes;
   return 0;
 }
-static int parse_number(const char *s, u32 *value) {
+static int parse_number(const char* s, u32* value) {
   if (!*s)
     return 0;
   u32 n = 0;
@@ -283,14 +284,14 @@ static int parse_number(const char *s, u32 *value) {
   *value = n;
   return 1;
 }
-static int builtin(const char *name) {
+static int builtin(const char* name) {
   for (int i = 0; commands[i]; i++)
     if (streq(name, commands[i]))
       return 1;
   return 0;
 }
-static void list_node(Sink *out, int n, int detail) {
-  Node *p = &nodes[n];
+static void list_node(Sink* out, int n, int detail) {
+  Node* p = &nodes[n];
   if (detail) {
     put(out, p->dir ? "dir " : p->readonly ? "ro  " : "ram ");
     num(out, p->size);
@@ -301,7 +302,7 @@ static void list_node(Sink *out, int n, int detail) {
     put(out, "/");
   put(out, "\n");
 }
-static void list_tree(Sink *out, int parent, u32 depth) {
+static void list_tree(Sink* out, int parent, u32 depth) {
   if (depth > 16)
     return;
   for (int i = 1; i < VFS_NODES; i++)
@@ -313,13 +314,13 @@ static void list_tree(Sink *out, int parent, u32 depth) {
         list_tree(out, i, depth + 1);
     }
 }
-static int run_program(Context *c, const char *path, const char *args) {
+static int run_program(Context* c, const char* path, const char* args) {
   int n = vfs_lookup(path);
   if (n < 0)
     return verror(c->out, path);
   if (nodes[n].size >= 32) {
     int size = vfs_read(n, work, MAX_FILE);
-    if (size >= 32 && *(u32 *)work == NATIVE_MAGIC) {
+    if (size >= 32 && *(u32*)work == NATIVE_MAGIC) {
       int pid = process_launch_args(path, CAP_HOME, args);
       if (pid < 0)
         return error(c->out, path, "native launch failed");
@@ -338,32 +339,32 @@ static int run_program(Context *c, const char *path, const char *args) {
   if (bytes < 16 || work[0] != 'F' || work[1] != 'X' || work[2] != '3' ||
       work[3] != '2')
     return error(c->out, path, "not a native F32 executable");
-  u32 entry = *(u32 *)(work + 4);
+  u32 entry = *(u32*)(work + 4);
   if (entry < 16 || entry >= (u32)bytes)
     return error(c->out, path, "invalid F32 entry");
   native_base = (u32)page_alloc();
   if (!native_base)
     return error(c->out, path, "out of memory");
   native_size = (u32)bytes;
-  memcpy((void *)native_base, work, native_size);
+  memcpy((void*)native_base, work, native_size);
   native_sink = c->out;
   native_running = 1;
-  debug("NATIVE32 shell program entered\n");
+  pr_debug("NATIVE32 shell program entered\n");
   run_native(native_base + entry);
   native_running = 0;
   native_sink = 0;
-  if (!page_free((void *)native_base))
+  if (!page_free((void*)native_base))
     panic("Native page release", native_base, 0);
   native_base = native_size = 0;
-  debug("NATIVE32 shell program returned\n");
+  pr_debug("NATIVE32 shell program returned\n");
   return 0;
 }
-static void two(Sink *out, u32 n) {
+static void two(Sink* out, u32 n) {
   if (n < 10)
     put(out, "0");
   num(out, n);
 }
-static int clock_output(Sink *out, int date) {
+static int clock_output(Sink* out, int date) {
   rtc_poll();
   RtcDateTime t;
   if (rtc_read(&t))
@@ -384,10 +385,10 @@ static int clock_output(Sink *out, int date) {
   put(out, "\n");
   return 0;
 }
-static int command(Context *c, int argc, char **argv) {
-  Sink *out = c->out;
-  char *cmd = argv[0];
-  for (char *p = cmd; *p; p++)
+static int command(Context* c, int argc, char** argv) {
+  Sink* out = c->out;
+  char* cmd = argv[0];
+  for (char* p = cmd; *p; p++)
     if (*p >= 'A' && *p <= 'Z')
       *p += 32;
   if (streq(cmd, "dir"))
@@ -460,7 +461,7 @@ static int command(Context *c, int argc, char **argv) {
   }
   if (streq(cmd, "ls")) {
     int detail = 0, all = 0;
-    const char *path = ".";
+    const char* path = ".";
     for (int i = 1; i < argc; i++) {
       if (argv[i][0] == '-' && argv[i][1]) {
         for (u32 j = 1; argv[i][j]; j++) {
@@ -517,14 +518,14 @@ static int command(Context *c, int argc, char **argv) {
   }
   if (streq(cmd, "cat")) {
     if (argc == 1) {
-      const u8 *data;
+      const u8* data;
       u32 size;
       if (read_input(c, 0, &data, &size))
         return 1;
       emit(out, data, size);
     } else
       for (int i = 1; i < argc; i++) {
-        const u8 *data;
+        const u8* data;
         u32 size;
         if (read_input(c, argv[i], &data, &size))
           return 1;
@@ -661,7 +662,7 @@ static int command(Context *c, int argc, char **argv) {
         return error(out, cmd, "invalid line count");
       a = 3;
     }
-    const u8 *data;
+    const u8* data;
     u32 size;
     if (read_input(c, a < argc ? argv[a] : 0, &data, &size))
       return 1;
@@ -691,8 +692,8 @@ static int command(Context *c, int argc, char **argv) {
     int numbered = argc > 1 && streq(argv[1], "-n"), a = numbered ? 2 : 1;
     if (a >= argc)
       return error(out, cmd, "missing literal search text");
-    const char *pattern = argv[a++];
-    const u8 *data;
+    const char* pattern = argv[a++];
+    const u8* data;
     u32 size;
     if (read_input(c, a < argc ? argv[a] : 0, &data, &size))
       return 1;
@@ -701,7 +702,7 @@ static int command(Context *c, int argc, char **argv) {
     for (u32 i = 0; i <= size; i++)
       if (i == size || data[i] == '\n') {
         if (i > begin &&
-            contains((const char *)data + begin, i - begin, pattern)) {
+            contains((const char*)data + begin, i - begin, pattern)) {
           if (numbered) {
             num(out, row);
             put(out, ":");
@@ -726,7 +727,7 @@ static int command(Context *c, int argc, char **argv) {
         return error(out, cmd, "use -l, -w or -c");
       a++;
     }
-    const u8 *data;
+    const u8* data;
     u32 size;
     if (read_input(c, a < argc ? argv[a] : 0, &data, &size))
       return 1;
@@ -755,11 +756,11 @@ static int command(Context *c, int argc, char **argv) {
     return 0;
   }
   if (streq(cmd, "hexdump")) {
-    const u8 *data;
+    const u8* data;
     u32 size;
     if (read_input(c, argc > 1 ? argv[1] : 0, &data, &size))
       return 1;
-    const char *hex = "0123456789abcdef";
+    const char* hex = "0123456789abcdef";
     for (u32 off = 0; off < size; off += 16) {
       char address[9];
       for (u32 j = 0; j < 8; j++)
@@ -848,7 +849,7 @@ static int command(Context *c, int argc, char **argv) {
     return 0;
   }
   if (streq(cmd, "env")) {
-    const char *names[] = {"USER",  "HOME", "PWD",     "HOSTNAME",
+    const char* names[] = {"USER",  "HOME", "PWD",     "HOSTNAME",
                            "SHELL", "PATH", "VERSION", 0};
     for (int i = 0; names[i]; i++) {
       char b[VFS_PATH];
@@ -939,7 +940,7 @@ static int command(Context *c, int argc, char **argv) {
     int index = vfs_lookup(argv[1]);
     if (index < 0)
       return verror(out, cmd);
-    int size = vfs_read(index, (u8 *)scripts[c->depth], 4095);
+    int size = vfs_read(index, (u8*)scripts[c->depth], 4095);
     if (size < 0)
       return verror(out, cmd);
     scripts[c->depth][size] = 0;
@@ -1003,10 +1004,10 @@ static int command(Context *c, int argc, char **argv) {
   }
   return error(out, cmd, "command not found; type help");
 }
-static int execute_segment(Token *tokens, int begin, int end, Sink *outer,
+static int execute_segment(Token* tokens, int begin, int end, Sink* outer,
                            int depth) {
   u32 input_length = 0;
-  const u8 *input = 0;
+  const u8* input = 0;
   int input_present = 0;
   int status = 0, stage = 0;
   while (begin < end) {
@@ -1015,7 +1016,7 @@ static int execute_segment(Token *tokens, int begin, int end, Sink *outer,
       finish++;
     if (finish == begin)
       return error(outer, "syntax", "empty pipeline stage");
-    char *argv[TOKENS];
+    char* argv[TOKENS];
     int argc = 0, append = 0;
     char redirect[VFS_PATH];
     redirect[0] = 0;
@@ -1025,19 +1026,19 @@ static int execute_segment(Token *tokens, int begin, int end, Sink *outer,
       if (type == '>' || type == '+' || type == '<') {
         if (i + 1 >= finish || tokens[i + 1].type)
           return error(outer, "syntax", "redirection requires a filename");
-        const char *name = tokens[++i].text;
+        const char* name = tokens[++i].text;
         if (strlen(name) >= VFS_PATH)
           return error(outer, "syntax", "path too long");
         if (type == '<') {
           if (input_present)
             return error(outer, "syntax", "input already provided");
-          const u8 *bytes;
+          const u8* bytes;
           u32 size;
           if (read_input(&context, name, &bytes, &size))
             return 1;
           if (size > PIPE_SIZE)
             return error(outer, "input", "redirection exceeds 8192 bytes");
-          u8 *buffer = pipes[depth][(stage + 1) & 1];
+          u8* buffer = pipes[depth][(stage + 1) & 1];
           memcpy(buffer, bytes, size);
           input = buffer;
           input_length = size;
@@ -1084,7 +1085,7 @@ static int execute_segment(Token *tokens, int begin, int end, Sink *outer,
   }
   return status;
 }
-static int execute(const char *s, Sink *out, int depth) {
+static int execute(const char* s, Sink* out, int depth) {
   if (depth >= SCRIPT_DEPTH)
     return error(out, "source", "nesting limit exceeded");
   Token tokens[TOKENS];
@@ -1170,12 +1171,12 @@ void shell_bridge_init(void) {
   outb(BRIDGE_UART + 4, 3);
   bridge_received = bridge_sent = bridge_size = 0;
   bridge_needed = 12;
-  debug("SINO SHELL BRIDGE v1 ready\n");
+  pr_debug("SINO SHELL BRIDGE v1 ready\n");
 }
 
 static void bridge_complete(int status, u32 flags, u32 size) {
   bridge_reply[0] = 0x31524353u; /* SCR1 */
-  bridge_reply[1] = *(u32 *)(bridge_request + 4);
+  bridge_reply[1] = *(u32*)(bridge_request + 4);
   bridge_reply[2] = (u32)status;
   bridge_reply[3] = flags;
   bridge_reply[4] = size;
@@ -1193,7 +1194,7 @@ void shell_bridge_poll(void) {
         return;
       u32 offset = bridge_sent++;
       u8 byte = offset < sizeof(bridge_reply)
-                    ? ((u8 *)bridge_reply)[offset]
+                    ? ((u8*)bridge_reply)[offset]
                     : bridge_output[offset - sizeof(bridge_reply)];
       outb(BRIDGE_UART, byte);
     }
@@ -1210,13 +1211,13 @@ void shell_bridge_poll(void) {
   for (u32 budget = 0; budget < 128 && (inb(BRIDGE_UART + 5) & 1); budget++) {
     bridge_request[bridge_received++] = inb(BRIDGE_UART);
     bridge_updated = ticks;
-    if (bridge_received == 4 && *(u32 *)bridge_request != 0x31534353u) {
+    if (bridge_received == 4 && *(u32*)bridge_request != 0x31534353u) {
       /* Find a frame boundary after a corrupt prefix. */
       memcpy(bridge_request, bridge_request + 1, 3);
       bridge_received = 3;
     }
     if (bridge_received == 12) {
-      u32 size = *(u32 *)(bridge_request + 8);
+      u32 size = *(u32*)(bridge_request + 8);
       if (size >= LINE_SIZE) {
         bridge_complete(S_INVALID, 0, 0);
         return;
@@ -1234,7 +1235,7 @@ void shell_bridge_poll(void) {
       }
       bridge_request[12 + size] = 0;
       Sink captured = {bridge_output, 0, PIPE_SIZE, 0};
-      int status = execute((char *)bridge_request + 12, &captured, 0);
+      int status = execute((char*)bridge_request + 12, &captured, 0);
       bridge_complete(status, captured.overflow ? 1u : 0u, captured.length);
       return;
     }
@@ -1272,7 +1273,7 @@ static void history_move(int direction) {
   length = position = strlen(line);
   repaint();
 }
-static void insert(const char *s) {
+static void insert(const char* s) {
   u32 n = strlen(s);
   if (length + n >= LINE_SIZE)
     return;
@@ -1360,8 +1361,8 @@ static void key_event(int key) {
   if (key == 13) {
     line[length] = 0;
     con_edit(anchor, line, length, length, painted);
-    debug(line);
-    debug("\n");
+    pr_debug(line);
+    pr_debug("\n");
     con_put('\n');
     add_history();
     execute(line, 0, 0);
@@ -1489,7 +1490,7 @@ void shell_init(void) {
   welcome();
   prompt();
   con_flush();
-  debug("SINO SH initialized in the graphical terminal\n");
+  pr_debug("SINO SH initialized in the graphical terminal\n");
 }
 void shell_step(void) {
   mouse_dirty = 0;
@@ -1500,7 +1501,7 @@ void shell_step(void) {
 void shell_key(int key) {
   key_event(key);
 }
-void shell_text(const char *text) {
+void shell_text(const char* text) {
   insert(text);
   repaint();
 }
@@ -1509,37 +1510,36 @@ void shell_tests(void) {
 }
 #else
 static u8 test_output[PIPE_SIZE + 1];
-static void check(int ok, const char *label) {
+static void check(int ok, const char* label) {
   if (!ok)
     panic(label, (u32)last_status, free_pages);
 }
 static void checkpoint(void) {
   con_flush();
 }
-static void test_command(const char *command_line, const char *expected,
+static void test_command(const char* command_line, const char* expected,
                          int status) {
   Sink out = {test_output, 0, PIPE_SIZE, 0};
   test_output[0] = 0;
-  debug("SHELL TEST: ");
-  debug(command_line);
-  debug("\n");
+  pr_debug("SHELL TEST: ");
+  pr_debug(command_line);
+  pr_debug("\n");
   int actual = execute(command_line, &out, 0);
   if (actual != status || out.overflow ||
-      (expected &&
-       !contains((const char *)test_output, out.length, expected))) {
-    debug("TEST OUTPUT: ");
-    debug((const char *)test_output);
-    debug("\n");
+      (expected && !contains((const char*)test_output, out.length, expected))) {
+    pr_debug("TEST OUTPUT: ");
+    pr_debug((const char*)test_output);
+    pr_debug("\n");
     panic("Shell command self-check", (u32)actual, (u32)status);
   }
 }
-static void file_is(const char *path, const char *expected) {
+static void file_is(const char* path, const char* expected) {
   int n = vfs_lookup(path);
   check(n >= 0, "Test file exists");
   int bytes = vfs_read(n, work, MAX_FILE);
   check(bytes >= 0, "Test file read");
   work[bytes] = 0;
-  check(streq((const char *)work, expected), "Test file contents");
+  check(streq((const char*)work, expected), "Test file contents");
 }
 static void key_send(u8 scan) {
   u32 before = keyboard_irqs;
@@ -1549,7 +1549,7 @@ static void key_send(u8 scan) {
   check(keyboard_irqs > before, "Keyboard IRQ1 delivery");
   shell_step();
 }
-static void type_text(const char *s) {
+static void type_text(const char* s) {
   static const u8 codes[26] = {30, 48, 46, 32, 18, 33, 34, 35, 23,
                                36, 37, 38, 50, 49, 24, 25, 16, 19,
                                31, 20, 22, 47, 17, 45, 21, 44};
@@ -1567,14 +1567,14 @@ static void extended_key(u8 scan) {
   key_send(0xe0);
   key_send(scan);
 }
-static void test_demo(const char *s) {
+static void test_demo(const char* s) {
   prompt();
   con_write(s);
   con_put('\n');
   execute(s, 0, 0);
 }
 void shell_tests(void) {
-  check(*(volatile u16 *)0x4f04 == 0x144 && *(volatile u8 *)0x4f06 == 16,
+  check(*(volatile u16*)0x4f04 == 0x144 && *(volatile u8*)0x4f06 == 16,
         "VBE graphics and 8x16 font");
   checkpoint();
   test_command("pwd", "/home/user", 0);
@@ -1634,7 +1634,7 @@ void shell_tests(void) {
   test_command("source /boot/demo.sh", "hello from SINO SH", 0);
   test_command("credits", "Not a FreeDOS or Linux kernel fork", 0);
   test_command("date", "2026-", 0);
-  debug("SINO SH FILES PARSER PIPELINES SCRIPTS TEST PASS\n");
+  pr_debug("SINO SH FILES PARSER PIPELINES SCRIPTS TEST PASS\n");
   execute("cd /home/user", 0, 0);
   con_clear();
   prompt();
@@ -1679,7 +1679,7 @@ void shell_tests(void) {
   checkpoint();
   extended_key(0x51);
   check(con_scrolled() == 0, "Page Down restores view");
-  debug("SINO SH KEYBOARD HISTORY COMPLETION SCROLL TEST PASS\n");
+  pr_debug("SINO SH KEYBOARD HISTORY COMPLETION SCROLL TEST PASS\n");
   con_clear();
   welcome();
   test_demo("uname -a");
@@ -1696,7 +1696,7 @@ void shell_tests(void) {
   line[0] = 0;
   prompt();
   con_flush();
-  debug("SINO 0.10 SHELL HARDWARE TEST PASS\n");
+  pr_debug("SINO 0.10 SHELL HARDWARE TEST PASS\n");
   checkpoint();
 }
 #endif

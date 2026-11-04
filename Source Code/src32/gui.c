@@ -1,3 +1,5 @@
+#include "locale.h"
+#include "klog.h"
 /* Paint has been hidden 261103. Legacy drawing code is retained but cannot be
  * launched. */
 #include "rtc.h"
@@ -24,7 +26,7 @@ typedef struct {
   char title[64], path[VFS_PATH], text[EDIT_CAP + 1];
   i32 value, acc;
   int op, entry, decimal, digits, error, color, eraser, px, py;
-  u8 *paint[10];
+  u8* paint[10];
   u32 node_generation;
 } Window;
 u32 gui_key_epoch, gui_mouse_epoch, gui_window_renders;
@@ -33,7 +35,7 @@ Window windows[NW];
 u32 gui_window_stride = sizeof(Window);
 int gui_active, gui_focus = -1;
 static u32 user_owner[NW], user_guard[NW];
-static UiCanvas *user_scene[NW];
+static UiCanvas* user_scene[NW];
 static int user_files_dirty;
 static int order[NW], count, desk_selected = -1, desk_nodes[32], desk_count;
 static int menu = -1, menu_row = -1, drag = -1, resize = -1, dx, dy,
@@ -62,10 +64,14 @@ static u32 last_click;
 static char clock_text[9];
 static u32 clock_pid;
 static u32 terminal[CON_ROWS * CON_COLS];
-static const char *appnames[] = {
-    "桌面", "文件管理器", "文本编辑", "计算器",    "画图",
-    "时钟", "终端",       "系统设置", "安装 SINO", "原生应用"};
-static const char *menus[] = {"SINO", "文件", "编辑", "显示", "窗口", "工具"};
+static const TextKey appnames[] = {
+    GUI_LABEL_DESKTOP,           GUI_LABEL_FILES,    GUI_LABEL_TEXTEDIT,
+    GUI_LABEL_CALCULATOR,        GUI_LABEL_PAINT,    GUI_LABEL_CLOCK,
+    GUI_LABEL_TERMINAL,          GUI_LABEL_SETTINGS, GUI_LABEL_INSTALL_SINO,
+    GUI_LABEL_NATIVE_APPLICATION};
+static const TextKey menus[] = {GUI_LABEL_SINO,   GUI_LABEL_FILE,
+                                GUI_LABEL_EDIT,   GUI_LABEL_DISPLAY,
+                                GUI_LABEL_WINDOW, GUI_LABEL_TOOLS};
 static int menux[] = {10, 167, 213, 260, 311, 387};
 static const u32 colors[16] = {0xffffff, 0x202126, 0x737982, 0xc4c7cb,
                                0xa42d36, 0xe66b43, 0xe6b552, 0xf6df9b,
@@ -80,17 +86,17 @@ static int max(int a, int b) {
 static int inside(int x, int y, int a, int b, int w, int h) {
   return x >= a && y >= b && x < a + w && y < b + h;
 }
-static void copy(char *d, const char *s) {
+static void copy(char* d, const char* s) {
   while ((*d++ = *s++)) {
   }
 }
-static int suffix(const char *s, const char *end) {
+static int suffix(const char* s, const char* end) {
   u32 a = strlen(s), b = strlen(end);
   return a >= b && streq(s + a - b, end);
 }
 /* Paint has been hidden 261103. Recognize old entries without deleting user
  * files. */
-static int suffix_fold(const char *s, const char *end) {
+static int suffix_fold(const char* s, const char* end) {
   u32 a = strlen(s), b = strlen(end);
   if (a < b)
     return 0;
@@ -105,10 +111,10 @@ static int suffix_fold(const char *s, const char *end) {
   }
   return 1;
 }
-static int paint_name(const char *s) {
+static int paint_name(const char* s) {
   return strlen(s) == 9 && suffix_fold(s, "paint.app");
 }
-static int paint_document(const char *s) {
+static int paint_document(const char* s) {
   return suffix_fold(s, ".snp");
 }
 static int hidden_paint_node(int n) {
@@ -118,10 +124,10 @@ static int hidden_paint_node(int n) {
     return 1;
   if (suffix_fold(nodes[n].name, ".lnk")) {
     char link[200];
-    int bytes = vfs_read(n, (u8 *)link, 199);
+    int bytes = vfs_read(n, (u8*)link, 199);
     if (bytes > 0) {
       link[bytes] = 0;
-      char *leaf = link;
+      char* leaf = link;
       for (int i = 0; link[i]; i++) {
         if (link[i] == '\n' || link[i] == '\r') {
           link[i] = 0;
@@ -135,7 +141,7 @@ static int hidden_paint_node(int n) {
   }
   return 0;
 }
-static Rect bounds(Window *w) {
+static Rect bounds(Window* w) {
   return (Rect){w->x, w->y, w->w + 5, w->h + 5};
 }
 static void invalidate(Rect r) {
@@ -158,10 +164,10 @@ static void changed(int i) {
     invalidate(bounds(&windows[i]));
   }
 }
-static const char *node_label(int);
+static const char* node_label(int);
 static void all_changed(void) {
   for (int i = 0; i < NW; i++) {
-    Window *w = &windows[i];
+    Window* w = &windows[i];
     if (w->used && w->app == FILES) {
       if (!nodes[w->folder].used)
         w->folder = vfs_lookup("/home/user");
@@ -185,60 +191,27 @@ static void all_changed(void) {
       changed(i);
   invalidate((Rect){0, 0, GUI_WIDTH, GUI_HEIGHT});
 }
-static const char *localized_error(const char *s) {
-  if (streq(s, "unknown error"))
-    return "未知错误";
-  if (streq(s, "path too long"))
-    return "路径过长";
-  if (streq(s, "file name too long (31 characters max)"))
-    return "名称过长，最多 31 字节。";
-  if (streq(s, "not a directory"))
-    return "不是文件夹。";
-  if (streq(s, "no such file or directory"))
-    return "找不到文件或文件夹。";
-  if (streq(s, "cannot change the root directory"))
-    return "不能修改根目录。";
-  if (streq(s, "read-only file system (/boot)"))
-    return "此位置只读，请选择个人磁盘或桌面。";
-  if (streq(s, "File table is full (64 nodes)"))
-    return "文件表已满（64 个项目）。";
-  if (streq(s, "file already exists"))
-    return "已有同名项目。";
-  if (streq(s, "no such file"))
-    return "找不到文件。";
-  if (streq(s, "is a directory"))
-    return "这是文件夹。";
-  if (streq(s, "file exceeds read buffer"))
-    return "文件过大。";
-  if (streq(s, "RAM file limit is 64 KB"))
-    return "单个文件最大为 64 KB。";
-  if (streq(s, "out of memory"))
-    return "内存不足。";
-  if (streq(s, "protected or read-only path"))
-    return "这是受保护或只读的项目。";
-  if (streq(s, "cannot remove current directory"))
-    return "不能删除当前目录。";
-  if (streq(s, "directory is not empty"))
-    return "文件夹不是空的，请先移走其中的文件。";
-  if (streq(s, "cannot move a directory into itself"))
-    return "不能把文件夹移动到自身或其子文件夹内。";
-  if (streq(s, "destination exists"))
-    return "目标位置已有同名项目。";
-  return s;
+static const char* vfs_message(void) {
+  static char text[128];
+  if (vfs_error_key == VFS_ERROR_NODE_LIMIT) {
+    if (locale_format(text, sizeof(text), vfs_error_key, "", VFS_NODES) < 0)
+      return locale_text(VFS_ERROR_UNKNOWN_ERROR);
+    return text;
+  }
+  return locale_text(vfs_error_key);
 }
-static void notice(const char *s) {
-  s = localized_error(s);
-  copy(message, settings_text(s));
+static void notice(const char* s) {
+  copy(message, s);
   modal = 2;
   copy(dialog_title, "SINO Desktop");
   invalidate((Rect){DIALOG_X, DIALOG_Y, 474, 224});
 }
-static void button(int x, int y, int w, const char *s) {
+static void button(int x, int y, int w, const char* s) {
   g_box(x, y, w, 26, 0x545860, BG);
   g_bevel(x + 1, y + 1, w - 2, 24, 0);
   g_text(3, x + (w - g_width(3, s)) / 2, y + 2, s, INK);
 }
-static int path_join(int folder, const char *name, char *out) {
+static int path_join(int folder, const char* name, char* out) {
   vfs_path(folder, out);
   u32 n = strlen(out);
   if (n + (n > 1) + strlen(name) >= VFS_PATH)
@@ -308,10 +281,10 @@ static int node_kind(int n) {
     return 2;
   return 0;
 }
-static void desktop_icon(int x, int y, int kind, const char *name,
+static void desktop_icon(int x, int y, int kind, const char* name,
                          int selected) {
   char label[40];
-  copy(label, settings_text(name));
+  copy(label, name);
   if (g_width(0, label) > 106) {
     int n = (int)strlen(label);
     while (n > 0) {
@@ -337,12 +310,16 @@ static void desktop_draw(void) {
     for (int x = (y & 4) ? 0 : 2; x < GUI_WIDTH; x += 4)
       g_fill(x, y, 1, 1, 0x7892a0);
   g_text(1, 35, GUI_HEIGHT - 76, "SINO", 0xb4c8d0);
-  g_text(0, 37, GUI_HEIGHT - 42, "经典桌面  /  0.10", 0xd0dce0);
-  desktop_icon(GUI_WIDTH - 124, 57, 3, "个人磁盘", desk_selected == -2);
-  desktop_icon(GUI_WIDTH - 124, 159, 3, "启动磁盘", desk_selected == -3);
-  desktop_icon(GUI_WIDTH - 124, 261, 2, "应用程序", desk_selected == -4);
-  desktop_icon(GUI_WIDTH - 124, GUI_HEIGHT - 111, 4, "废纸篓",
-               desk_selected == -5);
+  g_text(0, 37, GUI_HEIGHT - 42, locale_text(GUI_LABEL_PLATINUM_DESKTOP_0_10),
+         0xd0dce0);
+  desktop_icon(GUI_WIDTH - 124, 57, 3, locale_text(GUI_LABEL_HOME),
+               desk_selected == -2);
+  desktop_icon(GUI_WIDTH - 124, 159, 3, locale_text(GUI_LABEL_STARTUP_DISK),
+               desk_selected == -3);
+  desktop_icon(GUI_WIDTH - 124, 261, 2, locale_text(GUI_LABEL_APPLICATIONS),
+               desk_selected == -4);
+  desktop_icon(GUI_WIDTH - 124, GUI_HEIGHT - 111, 4,
+               locale_text(GUI_LABEL_TRASH), desk_selected == -5);
   desk_count = 0;
   int d = vfs_lookup("/home/user/Desktop");
   for (int i = 1; i < VFS_NODES && desk_count < 32; i++)
@@ -376,7 +353,7 @@ static void focus(int id) {
 }
 /* Paint has been hidden 261103. Reject direct legacy window allocation as well.
  */
-static int new_window(int app, const char *title, int width, int height) {
+static int new_window(int app, const char* title, int width, int height) {
   if (app == PAINT)
     return -1;
   int id;
@@ -384,10 +361,10 @@ static int new_window(int app, const char *title, int width, int height) {
     if (!windows[id].used)
       break;
   if (id == NW) {
-    notice("已打开八个窗口，请先关闭一个窗口。");
+    notice(locale_text(GUI_LABEL_EIGHT_WINDOWS_ARE_OPEN_CLOSE_ONE_FIRST));
     return -1;
   }
-  Window *w = &windows[id];
+  Window* w = &windows[id];
   memset(w, 0, sizeof(*w));
   w->used = 1;
   w->app = app;
@@ -404,7 +381,7 @@ static int new_window(int app, const char *title, int width, int height) {
   undo_valid[id] = 0;
   w->entry = 1;
   w->color = 1;
-  copy(w->title, settings_text(title));
+  copy(w->title, title);
   order[count++] = id;
   focus(id);
   return id;
@@ -417,8 +394,8 @@ static void folder_open(int n) {
   if (id >= 0)
     windows[id].folder = n;
 }
-static int app_from_name(const char *s) {
-  const char *names[] = {"Files.app",  "TextEdit.app", "Calculator.app",
+static int app_from_name(const char* s) {
+  const char* names[] = {"Files.app",  "TextEdit.app", "Calculator.app",
                          "Paint.app",  "Clock.app",    "Terminal.app",
                          "System.app", "Install.app"};
   for (int i = 0; i < 8; i++)
@@ -426,27 +403,29 @@ static int app_from_name(const char *s) {
       return i + 1;
   return 0;
 }
-static const char *node_label(int n) {
-  const char *paths[] = {"/home/user",
+static const char* node_label(int n) {
+  const char* paths[] = {"/home/user",
                          "/home/user/Desktop",
                          "/home/user/Documents",
                          "/Applications",
                          "/boot",
                          "/home/user/Trash"};
-  const char *labels[] = {"个人磁盘", "桌面",     "文稿",
-                          "应用程序", "启动磁盘", "废纸篓"};
+  const char* labels[] = {
+      locale_text(GUI_LABEL_HOME),         locale_text(GUI_LABEL_DESKTOP),
+      locale_text(GUI_LABEL_DOCUMENTS),    locale_text(GUI_LABEL_APPLICATIONS),
+      locale_text(GUI_LABEL_STARTUP_DISK), locale_text(GUI_LABEL_TRASH)};
   if (n == 0)
-    return "计算机";
+    return locale_text(GUI_LABEL_COMPUTER);
   for (int i = 0; i < 6; i++)
     if (n == vfs_lookup(paths[i]))
-      return settings_text(labels[i]);
+      return labels[i];
   int app = app_from_name(nodes[n].name);
   if (app)
-    return settings_text(appnames[app]);
+    return locale_text(appnames[app]);
   if (suffix(nodes[n].name, ".lnk")) {
     static char label[64];
     char contents[200];
-    int bytes = vfs_read(n, (u8 *)contents, 199);
+    int bytes = vfs_read(n, (u8*)contents, 199);
     if (bytes > 0) {
       contents[bytes] = 0;
       for (int i = 0; i < bytes; i++)
@@ -479,12 +458,13 @@ static void launch_clock(void) {
   }
   clock_pid = 0;
   if (count >= NW) {
-    notice("窗口已满，请先关闭部分应用。");
+    notice(locale_text(GUI_LABEL_CLOSE_SOME_APPLICATIONS_TO_FREE_A_WINDOW));
     return;
   }
   int pid = process_launch("/boot/clock.snx", 0);
   if (pid < 0)
-    notice("无法启动时钟，请检查启动文件或关闭部分应用。");
+    notice(locale_text(
+        GUI_LABEL_CANNOT_START_CLOCK_CHECK_BOOT_FILES_OR_CLOSE_SOME_APPLICATIONS));
   else
     clock_pid = (u32)pid;
 }
@@ -492,7 +472,7 @@ static void launch_clock(void) {
  * file/compatibility paths. */
 static int launch(int app) {
   if (app == PAINT) {
-    notice("画板已暂停，画稿已保留。");
+    notice(locale_text(GUI_LABEL_PAINT_IS_UNAVAILABLE_DRAWINGS_ARE_PRESERVED));
     return -1;
   }
   if (app == CLOCK) {
@@ -501,7 +481,8 @@ static int launch(int app) {
   }
   if (app == CALC) {
     if (count >= NW || process_launch("/boot/calc.snx", 0) < 0)
-      notice("无法启动计算器，请检查启动文件或关闭部分应用。");
+      notice(locale_text(
+          GUI_LABEL_CANNOT_START_CALCULATOR_CHECK_BOOT_FILES_OR_CLOSE_SOME_APPLICATIONS));
     return -1;
   }
   if (app == SYSTEM)
@@ -528,18 +509,18 @@ static int launch(int app) {
                : app == SYSTEM  ? 550
                : app == INSTALL ? 650
                                 : 460;
-  int id = new_window(app, appnames[app], width, height);
+  int id = new_window(app, locale_text(appnames[app]), width, height);
   if (id < 0)
     return -1;
-  Window *w = &windows[id];
+  Window* w = &windows[id];
   if (app == EDIT)
-    copy(w->title, settings_text("未命名文稿"));
+    copy(w->title, locale_text(GUI_LABEL_UNTITLED));
   if (app == PAINT) {
-    copy(w->title, settings_text("未命名画稿"));
+    copy(w->title, locale_text(GUI_LABEL_UNTITLED_DRAWING));
     for (int i = 0; i < 10; i++) {
       w->paint[i] = page_alloc();
       if (!w->paint[i]) {
-        notice("绘图内存不足。");
+        notice(locale_text(GUI_LABEL_NOT_ENOUGH_DRAWING_MEMORY));
         return -1;
       }
       memset(w->paint[i], 0, 4096);
@@ -552,19 +533,19 @@ static void open_node(int n) {
     return;
   if (!nodes[n].dir &&
       (hidden_paint_node(n) || paint_document(nodes[n].name))) {
-    notice("画板已暂停，画稿已保留。");
+    notice(locale_text(GUI_LABEL_PAINT_IS_UNAVAILABLE_DRAWINGS_ARE_PRESERVED));
     return;
   }
   if (suffix(nodes[n].name, ".sxp")) {
     char path[VFS_PATH];
     vfs_path(n, path);
     if (process_launch_args("/boot/setup.snx", CAP_HOME, path) < 0)
-      notice("Cannot start package installer");
+      notice(locale_text(GUI_LABEL_CANNOT_START_PACKAGE_INSTALLER));
     return;
   }
   if (suffix(nodes[n].name, ".lnk")) {
     char link[200];
-    int bytes = vfs_read(n, (u8 *)link, 199);
+    int bytes = vfs_read(n, (u8*)link, 199);
     if (bytes > 0) {
       link[bytes] = 0;
       for (int i = 0; link[i]; i++)
@@ -573,7 +554,7 @@ static void open_node(int n) {
           break;
         }
       if (process_launch(link, CAP_HOME) < 0)
-        notice("Cannot open shortcut");
+        notice(locale_text(GUI_LABEL_CANNOT_OPEN_SHORTCUT));
     }
     return;
   }
@@ -581,7 +562,7 @@ static void open_node(int n) {
     char path[VFS_PATH];
     vfs_path(n, path);
     if (process_launch(path, CAP_HOME) < 0)
-      notice("Cannot start native application");
+      notice(locale_text(GUI_LABEL_CANNOT_START_NATIVE_APPLICATION));
     return;
   }
   if (nodes[n].dir) {
@@ -594,13 +575,13 @@ static void open_node(int n) {
     return;
   }
   if (nodes[n].size > EDIT_CAP && !suffix(nodes[n].name, ".snp")) {
-    notice("文本编辑支持最大 16 KB 的文件。");
+    notice(locale_text(GUI_LABEL_TEXTEDIT_SUPPORTS_FILES_UP_TO_16_KB));
     return;
   }
   int id = launch(suffix(nodes[n].name, ".snp") ? PAINT : EDIT);
   if (id < 0)
     return;
-  Window *w = &windows[id];
+  Window* w = &windows[id];
   w->node = n;
   w->node_generation = vfs_generation[n];
   vfs_path(n, w->path);
@@ -610,27 +591,27 @@ static void open_node(int n) {
     int len = vfs_read(n, data, sizeof(data));
     if (len != 40968 || data[0] != 'S' || data[1] != 'N' || data[2] != 'P' ||
         data[3] != '1') {
-      notice("这不是 SINO 画图文件。");
+      notice(locale_text(GUI_LABEL_THIS_IS_NOT_A_SINO_PAINT_DRAWING));
       return;
     }
     for (int j = 0; j < 40960; j++)
       w->paint[j / 4096][j % 4096] = data[j + 8] & 15;
   } else {
-    w->len = vfs_read(n, (u8 *)w->text, EDIT_CAP);
+    w->len = vfs_read(n, (u8*)w->text, EDIT_CAP);
     if (w->len < 0) {
       w->len = 0;
-      notice(vfs_error);
+      notice(vfs_message());
     }
     w->text[w->len] = 0;
   }
   changed(id);
 }
-static void prompt(int what, int id, const char *title, const char *initial) {
+static void prompt(int what, int id, const char* title, const char* initial) {
   modal = 1;
   action = what;
   owner = id;
-  copy(dialog_title, settings_text(title));
-  copy(dialog, settings_text(initial));
+  copy(dialog_title, title);
+  copy(dialog, initial);
   dialog_len = (int)strlen(dialog);
   dialog_selected = 1;
   message[0] = 0;
@@ -644,7 +625,7 @@ static int current_folder(void) {
 static void close_now(int id) {
   if (id < 0)
     return;
-  Window *w = &windows[id];
+  Window* w = &windows[id];
   if (user_owner[id]) {
     u32 pid = user_owner[id];
     user_owner[id] = 0;
@@ -682,7 +663,7 @@ static void close_window(int id) {
     return;
   }
   if (id >= 0 && windows[id].app == INSTALL && !install_can_close()) {
-    notice("安装正在进行，请等待完成。");
+    notice(locale_text(GUI_LABEL_INSTALLATION_IS_IN_PROGRESS_PLEASE_WAIT));
     return;
   }
   if (id >= 0 && windows[id].app == SYSTEM && settings_pending)
@@ -690,7 +671,7 @@ static void close_window(int id) {
   if (id >= 0 && windows[id].modified) {
     modal = 3;
     owner = id;
-    copy(dialog_title, settings_text("关闭前保存更改？"));
+    copy(dialog_title, locale_text(GUI_LABEL_SAVE_CHANGES_BEFORE_CLOSING));
     copy(message, windows[id].title);
     invalidate((Rect){DIALOG_X, DIALOG_Y, 474, 224});
   } else
@@ -699,11 +680,11 @@ static void close_window(int id) {
 /* Paint has been hidden 261103. Retain legacy SNP save code for a future
  * migration. */
 static int save_window(int id) {
-  Window *w = &windows[id];
+  Window* w = &windows[id];
   if (w->node < 0 || !nodes[w->node].used ||
       vfs_generation[w->node] != w->node_generation ||
       nodes[w->node].readonly) {
-    prompt(4, id, "另存为（完整路径）",
+    prompt(4, id, locale_text(GUI_LABEL_SAVE_AS_FULL_PATH),
            w->path[0]        ? w->path
            : w->app == PAINT ? "/home/user/Desktop/Drawing.snp"
                              : "/home/user/Desktop/Untitled.txt");
@@ -713,20 +694,20 @@ static int save_window(int id) {
   if (w->app == PAINT) {
     static u8 data[40968];
     memset(data, 0, 8);
-    copy((char *)data, "SNP1");
+    copy((char*)data, "SNP1");
     data[5] = 1;
     data[6] = 160;
     for (int j = 0; j < 40960; j++)
       data[j + 8] = w->paint[j / 4096][j % 4096];
     ok = vfs_write(w->node, data, sizeof(data), 0);
   } else
-    ok = vfs_write(w->node, (u8 *)w->text, (u32)w->len, 0);
+    ok = vfs_write(w->node, (u8*)w->text, (u32)w->len, 0);
   if (ok < 0) {
-    notice(vfs_error);
+    notice(vfs_message());
     return 0;
   }
   if (storage_ready && !storage_sync()) {
-    notice(storage_error);
+    notice(locale_text(storage_error_key));
     return 0;
   }
   w->modified = 0;
@@ -742,7 +723,7 @@ static void trash_node(int n) {
   int result = nodes[n].parent == trash ? vfs_remove(p, nodes[n].dir)
                                         : vfs_move(p, "/home/user/Trash");
   if (result < 0)
-    notice(vfs_error);
+    notice(vfs_message());
   else {
     desk_selected = -1;
     all_changed();
@@ -750,17 +731,19 @@ static void trash_node(int n) {
 }
 static void command(int cmd) {
   int id = gui_focus;
-  Window *w = id >= 0 ? &windows[id] : 0;
+  Window* w = id >= 0 ? &windows[id] : 0;
   char p[VFS_PATH];
   switch (cmd) {
     case 1:
       launch(EDIT);
       break;
     case 2:
-      prompt(1, id, "新建文件夹", "新建文件夹");
+      prompt(1, id, locale_text(GUI_LABEL_NEW_FOLDER),
+             locale_text(GUI_LABEL_NEW_FOLDER));
       break;
     case 3:
-      prompt(2, id, "新建文本文件", "新建文件.txt");
+      prompt(2, id, locale_text(GUI_LABEL_NEW_TEXT_FILE),
+             locale_text(GUI_LABEL_UNTITLED_TXT));
       break;
     case 4:
       if (w && (w->app == EDIT || w->app == PAINT))
@@ -768,7 +751,7 @@ static void command(int cmd) {
       break;
     case 5:
       if (w && (w->app == EDIT || w->app == PAINT))
-        prompt(4, id, "另存为（完整路径）",
+        prompt(4, id, locale_text(GUI_LABEL_SAVE_AS_FULL_PATH),
                w->path[0]        ? w->path
                : w->app == PAINT ? "/home/user/Desktop/Drawing.snp"
                                  : "/home/user/Desktop/Untitled.txt");
@@ -787,7 +770,7 @@ static void command(int cmd) {
       } else if (desk_selected >= 0)
         open_node(desk_selected);
       else
-        prompt(5, id, "打开（完整路径）", "/home/user/");
+        prompt(5, id, locale_text(GUI_LABEL_OPEN_FULL_PATH), "/home/user/");
       break;
     case 7:
       close_window(id);
@@ -795,7 +778,7 @@ static void command(int cmd) {
     case 8: {
       int n = w && w->app == FILES ? w->selected : desk_selected;
       if (n >= 0)
-        prompt(3, id, "重命名", nodes[n].name);
+        prompt(3, id, locale_text(GUI_LABEL_RENAME), nodes[n].name);
       break;
     }
     case 9:
@@ -812,24 +795,25 @@ static void command(int cmd) {
       break;
     case 13:
       if (!storage_sync())
-        notice(storage_error);
+        notice(locale_text(storage_error_key));
       else
-        notice("个人文件已保存到 SINO 数据磁盘。");
+        notice(
+            locale_text(GUI_LABEL_HOME_FILES_HAVE_BEEN_SAVED_TO_THE_DATA_DISK));
       break;
     case 14: {
       int n = w && w->app == FILES ? w->selected : desk_selected;
       if (n >= 0) {
         vfs_path(n, p);
-        prompt(6, id, "移动到（完整路径）", p);
+        prompt(6, id, locale_text(GUI_LABEL_MOVE_TO_FULL_PATH), p);
       }
       break;
     }
     case 15:
-      prompt(5, id, "打开（完整路径）", "/home/user/");
+      prompt(5, id, locale_text(GUI_LABEL_OPEN_FULL_PATH), "/home/user/");
       break;
   }
 }
-static int valid_name(const char *s) {
+static int valid_name(const char* s) {
   if (!*s || strlen(s) > 31 || streq(s, ".") || streq(s, ".."))
     return 0;
   while (*s) {
@@ -848,16 +832,20 @@ static void accept_dialog(void) {
     dir = windows[id].folder;
   if (what == 1 || what == 2) {
     if (!valid_name(dialog)) {
-      copy(message,
-           settings_text("名称最多 31 个英文字符或 10 个汉字，不能含斜杠。"));
+      copy(
+          message,
+          locale_text(
+              GUI_LABEL_USE_UP_TO_31_ASCII_LETTERS_OR_10_CHINESE_CHARACTERS_NO_SLASHES));
       return;
     }
     if (!path_join(dir, dialog, p)) {
-      copy(message, settings_text("路径过长，请使用较短的名称。"));
+      copy(message,
+           locale_text(GUI_LABEL_THE_PATH_IS_TOO_LONG_USE_A_SHORTER_NAME));
       return;
     }
     if (vfs_lookup(p) >= 0) {
-      copy(message, settings_text("已有同名文件或文件夹。"));
+      copy(message,
+           locale_text(GUI_LABEL_A_FILE_OR_FOLDER_ALREADY_HAS_THAT_NAME));
       return;
     }
     result = vfs_create(p, what == 1, 0);
@@ -869,23 +857,27 @@ static void accept_dialog(void) {
     vfs_path(n, source);
     if (what == 3) {
       if (!valid_name(dialog)) {
-        copy(message,
-             settings_text("名称最多 31 个英文字符或 10 个汉字，不能含斜杠。"));
+        copy(
+            message,
+            locale_text(
+                GUI_LABEL_USE_UP_TO_31_ASCII_LETTERS_OR_10_CHINESE_CHARACTERS_NO_SLASHES));
         return;
       }
       if (!path_join(nodes[n].parent, dialog, p)) {
-        copy(message, settings_text("路径过长，请使用较短的名称。"));
+        copy(message,
+             locale_text(GUI_LABEL_THE_PATH_IS_TOO_LONG_USE_A_SHORTER_NAME));
         return;
       }
     } else
       copy(p, dialog);
     result = vfs_move(source, p);
   } else if (what == 4) {
-    Window *w = &windows[id];
+    Window* w = &windows[id];
     int old = w->node;
     result = vfs_lookup(dialog);
     if (result >= 0 && result != old) {
-      copy(message, settings_text("此文件已存在，请使用其他名称。"));
+      copy(message,
+           locale_text(GUI_LABEL_THIS_FILE_ALREADY_EXISTS_CHOOSE_ANOTHER_NAME));
       return;
     }
     if (result < 0)
@@ -915,7 +907,7 @@ static void accept_dialog(void) {
     }
   }
   if (result < 0) {
-    copy(message, settings_text(localized_error(vfs_error)));
+    copy(message, vfs_message());
     return;
   }
   modal = 0;
@@ -924,10 +916,10 @@ static void accept_dialog(void) {
   if (what == 2)
     open_node(result);
 }
-static int rows(Window *w) {
+static int rows(Window* w) {
   return (w->h - 139) / 28;
 }
-static int file_list(Window *w, int *list) {
+static int file_list(Window* w, int* list) {
   int n = 0, library = w->folder == vfs_lookup("/Applications"),
       links = library ? vfs_lookup("/home/user/.sino/menu") : -1;
   for (int i = 1; i < VFS_NODES; i++)
@@ -938,19 +930,21 @@ static int file_list(Window *w, int *list) {
       list[n++] = i;
   return n;
 }
-static void files_draw(Window *w) {
+static void files_draw(Window* w) {
   char p[VFS_PATH], b[16];
   vfs_path(w->folder, p);
   g_fill(2, 30, w->w - 4, 40, 0xe4e5e8);
-  button(12, 37, 44, "上级");
-  button(66, 37, 95, "新建文件夹");
-  button(171, 37, 95, "新建文本");
-  button(276, 37, 68, "打开");
-  button(354, 37, 70, "废纸篓");
+  button(12, 37, 44, locale_text(GUI_LABEL_UP));
+  button(66, 37, 95, locale_text(GUI_LABEL_NEW_FOLDER));
+  button(171, 37, 95, locale_text(GUI_LABEL_NEW_TEXT));
+  button(276, 37, 68, locale_text(GUI_LABEL_OPEN));
+  button(354, 37, 70, locale_text(GUI_LABEL_TRASH));
   g_fill(2, 78, 135, w->h - 80, 0xe7e9ed);
-  const char *side[] = {"个人磁盘", "桌面",     "文稿",
-                        "应用程序", "启动磁盘", "废纸篓"};
-  const char *paths[] = {"/home/user",
+  const char* side[] = {
+      locale_text(GUI_LABEL_HOME),         locale_text(GUI_LABEL_DESKTOP),
+      locale_text(GUI_LABEL_DOCUMENTS),    locale_text(GUI_LABEL_APPLICATIONS),
+      locale_text(GUI_LABEL_STARTUP_DISK), locale_text(GUI_LABEL_TRASH)};
+  const char* paths[] = {"/home/user",
                          "/home/user/Desktop",
                          "/home/user/Documents",
                          "/Applications",
@@ -961,8 +955,8 @@ static void files_draw(Window *w) {
       g_fill(5, 93 + j * 37, 128, 30, 0xc4d0e1);
     g_text(0, 16, 97 + j * 37, side[j], INK);
   }
-  g_text(0, 150, 78, "名称", 0x656a72);
-  g_text(0, w->w - 109, 78, "大小", 0x656a72);
+  g_text(0, 150, 78, locale_text(GUI_LABEL_NAME), 0x656a72);
+  g_text(0, w->w - 109, 78, locale_text(GUI_LABEL_SIZE), 0x656a72);
   g_line(141, 102, w->w - 13, 102, 0xc8cbd1);
   int list[VFS_NODES], n = file_list(w, list), visible = rows(w);
   w->first = max(0, min(w->first, max(0, n - visible)));
@@ -976,7 +970,8 @@ static void files_draw(Window *w) {
     g_cliptext(181, y + 3, w->w - 303, node_label(i),
                i == w->selected ? 0xffffff : INK);
     number(nodes[i].size, b);
-    g_text(0, w->w - 108, y + 3, nodes[i].dir ? "文件夹" : b,
+    g_text(0, w->w - 108, y + 3,
+           nodes[i].dir ? locale_text(GUI_LABEL_FOLDER) : b,
            i == w->selected ? 0xe4eaf4 : 0x69717e);
   }
   if (n > visible) {
@@ -986,7 +981,7 @@ static void files_draw(Window *w) {
   g_fill(2, w->h - 27, w->w - 4, 25, BG);
   g_cliptext(12, w->h - 25, w->w - 35, p, 0x555b65);
 }
-static void edit_position(Window *w, int pos, int *line, int *col) {
+static void edit_position(Window* w, int pos, int* line, int* col) {
   *line = 0;
   *col = 0;
   int i = 0;
@@ -999,7 +994,7 @@ static void edit_position(Window *w, int pos, int *line, int *col) {
       (*col)++;
   }
 }
-static int edit_index(Window *w, int line, int col) {
+static int edit_index(Window* w, int line, int col) {
   int i = 0, row = 0;
   while (i < w->len && row < line)
     if (utf_next(w->text, &i) == '\n')
@@ -1008,7 +1003,7 @@ static int edit_index(Window *w, int line, int col) {
     utf_next(w->text, &i);
   return i;
 }
-static int edit_hit(Window *w, int line, int pixel) {
+static int edit_hit(Window* w, int line, int pixel) {
   int i = edit_index(w, line, 0), x = 0;
   while (i < w->len && w->text[i] != '\n') {
     int next = i;
@@ -1020,7 +1015,7 @@ static int edit_hit(Window *w, int line, int pixel) {
   }
   return i;
 }
-static void edit_reveal(Window *w) {
+static void edit_reveal(Window* w) {
   int l, c, x = 0;
   edit_position(w, w->caret, &l, &c);
   int height = (w->h - 115) / 18, width = w->w - 48;
@@ -1035,12 +1030,14 @@ static void edit_reveal(Window *w) {
   if (x >= w->hscroll + width)
     w->hscroll = x - width + 1;
 }
-static void edit_draw(Window *w) {
+static void edit_draw(Window* w) {
   g_fill(2, 30, w->w - 4, 37, 0xe4e5e8);
-  button(12, 35, 65, "保存");
-  button(87, 35, 80, "另存为");
+  button(12, 35, 65, locale_text(GUI_LABEL_SAVE));
+  button(87, 35, 80, locale_text(GUI_LABEL_SAVE_AS));
   g_text(0, 181, 39,
-         w->modified ? "已修改" : "UTF-8 文本  /  Ctrl+空格切换拼音", 0x737984);
+         w->modified ? locale_text(GUI_LABEL_EDITED)
+                     : locale_text(GUI_LABEL_UTF_8_TEXT_CTRL_SPACE_PINYIN),
+         0x737984);
   g_fill(12, 77, w->w - 25, w->h - 111, 0xfffefa);
   g_clip((Rect){18, 79, w->w - 40, w->h - 115});
   int pos = edit_index(w, w->scroll, 0), row = 0, x = 20 - w->hscroll,
@@ -1070,16 +1067,17 @@ static void edit_draw(Window *w) {
   char b[12];
   int l, c;
   edit_position(w, w->caret, &l, &c);
-  g_text(0, 12, w->h - 25, "行", 0x646a74);
+  g_text(0, 12, w->h - 25, locale_text(GUI_LABEL_LN), 0x646a74);
   number((u32)l + 1, b);
   g_text(0, 34, w->h - 25, b, INK);
-  g_text(0, 78, w->h - 25, "列", 0x646a74);
+  g_text(0, 78, w->h - 25, locale_text(GUI_LABEL_COL), 0x646a74);
   number((u32)c + 1, b);
   g_text(0, 109, w->h - 25, b, INK);
   g_cliptext(167, w->h - 25, w->w - 200,
-             w->path[0] ? w->path : "尚未保存的文稿", 0x646a74);
+             w->path[0] ? w->path : locale_text(GUI_LABEL_UNSAVED_DOCUMENT),
+             0x646a74);
 }
-static void delete_selection(Window *w) {
+static void delete_selection(Window* w) {
   if (w->anchor >= 0 && w->anchor != w->caret) {
     int lo = min(w->anchor, w->caret), hi = max(w->anchor, w->caret);
     for (int i = lo; i <= w->len - (hi - lo); i++)
@@ -1090,10 +1088,10 @@ static void delete_selection(Window *w) {
   }
   w->anchor = -1;
 }
-static void insert(Window *w, const char *s, int n) {
+static void insert(Window* w, const char* s, int n) {
   delete_selection(w);
   if (n > EDIT_CAP - w->len) {
-    notice("文稿已达到 16 KB 上限。");
+    notice(locale_text(GUI_LABEL_THIS_DOCUMENT_HAS_REACHED_THE_16_KB_LIMIT));
     return;
   }
   for (int i = w->len; i >= w->caret; i--)
@@ -1103,7 +1101,7 @@ static void insert(Window *w, const char *s, int n) {
   w->caret += n;
   w->modified = 1;
 }
-static void edit_key(Window *w, int key) {
+static void edit_key(Window* w, int key) {
   int id = -1;
   for (int j = 0; j < NW; j++)
     if (w == &windows[j])
@@ -1190,7 +1188,7 @@ static void edit_key(Window *w, int key) {
 }
 static void edit_command(int key) {
   int id = gui_focus;
-  Window *w = id >= 0 ? &windows[id] : 0;
+  Window* w = id >= 0 ? &windows[id] : 0;
   if (w && w->app == EDIT) {
     edit_key(w, key);
     changed(id);
@@ -1206,7 +1204,7 @@ static void edit_command(int key) {
     return;
   int source = vfs_lookup(file_clipboard);
   if (source < 0) {
-    notice("复制的文件已经不存在。");
+    notice(locale_text(GUI_LABEL_THE_COPIED_FILE_NO_LONGER_EXISTS));
     return;
   }
   char dest[VFS_PATH], name[VFS_NAME];
@@ -1240,13 +1238,13 @@ static void edit_command(int key) {
     }
   }
   if (!path_join(folder, name, dest)) {
-    notice("目标路径过长。");
+    notice(locale_text(GUI_LABEL_THE_DESTINATION_PATH_IS_TOO_LONG));
     return;
   }
   int result = file_cut ? vfs_move(file_clipboard, dest)
-                        : vfs_copy(file_clipboard, dest, (u8 *)0xf00000);
+                        : vfs_copy(file_clipboard, dest, (u8*)0xf00000);
   if (result < 0)
-    notice(vfs_error);
+    notice(vfs_message());
   else {
     if (file_cut)
       file_clipboard[0] = 0;
@@ -1255,11 +1253,11 @@ static void edit_command(int key) {
 }
 /* Paint has been hidden 261103. Retained painting implementation; no user
  * launch entry. */
-static u8 paint_get(Window *w, int x, int y) {
+static u8 paint_get(Window* w, int x, int y) {
   int p = y * 256 + x;
   return w->paint[p / 4096][p % 4096];
 }
-static void paint_dot(Window *w, int x, int y) {
+static void paint_dot(Window* w, int x, int y) {
   if (x < 0 || x >= 256 || y < 0 || y >= 160 || !w->paint[0])
     return;
   int r = w->eraser ? 3 : 0;
@@ -1270,7 +1268,7 @@ static void paint_dot(Window *w, int x, int y) {
     }
   w->modified = 1;
 }
-static void paint_stroke(Window *w, int x, int y) {
+static void paint_stroke(Window* w, int x, int y) {
   int a = w->px, b = w->py, xx = x > a ? x - a : a - x, sx = a < x ? 1 : -1,
       yy = y > b ? b - y : y - b, sy = b < y ? 1 : -1, e = xx + yy;
   for (;;) {
@@ -1290,12 +1288,14 @@ static void paint_stroke(Window *w, int x, int y) {
   w->px = x;
   w->py = y;
 }
-static void paint_draw(Window *w) {
+static void paint_draw(Window* w) {
   g_fill(2, 30, w->w - 4, 42, 0xe4e5e8);
-  button(12, 38, 60, "保存");
-  button(82, 38, 78, w->eraser ? "橡皮" : "画笔");
-  button(170, 38, 65, "清空");
-  g_text(0, 251, 42, "256 x 160 像素", 0x717884);
+  button(12, 38, 60, locale_text(GUI_LABEL_SAVE));
+  button(82, 38, 78,
+         w->eraser ? locale_text(GUI_LABEL_ERASER)
+                   : locale_text(GUI_LABEL_PENCIL));
+  button(170, 38, 65, locale_text(GUI_LABEL_CLEAR));
+  g_text(0, 251, 42, locale_text(GUI_LABEL_256_X_160_PIXELS), 0x717884);
   g_box(35, 83, 514, 322, 0x767c86, 0xffffff);
   if (w->paint[0])
     for (int y = 0; y < 160; y++)
@@ -1308,7 +1308,7 @@ static void paint_draw(Window *w) {
       g_box(x - 2, 418, 31, 31, INK, colors[j]);
   }
 }
-static void terminal_draw(Window *w) {
+static void terminal_draw(Window* w) {
   static const u32 palette[16] = {0x171c25, 0x7489bc, 0x8bba9b, 0x7eb5c2,
                                   0xc58088, 0xad91bd, 0xd6bd8a, 0xd6dce6,
                                   0x7f899c, 0x94ade3, 0xa8d6a9, 0x99d4da,
@@ -1328,16 +1328,16 @@ static void terminal_draw(Window *w) {
       (int)(pos / 80) >= skip)
     g_fill(20 + (int)(pos % 80) * 7, 60 + ((int)(pos / 80) - skip) * 18, 6, 1,
            0xc5d2ea);
-  g_text(0, 20, w->h - 31, "SINO SH  /  Ctrl+L 清屏  /  Page Up 翻页",
-         0x7d8da6);
+  g_text(0, 20, w->h - 31,
+         locale_text(GUI_LABEL_SINO_SH_CTRL_L_CLEAR_PAGE_UP_SCROLL), 0x7d8da6);
 }
 static void user_draw(int id) {
-  UiCanvas *scene = user_scene[id];
-  Window *w = &windows[id];
+  UiCanvas* scene = user_scene[id];
+  Window* w = &windows[id];
   g_clip((Rect){1, 30, w->w - 2, w->h - 31});
   if (scene)
     for (u32 i = 0; i < scene->count; i++) {
-      UiCommand *c = &scene->commands[i];
+      UiCommand* c = &scene->commands[i];
       if (c->kind == UI_FILL)
         g_fill(c->x, c->y, c->w, c->h, c->color);
       else if (c->kind == UI_TEXT) {
@@ -1390,7 +1390,7 @@ static void user_draw(int id) {
 }
 static void window_draw(int id) {
   gui_window_renders++;
-  Window *w = &windows[id];
+  Window* w = &windows[id];
   g_target(WINDOW_CACHE(id), w->w, w->h);
   g_box(0, 0, w->w, w->h, 0x383b42, 0xfafbfcu);
   g_line(1, 1, w->w - 2, 1, 0xffffff);
@@ -1456,24 +1456,36 @@ static int menu_count(void) {
     return count ? count : 1;
   return 3;
 }
-static const char *menu_label(int m, int row) {
-  static const char *sino[] = {"系统设置", "文件管理器", "文本编辑",
-                               "计算器",   "时钟",       "终端",
-                               "应用程序", "安装 SINO",  "原生应用"};
-  static const char *file[] = {"新建窗口 / 文稿  Ctrl+N",
-                               "新建文件夹",
-                               "新建文本文件",
-                               "打开...  Ctrl+O",
-                               "保存  Ctrl+S",
-                               "另存为...",
-                               "重命名",
-                               "移动到...",
-                               "移到废纸篓 / 删除",
-                               "关闭窗口  Ctrl+W"};
-  static const char *edit[] = {"全选  Ctrl+A", "复制  Ctrl+C", "剪切  Ctrl+X",
-                               "粘贴  Ctrl+V"};
-  static const char *view[] = {"个人目录", "应用程序", "刷新桌面"};
-  static const char *special[] = {"保存个人文件到磁盘", "系统设置", "桌面帮助"};
+static const char* menu_label(int m, int row) {
+  const char* sino[] = {locale_text(GUI_LABEL_SETTINGS),
+                        locale_text(GUI_LABEL_FILES),
+                        locale_text(GUI_LABEL_TEXTEDIT),
+                        locale_text(GUI_LABEL_CALCULATOR),
+                        locale_text(GUI_LABEL_CLOCK),
+                        locale_text(GUI_LABEL_TERMINAL),
+                        locale_text(GUI_LABEL_APPLICATIONS),
+                        locale_text(GUI_LABEL_INSTALL_SINO),
+                        locale_text(GUI_LABEL_NATIVE_APPLICATION)};
+  const char* file[] = {locale_text(GUI_LABEL_NEW_WINDOW_DOCUMENT_CTRL_N),
+                        locale_text(GUI_LABEL_NEW_FOLDER),
+                        locale_text(GUI_LABEL_NEW_TEXT_FILE),
+                        locale_text(GUI_LABEL_OPEN_CTRL_O),
+                        locale_text(GUI_LABEL_SAVE_CTRL_S),
+                        locale_text(GUI_LABEL_SAVE_AS_ALTERNATE),
+                        locale_text(GUI_LABEL_RENAME),
+                        locale_text(GUI_LABEL_MOVE_TO),
+                        locale_text(GUI_LABEL_MOVE_TO_TRASH_DELETE),
+                        locale_text(GUI_LABEL_CLOSE_WINDOW_CTRL_W)};
+  const char* edit[] = {locale_text(GUI_LABEL_SELECT_ALL_CTRL_A),
+                        locale_text(GUI_LABEL_COPY_CTRL_C),
+                        locale_text(GUI_LABEL_CUT_CTRL_X),
+                        locale_text(GUI_LABEL_PASTE_CTRL_V)};
+  const char* view[] = {locale_text(GUI_LABEL_HOME_ALTERNATE),
+                        locale_text(GUI_LABEL_APPLICATIONS),
+                        locale_text(GUI_LABEL_REFRESH_DESKTOP)};
+  const char* special[] = {locale_text(GUI_LABEL_SAVE_HOME_TO_DISK),
+                           locale_text(GUI_LABEL_SETTINGS),
+                           locale_text(GUI_LABEL_DESKTOP_HELP)};
   if (m == 0)
     return sino[row];
   if (m == 1)
@@ -1485,22 +1497,25 @@ static const char *menu_label(int m, int row) {
   if (m == 5)
     return special[row];
   if (!count)
-    return "没有已打开的窗口";
+    return locale_text(GUI_LABEL_NO_OPEN_WINDOWS);
   return windows[order[row]].title;
 }
 static void topbar(void) {
   g_fill(0, 0, GUI_WIDTH, 30, 0xe8e9ed);
   g_line(0, 0, (GUI_WIDTH - 1), 0, 0xffffff);
   g_line(0, 29, (GUI_WIDTH - 1), 29, 0x343a44);
-  g_text(3, 57, 5, gui_focus >= 0 ? appnames[windows[gui_focus].app] : "桌面",
+  g_text(3, 57, 5,
+         gui_focus >= 0 ? locale_text(appnames[windows[gui_focus].app])
+                        : locale_text(GUI_LABEL_DESKTOP),
          INK);
   for (int i = 0; i < 6; i++) {
-    int wid = g_width(3, menus[i]) + 12;
+    int wid = g_width(3, locale_text(menus[i])) + 12;
     if (menu == i)
       g_fill(menux[i] - 4, 1, wid, 28, BLUE);
-    g_text(3, menux[i], 5, menus[i], menu == i ? 0xffffff : INK);
+    g_text(3, menux[i], 5, locale_text(menus[i]), menu == i ? 0xffffff : INK);
   }
-  g_text(0, GUI_WIDTH - 206, 5, ime_on ? "中 / 拼音" : "EN", BLUE);
+  g_text(0, GUI_WIDTH - 206, 5, ime_on ? locale_text(GUI_LABEL_PINYIN) : "EN",
+         BLUE);
   g_text(0, GUI_WIDTH - 108, 5, clock_text, INK);
   g_fill(GUI_WIDTH - 129, 11, 6, 6,
          storage_dirty   ? 0xbd9554
@@ -1542,19 +1557,25 @@ static void dialog_draw(void) {
       g_fill((DIALOG_X + 27) + min(415, g_width(0, dialog)), (DIALOG_Y + 75), 1,
              23, BLUE);
     g_cliptext((DIALOG_X + 21), (DIALOG_Y + 116), 430, message, 0xa43d43);
-    button((DIALOG_X + 231), (DIALOG_Y + 170), 100, "取消");
-    button((DIALOG_X + 343), (DIALOG_Y + 170), 108,
-           action == 4 ? "保存" : "确定");
+    button((DIALOG_X + 231), (DIALOG_Y + 170), 100,
+           locale_text(GUI_LABEL_CANCEL));
+    button(
+        (DIALOG_X + 343), (DIALOG_Y + 170), 108,
+        action == 4 ? locale_text(GUI_LABEL_SAVE) : locale_text(GUI_LABEL_OK));
   } else if (modal == 3) {
     g_cliptext((DIALOG_X + 21), (DIALOG_Y + 73), 430, message, INK);
     g_text(0, (DIALOG_X + 21), (DIALOG_Y + 111),
-           "选择“不保存”将丢失尚未保存的更改。", 0x626a76);
-    button((DIALOG_X + 84), (DIALOG_Y + 170), 111, "不保存");
-    button((DIALOG_X + 209), (DIALOG_Y + 170), 111, "取消");
-    button((DIALOG_X + 334), (DIALOG_Y + 170), 117, "保存");
+           locale_text(GUI_LABEL_DISCARDING_LOSES_YOUR_UNSAVED_CHANGES),
+           0x626a76);
+    button((DIALOG_X + 84), (DIALOG_Y + 170), 111,
+           locale_text(GUI_LABEL_DISCARD));
+    button((DIALOG_X + 209), (DIALOG_Y + 170), 111,
+           locale_text(GUI_LABEL_CANCEL));
+    button((DIALOG_X + 334), (DIALOG_Y + 170), 117,
+           locale_text(GUI_LABEL_SAVE));
   } else {
     g_cliptext((DIALOG_X + 21), (DIALOG_Y + 73), 430, message, INK);
-    button((DIALOG_X + 343), (DIALOG_Y + 170), 108, "确定");
+    button((DIALOG_X + 343), (DIALOG_Y + 170), 108, locale_text(GUI_LABEL_OK));
   }
 }
 /* Subtract opaque windows before drawing lower layers. Covered pixels are
@@ -1564,7 +1585,7 @@ static void compose(Rect area, int p) {
     return;
   for (; p >= 0; p--) {
     int id = order[p];
-    Window *w = &windows[id];
+    Window* w = &windows[id];
     if (w->minimized)
       continue;
     int left = max(area.x, w->x), top = max(area.y, w->y),
@@ -1605,13 +1626,13 @@ static int desktop_hit(int x, int y) {
 static int hit_window(int x, int y) {
   for (int p = count - 1; p >= 0; p--) {
     int id = order[p];
-    Window *w = &windows[id];
+    Window* w = &windows[id];
     if (!w->minimized && inside(x, y, w->x, w->y, w->w, w->h))
       return id;
   }
   return -1;
 }
-static int files_hit(Window *w, int x, int y) {
+static int files_hit(Window* w, int x, int y) {
   x -= w->x;
   y -= w->y;
   if (x < 142 || x > w->w - 12 || y < 106 || y >= w->h - 28)
@@ -1624,12 +1645,12 @@ static int drop_folder(int x, int y) {
     return -1;
   int id = hit_window(x, y);
   if (id >= 0) {
-    Window *w = &windows[id];
+    Window* w = &windows[id];
     if (w->app != FILES)
       return -1;
     int xx = x - w->x, yy = y - w->y;
     if (xx < 137 && yy >= 93 && yy < 315) {
-      const char *paths[] = {"/home/user",
+      const char* paths[] = {"/home/user",
                              "/home/user/Desktop",
                              "/home/user/Documents",
                              "/Applications",
@@ -1672,11 +1693,11 @@ static void file_release(void) {
       return;
     int dest = dnd_target;
     if (dest < 0 || nodes[dest].readonly) {
-      notice("无法放到这里，请选择可写的文件夹。");
+      notice(locale_text(GUI_LABEL_CHOOSE_A_WRITABLE_DESTINATION_FOLDER));
       return;
     }
     if (n == dest) {
-      notice("文件夹不能移入自身。");
+      notice(locale_text(GUI_LABEL_A_FOLDER_CANNOT_BE_MOVED_INTO_ITSELF));
       return;
     }
     int desktop = vfs_lookup("/home/user/Desktop");
@@ -1692,13 +1713,14 @@ static void file_release(void) {
     vfs_path(n, src);
     vfs_path(dest, to);
     if (vfs_child(dest, nodes[n].name) >= 0) {
-      notice("目标文件夹中已有同名项目。");
+      notice(locale_text(
+          GUI_LABEL_THE_DESTINATION_CONTAINS_AN_ITEM_WITH_THAT_NAME));
       return;
     }
-    int result = nodes[n].readonly ? vfs_copy(src, to, (u8 *)0xf00000)
+    int result = nodes[n].readonly ? vfs_copy(src, to, (u8*)0xf00000)
                                    : vfs_move(src, to);
     if (result < 0)
-      notice(vfs_error);
+      notice(vfs_message());
     else
       all_changed();
     return;
@@ -1707,7 +1729,7 @@ static void file_release(void) {
     return;
   last_node = -999;
   if (n < 0) {
-    const char *path = n == -2   ? "/home/user"
+    const char* path = n == -2   ? "/home/user"
                        : n == -3 ? "/boot"
                        : n == -4 ? "/Applications"
                                  : "/home/user/Trash";
@@ -1722,12 +1744,18 @@ static void file_release(void) {
 static int context_count(void) {
   return context_node >= 0 ? 7 : 4;
 }
-static const char *context_label(int row) {
-  static const char *file[] = {
-      "打开",          "重命名…",           "复制   Ctrl+C", "剪切   Ctrl+X",
-      "粘贴   Ctrl+V", "移到废纸篓 / 删除", "显示信息"};
-  static const char *blank[] = {"新建文件夹…", "新建文本文件…", "粘贴   Ctrl+V",
-                                "刷新"};
+static const char* context_label(int row) {
+  const char* file[] = {locale_text(GUI_LABEL_OPEN),
+                        locale_text(GUI_LABEL_RENAME_ALTERNATE),
+                        locale_text(GUI_LABEL_COPY_CTRL_C_ALTERNATE),
+                        locale_text(GUI_LABEL_CUT_CTRL_X_ALTERNATE),
+                        locale_text(GUI_LABEL_PASTE_CTRL_V_ALTERNATE),
+                        locale_text(GUI_LABEL_MOVE_TO_TRASH_DELETE),
+                        locale_text(GUI_LABEL_PROPERTIES)};
+  const char* blank[] = {locale_text(GUI_LABEL_NEW_FOLDER_ALTERNATE),
+                         locale_text(GUI_LABEL_NEW_TEXT_FILE_ALTERNATE),
+                         locale_text(GUI_LABEL_PASTE_CTRL_V_ALTERNATE),
+                         locale_text(GUI_LABEL_REFRESH)};
   return context_node >= 0 ? file[row] : blank[row];
 }
 static void context_close(void) {
@@ -1757,16 +1785,12 @@ static void context_choose(int row) {
   else if (row == 5)
     command(9);
   else {
-    char info[128], b[16];
-    copy(info, nodes[n].name);
-    u32 at = strlen(info);
-    copy(info + at, nodes[n].dir ? "  文件夹" : "  文件");
-    at = strlen(info);
-    number(nodes[n].size, b);
-    copy(info + at, "  ");
-    copy(info + at + 2, b);
-    at = strlen(info);
-    copy(info + at, settings_text(" 字节"));
+    char info[128];
+    if (locale_format(info, sizeof(info),
+                      nodes[n].dir ? GUI_TEMPLATE_FOLDER_PROPERTIES
+                                   : GUI_TEMPLATE_FILE_PROPERTIES,
+                      nodes[n].name, nodes[n].size) < 0)
+      return;
     notice(info);
   }
 }
@@ -1833,8 +1857,9 @@ static void drop_draw(void) {
   icon(dnd_x + 15, dnd_y + 21, node_kind(press_node), 1);
   g_cliptext(dnd_x + 41, dnd_y + 20, 97, nodes[press_node].name, INK);
   g_text(0, dnd_x + 17, dnd_y + 45,
-         dnd_target >= 0 && !nodes[dnd_target].readonly ? "松开以移动"
-                                                        : "无法放置",
+         dnd_target >= 0 && !nodes[dnd_target].readonly
+             ? locale_text(GUI_LABEL_RELEASE_TO_MOVE)
+             : locale_text(GUI_LABEL_CANNOT_DROP_HERE),
          0x626a76);
 }
 static int ime_editable(void) {
@@ -1849,7 +1874,7 @@ static void ime_reset(void) {
   ime_text[0] = 0;
   invalidate((Rect){0, 0, GUI_WIDTH, GUI_HEIGHT});
 }
-static void ime_commit(const char *text, int n) {
+static void ime_commit(const char* text, int n) {
   if (modal == 1) {
     if (n > 127 - (dialog_selected ? 0 : dialog_len))
       return;
@@ -1876,7 +1901,7 @@ static void ime_commit(const char *text, int n) {
     }
   } else if (gui_focus >= 0 && windows[gui_focus].app == EDIT) {
     int id = gui_focus;
-    Window *w = &windows[id];
+    Window* w = &windows[id];
     memcpy(undo_text[id], w->text, (u32)w->len + 1);
     undo_len[id] = w->len;
     undo_caret[id] = w->caret;
@@ -1887,7 +1912,7 @@ static void ime_commit(const char *text, int n) {
   }
   ime_reset();
 }
-static const char *ime_phrases[][2] = {{"nihao", "你好"},
+static const char* ime_phrases[][2] = {{"nihao", "你好"},
                                        {"zhongwen", "中文"},
                                        {"wenjian", "文件"},
                                        {"wenjianjia", "文件夹"},
@@ -1952,7 +1977,7 @@ static const char *ime_phrases[][2] = {{"nihao", "你好"},
                                        {"xiugai", "修改"},
                                        {"chazhao", "查找"},
                                        {"shuxing", "属性"}};
-static const char *ime_phrase(void) {
+static const char* ime_phrase(void) {
   for (u32 i = 0; i < sizeof(ime_phrases) / sizeof(ime_phrases[0]); i++)
     if (streq(ime_text, ime_phrases[i][0]))
       return ime_phrases[i][1];
@@ -1961,7 +1986,7 @@ static const char *ime_phrase(void) {
 static Rect ime_bounds(void) {
   int x = DIALOG_X + 21, y = modal ? DIALOG_Y + 106 : GUI_HEIGHT - 118;
   if (!modal && gui_focus >= 0) {
-    Window *w = &windows[gui_focus];
+    Window* w = &windows[gui_focus];
     if (w->app == USERAPP)
       return (Rect){max(8, min(GUI_WIDTH - 458, w->x + 20)),
                     max(32, min(GUI_HEIGHT - 84, w->y + w->h - 78)), 450, 64};
@@ -1985,7 +2010,7 @@ static Rect ime_bounds(void) {
   return (Rect){x, y, 450, 64};
 }
 static void ime_choose(int index) {
-  const char *phrase = ime_phrase();
+  const char* phrase = ime_phrase();
   if (phrase) {
     if (!index)
       ime_commit(phrase, (int)strlen(phrase));
@@ -2065,8 +2090,9 @@ static void ime_draw(void) {
   g_fill(x + 3, y + 3, 450, 64, 0x4d5c68);
   g_box(x, y, 450, 64, 0x6b819c, 0xfcfcfa);
   g_text(0, x + 12, y + 6, ime_text, BLUE);
-  g_text(0, x + 110, y + 6, "拼音  空格选字  [ ] 翻页", 0x737984);
-  const char *phrase = ime_phrase();
+  g_text(0, x + 110, y + 6, locale_text(GUI_LABEL_PINYIN_SPACE_SELECTS_PAGE),
+         0x737984);
+  const char* phrase = ime_phrase();
   if (phrase) {
     g_fill(x + 8, y + 31, min(430, g_width(0, phrase) + 35), 26, 0xdce6f3);
     g_text(0, x + 12, y + 35, "1", 0x777f89);
@@ -2084,7 +2110,10 @@ static void ime_draw(void) {
     g_glyph(0, xx + 15, y + 35, chars[i], INK);
   }
   if (!n)
-    g_text(0, x + 12, y + 36, "继续输入拼音，或回车输入原文", 0x737984);
+    g_text(
+        0, x + 12, y + 36,
+        locale_text(GUI_LABEL_CONTINUE_PINYIN_OR_ENTER_FOR_THE_TYPED_LETTERS),
+        0x737984);
 }
 
 static void render(void) {
@@ -2143,7 +2172,7 @@ static void menu_choose(int m, int row) {
   }
 }
 static void zoom(int id) {
-  Window *w = &windows[id];
+  Window* w = &windows[id];
   invalidate(bounds(w));
   if (w->app != FILES && w->app != EDIT)
     return;
@@ -2221,7 +2250,8 @@ static void click(int x, int y, u32 time) {
       return;
     }
     for (int i = 0; i < 6; i++)
-      if (x >= menux[i] - 5 && x < menux[i] + g_width(3, menus[i]) + 8) {
+      if (x >= menux[i] - 5 &&
+          x < menux[i] + g_width(3, locale_text(menus[i])) + 8) {
         menu = menu == i ? -1 : i;
         menu_row = -1;
         invalidate((Rect){0, 0, GUI_WIDTH, GUI_HEIGHT});
@@ -2242,7 +2272,7 @@ static void click(int x, int y, u32 time) {
   }
   for (int p = count - 1; p >= 0; p--) {
     int id = order[p];
-    Window *w = &windows[id];
+    Window* w = &windows[id];
     if (w->minimized || !inside(x, y, w->x, w->y, w->w, w->h))
       continue;
     focus(id);
@@ -2301,7 +2331,7 @@ static void click(int x, int y, u32 time) {
         else if (xx < 430)
           command(9);
       } else if (xx < 137 && yy >= 93 && yy < 93 + 6 * 37) {
-        const char *paths[] = {"/home/user",
+        const char* paths[] = {"/home/user",
                                "/home/user/Desktop",
                                "/home/user/Documents",
                                "/Applications",
@@ -2496,7 +2526,7 @@ static void keyboard(int key) {
     return;
   }
   int id = gui_focus;
-  Window *w = id >= 0 ? &windows[id] : 0;
+  Window* w = id >= 0 ? &windows[id] : 0;
   if (key == 23) {
     command(7);
     return;
@@ -2596,14 +2626,14 @@ void gui_refresh(void) {
     menux[i] = settings_language ? en[i] : zh[i];
   for (int i = 0; i < NW; i++)
     if (windows[i].used) {
-      Window *w = &windows[i];
+      Window* w = &windows[i];
       w->w = min(w->w, GUI_WIDTH - 16);
       w->h = min(w->h, GUI_HEIGHT - 48);
       w->x = max(0, min(w->x, GUI_WIDTH - w->w - 5));
       w->y = max(32, min(w->y, GUI_HEIGHT - w->h - 5));
       if (w->app != FILES && w->app != EDIT && w->app != PAINT &&
           w->app != USERAPP)
-        copy(w->title, settings_text(appnames[w->app]));
+        copy(w->title, locale_text(appnames[w->app]));
     }
   for (int i = 0; i < VFS_NODES; i++) {
     desk_x[i] = max(8, min(desk_x[i], GUI_WIDTH - 154));
@@ -2637,7 +2667,7 @@ void gui_init(void) {
   render();
   if (install_offer())
     launch(INSTALL);
-  debug("SINO Platinum GUI, eight cached native windows ready\n");
+  pr_debug("SINO Platinum GUI, eight cached native windows ready\n");
 }
 void gui_files_changed(void) {
   user_files_dirty = 1;
@@ -2653,7 +2683,7 @@ void gui_step(void) {
   while (mouse_read(&e)) {
     if (gui_focus >= 0 && windows[gui_focus].app == USERAPP && drag < 0 &&
         resize < 0 && !modal) {
-      Window *w = &windows[gui_focus];
+      Window* w = &windows[gui_focus];
       if ((e.buttons & 1) && !(e.changed & 1))
         process_message(user_owner[gui_focus],
                         (UiEvent){MSG_MOUSE_MOVE, (u32)gui_focus, e.x - w->x,
@@ -2668,7 +2698,7 @@ void gui_step(void) {
     my = e.y;
     if (drag >= 0) {
       if (e.buttons & 1) {
-        Window *w = &windows[drag];
+        Window* w = &windows[drag];
         invalidate(bounds(w));
         w->x = max(0, min(GUI_WIDTH - w->w, e.x - dx));
         w->y = max(32, min(GUI_HEIGHT - w->h, e.y - dy));
@@ -2678,7 +2708,7 @@ void gui_step(void) {
     }
     if (resize >= 0) {
       if (e.buttons & 1) {
-        Window *w = &windows[resize];
+        Window* w = &windows[resize];
         invalidate(bounds(w));
         w->w = max(480, min(1000, min(GUI_WIDTH - w->x, e.x - w->x + dx)));
         w->h = max(280, min(714, min(GUI_HEIGHT - w->y, e.y - w->y + dy)));
@@ -2692,7 +2722,7 @@ void gui_step(void) {
       click(e.x, e.y, e.time);
     else if ((e.buttons & 1) && painting == gui_focus && gui_focus >= 0 &&
              drag < 0 && resize < 0 && !modal) {
-      Window *w = &windows[gui_focus];
+      Window* w = &windows[gui_focus];
       if (w->app == PAINT && inside(e.x, e.y, w->x + 36, w->y + 84, 512, 320)) {
         paint_stroke(w, (e.x - w->x - 36) / 2, (e.y - w->y - 84) / 2);
         changed(gui_focus);
@@ -2730,7 +2760,7 @@ void gui_step(void) {
                        e.buttons & 1))
       changed(gui_focus);
     if (selecting >= 0) {
-      Window *w = &windows[selecting];
+      Window* w = &windows[selecting];
       if (e.buttons & 1) {
         w->caret = edit_hit(w, w->scroll + max(0, (e.y - w->y - 78) / 18),
                             max(0, e.x - w->x - 20 + w->hscroll));
@@ -2745,7 +2775,7 @@ void gui_step(void) {
     if (!(e.buttons & 1))
       painting = -1;
     if (e.wheel && gui_focus >= 0) {
-      Window *w = &windows[gui_focus];
+      Window* w = &windows[gui_focus];
       if (w->app == FILES)
         w->first = max(0, w->first + e.wheel * 3);
       else if (w->app == EDIT)
@@ -2796,7 +2826,7 @@ void gui_step(void) {
   if (got_key)
     gui_key_epoch++;
 }
-void gui_panic(const char *s, u32 vector, u32 error) {
+void gui_panic(const char* s, u32 vector, u32 error) {
   (void)vector;
   (void)error;
   g_target(GUI_BACK, GUI_WIDTH, GUI_HEIGHT);
@@ -2807,7 +2837,7 @@ void gui_panic(const char *s, u32 vector, u32 error) {
 }
 void gui_tests(void) {
 #ifdef SELFTEST
-  Window *sample = &windows[NW - 1];
+  Window* sample = &windows[NW - 1];
   if (sample->used)
     panic("Selftest window in use", 0, 0);
   memset(sample, 0, sizeof(*sample));
@@ -2819,12 +2849,12 @@ void gui_tests(void) {
   if (!streq(sample->text, "first\ntwo"))
     panic("Editor replacement", 0, 0);
   memset(sample, 0, sizeof(*sample));
-  debug("SINO DESKTOP APP SELFTEST PASS\n");
+  pr_debug("SINO DESKTOP APP SELFTEST PASS\n");
 #endif
 }
 
-int gui_user_open(u32 pid, const char *title, int width, int height) {
-  UiCanvas *scene = page_alloc_run((sizeof(UiCanvas) + 4095) / 4096);
+int gui_user_open(u32 pid, const char* title, int width, int height) {
+  UiCanvas* scene = page_alloc_run((sizeof(UiCanvas) + 4095) / 4096);
   if (!scene)
     return -1;
   int id = new_window(USERAPP, title, width, height);
@@ -2846,14 +2876,14 @@ void gui_user_close(int token) {
     close_now(id);
   }
 }
-int gui_user_scene(int token, const UiScene *scene) {
+int gui_user_scene(int token, const UiScene* scene) {
   int id = token & 255;
   u32 pid = (u32)token >> 8;
   if (id >= NW || user_owner[id] != pid || !user_scene[id] ||
       scene->count > UI_CANVAS_COMMANDS)
     return S_INVALID;
   for (u32 i = 0; i < scene->count; i++) {
-    const UiCommand *c = &((const UiCanvas *)scene)->commands[i];
+    const UiCommand* c = &((const UiCanvas*)scene)->commands[i];
     if (c->kind < UI_FILL || c->kind > UI_ELLIPSE || c->x < 0 || c->x > 1000 ||
         c->y < 30 || c->y > 714 || c->text[79])
       return S_INVALID;
@@ -2876,13 +2906,13 @@ int gui_user_scene(int token, const UiScene *scene) {
   return 0;
 }
 
-int gui_clip_read(u8 *data, u32 cap) {
+int gui_clip_read(u8* data, u32 cap) {
   if ((u32)cliplen > cap)
     return S_LIMIT;
   memcpy(data, clipboard, (u32)cliplen);
   return cliplen;
 }
-int gui_clip_write(const u8 *data, u32 size) {
+int gui_clip_write(const u8* data, u32 size) {
   if (size > EDIT_CAP)
     return S_LIMIT;
   memcpy(clipboard, data, size);
@@ -2900,7 +2930,7 @@ int gui_user_policy(int token, u32 flags) {
   return 0;
 }
 
-int gui_user_title(int token, const char *title) {
+int gui_user_title(int token, const char* title) {
   int id = token & 255;
   u32 pid = (u32)token >> 8;
   if (id >= NW || !windows[id].used || windows[id].app != USERAPP ||

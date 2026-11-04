@@ -4,7 +4,7 @@ SECTIONS
 {
   . = 0x11000;
   .text : { *(.start) *(.text*) }
-  .rdata : { ___locale_literals_start = .; *(.rdata*) *(.rodata*) ___locale_literals_end = .; }
+  .rdata : { *(.rdata*) *(.rodata*) }
   .data : { *(.data*) }
   .bss 0x100000 : {
     ___bss_start = .;

@@ -1,3 +1,5 @@
+#include "locale.h"
+#include "klog.h"
 /* Graphical BIOS/MBR installer. Partition edits remain staged until
  * confirmation. */
 #include "install.h"
@@ -20,7 +22,10 @@ static Region regions[9];
 static int region_count, selected, selected_disk = -1, size_edit, size_len,
                                    table_error;
 static char size_text[12];
-static const char *error = "";
+static TextKey install_message_key = TEXT_NONE;
+static void install_set_message(TextKey key) {
+  install_message_key = key;
+}
 static int system_slot = -1, data_slot = -1, copy_phase;
 static u32 copied, verified;
 static u8 block[512], check[512], mbr[512];
@@ -28,14 +33,14 @@ int install_step, install_complete;
 static int hit(int x, int y, int a, int b, int w, int h) {
   return x >= a && x < a + w && y >= b && y < b + h;
 }
-static void button(int x, int y, int w, const char *text, int primary) {
+static void button(int x, int y, int w, const char* text, int primary) {
   g_round(x, y, w, 31, 4, primary ? BLUE : 0xe8edf5);
   g_center(x, y + 6, w, text, primary ? 0xffffff : INK);
 }
-static void size_label(u32 sectors, char *out) {
+static void size_label(u32 sectors, char* out) {
   number(sectors / 2048, out);
   u32 n = strlen(out);
-  const char *s = " MB";
+  const char* s = " MB";
   while ((*((out++) + n) = *s++)) {
   }
 }
@@ -54,7 +59,7 @@ static void rows(void) {
   region_count = 0;
   u32 cursor = 2048;
   for (int i = 0; i < n; i++) {
-    Partition *p = &parts[slots[i]];
+    Partition* p = &parts[slots[i]];
     if (p->start > cursor)
       regions[region_count++] = (Region){cursor, p->start - cursor, -1};
     regions[region_count++] = (Region){p->start, p->size, slots[i]};
@@ -72,27 +77,28 @@ static void load_disk(int d) {
   selected = 0;
   table_error = 0;
   memset(parts, 0, sizeof(parts));
-  error = "";
+  install_set_message(TEXT_NONE);
   if (d < 0 || !disk_read(d, 0, block)) {
-    error = "无法读取磁盘。";
+    install_set_message(INSTALL_ERROR_CANNOT_READ_THE_DISK);
     table_error = 1;
     return;
   }
   if (block[510] == 0x55 && block[511] == 0xaa) {
     for (int i = 0; i < 4; i++) {
-      const u8 *p = block + 446 + i * 16;
-      u32 start = *(const u32 *)(p + 8), size = *(const u32 *)(p + 12);
+      const u8* p = block + 446 + i * 16;
+      u32 start = *(const u32*)(p + 8), size = *(const u32*)(p + 12);
       if (!p[4])
         continue;
       if (p[4] == 0xee) {
         table_error = 1;
-        error = "此磁盘使用 GPT；当前安装程序只支持 MBR。";
+        install_set_message(INSTALL_ERROR_GPT_UNSUPPORTED);
         break;
       }
       if (start < 2048 || !size || start >= disks[d].sectors ||
           size > disks[d].sectors - start) {
         table_error = 1;
-        error = "分区表无效，已禁止写入此磁盘。";
+        install_set_message(
+            INSTALL_ERROR_INVALID_PARTITION_TABLE_DISK_WRITES_ARE_DISABLED);
         break;
       }
       parts[i] = (Partition){start, size, p[4], 0};
@@ -103,7 +109,8 @@ static void load_disk(int d) {
             parts[i].start < parts[j].start + parts[j].size &&
             parts[j].start < parts[i].start + parts[i].size) {
           table_error = 1;
-          error = "分区重叠，已禁止写入此磁盘。";
+          install_set_message(
+              INSTALL_ERROR_OVERLAPPING_PARTITIONS_DISK_WRITES_ARE_DISABLED);
         }
   } else {
     int blank = 1;
@@ -112,14 +119,15 @@ static void load_disk(int d) {
         blank = 0;
     if (!blank) {
       table_error = 1;
-      error = "无法识别此磁盘的布局，已禁止自动写入。";
+      install_set_message(
+          INSTALL_ERROR_UNKNOWN_DISK_LAYOUT_AUTOMATIC_WRITES_ARE_DISABLED);
     }
   }
   rows();
 }
 void install_open(void) {
   install_step = install_complete = size_edit = 0;
-  error = "";
+  install_set_message(TEXT_NONE);
   int d = -1;
   for (int i = 0; i < 4; i++)
     if (disks[i].present && disks[i].sectors >= 131072) {
@@ -129,7 +137,7 @@ void install_open(void) {
   load_disk(d);
 }
 int install_offer(void) {
-  if (*(volatile u8 *)0x4f0c >= 0x80)
+  if (*(volatile u8*)0x4f0c >= 0x80)
     return 0;
   for (int d = 0; d < 4; d++)
     if (disks[d].present && disks[d].sectors >= 131072)
@@ -144,26 +152,29 @@ static void automatic(void) {
     return;
   for (int i = 0; i < 4; i++)
     if (parts[i].type) {
-      error = "请先删除已有分区，再使用自动分区。";
+      install_set_message(
+          INSTALL_STATUS_DELETE_EXISTING_PARTITIONS_BEFORE_AUTOMATIC_PARTITIONING);
       return;
     }
   if (disks[selected_disk].sectors < 131072) {
-    error = "安装至少需要 64 MB 的专用磁盘。";
+    install_set_message(
+        INSTALL_ERROR_SETUP_NEEDS_A_DEDICATED_DISK_OF_AT_LEAST_64_MB);
     return;
   }
   parts[0] = (Partition){2048, 32768, 1, 1};
   parts[1] = (Partition){34816, disks[selected_disk].sectors - 34816, 0x7f, 1};
   selected = 0;
   rows();
-  error = "已规划系统分区与数据分区，尚未写入磁盘。";
+  install_set_message(
+      INSTALL_STATUS_SYSTEM_AND_DATA_PARTITIONS_PLANNED_NO_DISK_WRITES_YET);
 }
 static void new_partition(void) {
   if (selected_disk < 0 || table_error || selected < 0 ||
       selected >= region_count)
     return;
-  Region *r = &regions[selected];
+  Region* r = &regions[selected];
   if (r->slot >= 0) {
-    error = "请选择未分配空间。";
+    install_set_message(INSTALL_ERROR_SELECT_UNALLOCATED_SPACE);
     return;
   }
   int have_system = 0;
@@ -181,18 +192,19 @@ static void create_partition(void) {
   u32 mb = 0;
   for (int i = 0; i < size_len; i++) {
     if (mb > 131072) {
-      error = "分区大小超出范围。";
+      install_set_message(INSTALL_ERROR_PARTITION_SIZE_IS_OUT_OF_RANGE);
       return;
     }
     mb = mb * 10 + (u32)(size_text[i] - '0');
   }
   if (!mb) {
-    error = "请输入大于零的分区大小。";
+    install_set_message(INSTALL_ERROR_ENTER_A_PARTITION_SIZE_GREATER_THAN_ZERO);
     return;
   }
   Region r = regions[selected];
   if (mb > r.size / 2048) {
-    error = "分区大小超过所选的未分配空间。";
+    install_set_message(
+        INSTALL_ERROR_THAT_SIZE_EXCEEDS_THE_SELECTED_UNALLOCATED_SPACE);
     return;
   }
   int slot = -1, type = 1;
@@ -203,24 +215,28 @@ static void create_partition(void) {
       type = 0x7f;
   }
   if (slot < 0) {
-    error = "MBR 最多支持四个主分区。";
+    install_set_message(
+        INSTALL_ERROR_MBR_SUPPORTS_AT_MOST_FOUR_PRIMARY_PARTITIONS);
     return;
   }
   if ((type == 1 && mb < 4) || (type == 0x7f && mb < 16)) {
-    error = "系统分区至少 4 MB，数据分区至少 16 MB。";
+    install_set_message(
+        INSTALL_ERROR_SYSTEM_NEEDS_4_MB_DATA_NEEDS_AT_LEAST_16_MB);
     return;
   }
   parts[slot] = (Partition){r.start, mb * 2048, type, 1};
   size_edit = 0;
   rows();
-  error = "分区已加入安装计划，尚未写入磁盘。";
+  install_set_message(
+      INSTALL_STATUS_PARTITION_ADDED_TO_THE_PLAN_NO_DISK_WRITES_YET);
 }
 static int plan(void) {
   system_slot = data_slot = -1;
   if (selected_disk < 0 || table_error)
     return 0;
   if (disks[selected_disk].sectors < 131072) {
-    error = "安装至少需要 64 MB 的专用磁盘。";
+    install_set_message(
+        INSTALL_ERROR_SETUP_NEEDS_A_DEDICATED_DISK_OF_AT_LEAST_64_MB);
     return 0;
   }
   for (int i = 0; i < 4; i++) {
@@ -230,11 +246,13 @@ static int plan(void) {
       data_slot = i;
   }
   if (system_slot < 0 || data_slot < 0) {
-    error = "需要一个系统分区和一个 SINO 数据分区。";
+    install_set_message(
+        INSTALL_ERROR_A_SYSTEM_PARTITION_AND_A_SINO_DATA_PARTITION_ARE_REQUIRED);
     return 0;
   }
-  if (*(volatile u8 *)0x4f0c >= 0x80 && selected_disk == storage_disk) {
-    error = "不能覆盖正在运行的系统，请从 ISO 光盘启动安装。";
+  if (*(volatile u8*)0x4f0c >= 0x80 && selected_disk == storage_disk) {
+    install_set_message(
+        INSTALL_ERROR_BOOT_THE_ISO_TO_REINSTALL_THIS_SYSTEM_IS_CURRENTLY_RUNNING);
     return 0;
   }
   return 1;
@@ -244,7 +262,8 @@ static void begin(void) {
     return;
   if (storage_ready && storage_disk == selected_disk) {
     if (!storage_sync()) {
-      error = "当前数据磁盘无法保存，安装已停止。";
+      install_set_message(
+          INSTALL_ERROR_THE_CURRENT_DATA_VOLUME_CANNOT_SYNC_SETUP_STOPPED);
       return;
     }
     storage_ready = storage_dirty = 0;
@@ -254,25 +273,25 @@ static void begin(void) {
     if (streq(files[i].name, "MBR.BIN"))
       file = (int)i;
   if (file < 0 || !fs_read((u32)file, mbr, 512)) {
-    error = "光盘缺少 MBR 引导文件。";
+    install_set_message(INSTALL_ERROR_MBR_BOOT_FILE_MISSING);
     return;
   }
   memset(mbr + 446, 0, 64);
   for (int i = 0; i < 4; i++)
     if (parts[i].type) {
-      u8 *p = mbr + 446 + i * 16;
+      u8* p = mbr + 446 + i * 16;
       p[0] = i == system_slot ? 0x80 : 0;
       p[1] = p[5] = 0xfe;
       p[2] = p[3] = p[6] = p[7] = 0xff;
       p[4] = (u8)parts[i].type;
-      *(u32 *)(p + 8) = parts[i].start;
-      *(u32 *)(p + 12) = parts[i].size;
+      *(u32*)(p + 8) = parts[i].start;
+      *(u32*)(p + 12) = parts[i].size;
     }
-  *(u32 *)(mbr + 440) = 0x53494e4f ^ ticks;
+  *(u32*)(mbr + 440) = 0x53494e4f ^ ticks;
   copied = verified = 0;
   copy_phase = 0;
   install_step = 5;
-  error = "";
+  install_set_message(TEXT_NONE);
 }
 int install_poll(void) {
   if (install_step != 5)
@@ -283,7 +302,7 @@ int install_poll(void) {
     for (int n = 0; n < 32 && copied < 2880; n++, copied++) {
       memcpy(block, RAMDISK + copied * 512, 512);
       if (!copied) {
-        *(u32 *)(block + 28) = base;
+        *(u32*)(block + 28) = base;
         block[36] = (u8)(0x80 + selected_disk);
       }
       if (!disk_write(selected_disk, base + copied, block)) {
@@ -303,7 +322,7 @@ int install_poll(void) {
       }
       memcpy(block, RAMDISK + verified * 512, 512);
       if (!verified) {
-        *(u32 *)(block + 28) = base;
+        *(u32*)(block + 28) = base;
         block[36] = (u8)(0x80 + selected_disk);
       }
       for (int j = 0; j < 512; j++)
@@ -325,7 +344,7 @@ int install_poll(void) {
         ok = 0;
     }
     if (ok) {
-      u32 *p = (u32 *)block;
+      u32* p = (u32*)block;
       p[0] = 0x32474643;
       p[1] = 1;
       p[2] = (u32)display_width;
@@ -340,22 +359,23 @@ int install_poll(void) {
     if (ok) {
       install_complete = 1;
       install_step = 6;
-      debug(
+      pr_debug(
           "INSTALL completed: MBR, boot partition verified, SFS data partition "
           "ready\n");
     }
   }
   if (!ok) {
-    debug("INSTALL I/O failure: phase=");
-    debug_hex((u32)copy_phase);
-    debug(" copied=");
-    debug_hex(copied);
-    debug(" verified=");
-    debug_hex(verified);
-    debug("\n");
+    pr_debug("INSTALL I/O failure: phase=");
+    pr_debug_hex((u32)copy_phase);
+    pr_debug(" copied=");
+    pr_debug_hex(copied);
+    pr_debug(" verified=");
+    pr_debug_hex(verified);
+    pr_debug("\n");
     install_step = 3;
     install_complete = 0;
-    error = "写入或校验失败。请检查磁盘；安装未完成。";
+    install_set_message(
+        INSTALL_ERROR_WRITE_OR_VERIFICATION_FAILED_INSTALLATION_IS_INCOMPLETE);
   }
   return 1;
 }
@@ -369,9 +389,11 @@ void install_draw(int w, int h) {
   g_fill(2, 30, w - 4, h - 32, 0xf9fbfe);
   g_fill(2, 30, 158, h - 32, BLUE);
   g_text(1, 21, 54, "SINO", 0xffffff);
-  g_text(0, 21, 91, "安装程序", 0xdceafd);
-  const char *steps[] = {"1  准备安装", "2  选择磁盘", "3  安装系统",
-                         "4  完成"};
+  g_text(0, 21, 91, locale_text(INSTALL_LABEL_SETUP), 0xdceafd);
+  const char* steps[] = {locale_text(INSTALL_LABEL_1_PREPARE),
+                         locale_text(INSTALL_LABEL_2_CHOOSE_DISK),
+                         locale_text(INSTALL_LABEL_3_INSTALL),
+                         locale_text(INSTALL_LABEL_4_FINISH)};
   int active = install_step < 3    ? 0
                : install_step < 5  ? 1
                : install_step == 5 ? 2
@@ -379,31 +401,72 @@ void install_draw(int w, int h) {
   for (int i = 0; i < 4; i++)
     g_text(0, 21, 153 + i * 47, steps[i], i == active ? 0xffffff : 0xaec5e5);
   int x = 184;
-  const char *titles[] = {"语言与区域",     "安装 SINO 操作系统",
-                          "许可与安装说明", "你想将 SINO 安装在哪里？",
-                          "确认安装计划",   "正在安装 SINO",
-                          "SINO 已安装完成"};
+  const char* titles[] = {
+      locale_text(INSTALL_LABEL_LANGUAGE_AND_REGION),
+      locale_text(INSTALL_LABEL_INSTALL_SINO),
+      locale_text(INSTALL_LABEL_LICENSE_AND_INSTALLATION),
+      locale_text(INSTALL_LABEL_WHERE_DO_YOU_WANT_TO_INSTALL_SINO),
+      locale_text(INSTALL_LABEL_CONFIRM_INSTALLATION),
+      locale_text(INSTALL_LABEL_INSTALLING_SINO),
+      locale_text(INSTALL_LABEL_SINO_HAS_BEEN_INSTALLED)};
   g_text(1, x, 57, titles[install_step], INK);
   if (install_step == 0) {
-    g_text(0, x, 125, "选择安装及系统显示语言", INK);
-    button(x, 177, 210, "简体中文", settings_language == 0);
+    g_text(0, x, 125,
+           locale_text(INSTALL_LABEL_CHOOSE_THE_SETUP_AND_SYSTEM_LANGUAGE),
+           INK);
+    button(x, 177, 210, locale_text(INSTALL_LABEL_CHINESE_SIMPLIFIED),
+           settings_language == 0);
     button(x + 226, 177, 210, "English", settings_language == 1);
-    g_text(0, x, 253, "键盘：标准 PC 键盘，内置基础拼音输入。", 0x667388);
-    g_text(0, x, 300, "安装目标仅为你选择的虚拟硬盘。", 0x667388);
+    g_text(0, x, 253,
+           locale_text(
+               INSTALL_LABEL_STANDARD_PC_KEYBOARD_WITH_BUILT_IN_BASIC_PINYIN),
+           0x667388);
+    g_text(0, x, 300,
+           locale_text(
+               INSTALL_LABEL_ONLY_THE_SELECTED_VIRTUAL_HARD_DISK_IS_TARGETED),
+           0x667388);
   } else if (install_step == 1) {
     g_text(1, x, 139, "SINO 0.10", BLUE);
-    g_text(0, x, 191, "将系统安装到硬盘，之后无需光盘即可启动。", INK);
-    g_text(0, x, 234, "安装步骤包含分区、复制文件、校验和写入引导。", 0x667388);
-    g_text(0, x, 277, "你也可以退出安装，先体验桌面。", 0x667388);
-    button(x, 342, 217, "现在安装", 1);
-    button(x + 232, 342, 170, "体验桌面", 0);
+    g_text(0, x, 191,
+           locale_text(
+               INSTALL_LABEL_INSTALL_TO_A_HARD_DISK_AND_BOOT_WITHOUT_THE_CD),
+           INK);
+    g_text(
+        0, x, 234,
+        locale_text(
+            INSTALL_LABEL_SETUP_PARTITIONS_COPIES_VERIFIES_AND_INSTALLS_BOOT_CODE),
+        0x667388);
+    g_text(
+        0, x, 277,
+        locale_text(INSTALL_LABEL_YOU_CAN_ALSO_EXIT_SETUP_AND_TRY_THE_DESKTOP),
+        0x667388);
+    button(x, 342, 217, locale_text(INSTALL_LABEL_INSTALL_NOW), 1);
+    button(x + 232, 342, 170, locale_text(INSTALL_LABEL_TRY_DESKTOP), 0);
   } else if (install_step == 2) {
-    g_text(0, x, 121, "SINO 内核、桌面和安装程序采用项目 MIT 许可。", INK);
-    g_text(0, x, 163, "QEMU、字库和拼音数据保留各自开源许可。", INK);
-    g_text(0, x, 205, "继续表示你同意按各组件许可使用本系统。", INK);
-    g_text(0, x, 268, "安装会修改所选虚拟硬盘的分区和内容。", 0x9f473e);
-    g_text(0, x, 310, "请先备份需要保留的文件。", 0x9f473e);
-    g_text(0, x, 366, "支持 BIOS / MBR；当前不支持 GPT 或 UEFI。", 0x667388);
+    g_text(0, x, 121,
+           locale_text(
+               INSTALL_LABEL_THE_SINO_KERNEL_DESKTOP_AND_INSTALLER_USE_MIT),
+           INK);
+    g_text(0, x, 163,
+           locale_text(
+               INSTALL_LABEL_QEMU_FONTS_AND_PINYIN_RETAIN_THEIR_OWN_LICENSES),
+           INK);
+    g_text(0, x, 205,
+           locale_text(
+               INSTALL_LABEL_CONTINUE_TO_USE_SINO_UNDER_THE_INCLUDED_LICENSES),
+           INK);
+    g_text(
+        0, x, 268,
+        locale_text(
+            INSTALL_LABEL_SETUP_CHANGES_PARTITIONS_AND_DATA_ON_THE_SELECTED_DISK),
+        0x9f473e);
+    g_text(0, x, 310,
+           locale_text(INSTALL_LABEL_BACK_UP_ANY_FILES_YOU_NEED_TO_KEEP_FIRST),
+           0x9f473e);
+    g_text(0, x, 366,
+           locale_text(
+               INSTALL_LABEL_BIOS_MBR_SUPPORTED_GPT_AND_UEFI_ARE_UNAVAILABLE),
+           0x667388);
   } else if (install_step == 3) {
     for (int i = 0; i < 4; i++)
       if (disks[i].present) {
@@ -418,102 +481,139 @@ void install_draw(int w, int h) {
       g_text(0, w - 113, 147, b, INK);
     }
     g_fill(x, 177, w - x - 19, 27, 0xe8edf5);
-    g_text(0, x + 12, 181, "分区 / 未分配空间", INK);
-    g_text(0, w - 239, 181, "容量", INK);
-    g_text(0, w - 142, 181, "类型", INK);
+    g_text(0, x + 12, 181,
+           locale_text(INSTALL_LABEL_PARTITION_UNALLOCATED_SPACE), INK);
+    g_text(0, w - 239, 181, locale_text(INSTALL_LABEL_CAPACITY), INK);
+    g_text(0, w - 142, 181, locale_text(INSTALL_LABEL_TYPE), INK);
     int visible = (h - 380) / 34;
     if (visible < 1)
       visible = 1;
     int first = selected >= visible ? selected - visible + 1 : 0;
     for (int i = first; i < region_count && i < first + visible; i++) {
       int y = 207 + (i - first) * 34;
-      Region *r = &regions[i];
+      Region* r = &regions[i];
       if (i == selected)
         g_fill(x, y, w - x - 19, 32, 0xddeafb);
       char b[24];
       if (r->slot < 0)
-        g_text(0, x + 12, y + 7, "未分配空间", INK);
+        g_text(0, x + 12, y + 7, locale_text(INSTALL_LABEL_UNALLOCATED_SPACE),
+               INK);
       else {
         g_text(0, x + 12, y + 7,
-               parts[r->slot].type == 1      ? "SINO 系统分区"
-               : parts[r->slot].type == 0x7f ? "SINO 数据分区"
-                                             : "其他分区",
+               parts[r->slot].type == 1
+                   ? locale_text(INSTALL_LABEL_SINO_SYSTEM_PARTITION)
+               : parts[r->slot].type == 0x7f
+                   ? locale_text(INSTALL_LABEL_SINO_DATA_PARTITION)
+                   : locale_text(INSTALL_LABEL_OTHER_PARTITION),
                INK);
         if (parts[r->slot].format)
-          g_text(0, x + 180, y + 7, "将格式化", 0x9f473e);
+          g_text(0, x + 180, y + 7, locale_text(INSTALL_LABEL_WILL_FORMAT),
+                 0x9f473e);
       }
       size_label(r->size, b);
       g_text(0, w - 239, y + 7, b, INK);
       g_text(0, w - 142, y + 7,
-             r->slot < 0                   ? "空闲"
-             : parts[r->slot].type == 1    ? "FAT12"
-             : parts[r->slot].type == 0x7f ? "SINO FS"
-                                           : "保留",
+             r->slot < 0                ? locale_text(INSTALL_LABEL_FREE)
+             : parts[r->slot].type == 1 ? "FAT12"
+             : parts[r->slot].type == 0x7f
+                 ? "SINO FS"
+                 : locale_text(INSTALL_LABEL_PRESERVE),
              0x667388);
     }
     int y = h - 112;
-    button(x, y, 112, "新建", 0);
-    button(x + 123, y, 112, "删除", 0);
-    button(x + 246, y, 112, "格式化", 0);
-    button(x + 369, y, 126, "自动分区", 0);
+    button(x, y, 112, locale_text(INSTALL_LABEL_NEW), 0);
+    button(x + 123, y, 112, locale_text(INSTALL_LABEL_DELETE), 0);
+    button(x + 246, y, 112, locale_text(INSTALL_LABEL_FORMAT), 0);
+    button(x + 369, y, 126, locale_text(INSTALL_LABEL_AUTOMATIC), 0);
   } else if (install_step == 4) {
     char b[24];
-    g_text(0, x, 123, "将安装到以下虚拟硬盘：", INK);
+    g_text(0, x, 123, locale_text(INSTALL_LABEL_TARGET_VIRTUAL_HARD_DISK), INK);
     if (selected_disk >= 0)
       g_text(0, x, 161, disks[selected_disk].model, BLUE);
     if (system_slot >= 0) {
       size_label(parts[system_slot].size, b);
-      g_text(0, x, 211, "系统分区：覆盖并写入系统", INK);
+      g_text(0, x, 211,
+             locale_text(INSTALL_LABEL_SYSTEM_PARTITION_REPLACE_SYSTEM_FILES),
+             INK);
       g_text(0, x + 340, 211, b, INK);
     }
     if (data_slot >= 0) {
       size_label(parts[data_slot].size, b);
       g_text(0, x, 253,
-             parts[data_slot].format ? "数据分区：格式化为 SINO FS"
-                                     : "数据分区：保留现有内容",
+             parts[data_slot].format
+                 ? locale_text(INSTALL_LABEL_DATA_PARTITION_FORMAT_AS_SINO_FS)
+                 : locale_text(
+                       INSTALL_LABEL_DATA_PARTITION_PRESERVE_EXISTING_CONTENT),
              INK);
       g_text(0, x + 340, 253, b, INK);
     }
-    g_text(0, x, 320, "所选分区中的原有内容可能永久丢失。", 0xa0443b);
-    g_text(0, x, 363, "点击“开始安装”后才会实际写入磁盘。", 0x667388);
+    g_text(
+        0, x, 320,
+        locale_text(
+            INSTALL_LABEL_EXISTING_CONTENT_ON_SELECTED_PARTITIONS_MAY_BE_LOST),
+        0xa0443b);
+    g_text(0, x, 363,
+           locale_text(
+               INSTALL_LABEL_THE_DISK_CHANGES_ONLY_AFTER_BEGIN_INSTALLATION),
+           0x667388);
   } else if (install_step == 5) {
     u32 progress = (copied + verified) * 100 / 5760;
-    g_text(0, x, 145,
-           copy_phase == 0   ? "正在复制系统文件..."
-           : copy_phase == 1 ? "正在读回校验系统文件..."
-                             : "正在配置数据分区和引导...",
-           INK);
+    g_text(
+        0, x, 145,
+        copy_phase == 0 ? locale_text(INSTALL_LABEL_COPYING_SYSTEM_FILES)
+        : copy_phase == 1
+            ? locale_text(INSTALL_LABEL_READING_BACK_AND_VERIFYING_SYSTEM_FILES)
+            : locale_text(
+                  INSTALL_LABEL_CONFIGURING_THE_DATA_PARTITION_AND_BOOT_CODE),
+        INK);
     g_round(x, 218, w - x - 34, 16, 5, 0xe0e7f1);
     g_round(x, 218, (w - x - 34) * (int)progress / 100, 16, 5, BLUE);
     char b[12];
     number(progress, b);
     g_text(0, x, 261, b, BLUE);
-    g_text(0, x, 330, "安装过程中请勿关闭虚拟机或断开磁盘。", 0x667388);
+    g_text(
+        0, x, 330,
+        locale_text(INSTALL_LABEL_KEEP_THE_VM_RUNNING_AND_THE_DISK_CONNECTED),
+        0x667388);
   } else {
-    g_text(0, x, 143, "系统文件已复制并逐扇区读回校验。", INK);
-    g_text(0, x, 191, "已创建 MBR 引导和持久化数据分区。", INK);
-    g_text(0, x, 239, "重新启动后将从硬盘进入 SINO。", BLUE);
-    g_text(0, x, 300, "若再次进入光盘，请弹出 ISO 并从硬盘启动。", 0x667388);
+    g_text(0, x, 143,
+           locale_text(
+               INSTALL_LABEL_SYSTEM_FILES_COPIED_AND_VERIFIED_SECTOR_BY_SECTOR),
+           INK);
+    g_text(
+        0, x, 191,
+        locale_text(
+            INSTALL_LABEL_MBR_BOOT_AND_A_PERSISTENT_DATA_PARTITION_ARE_READY),
+        INK);
+    g_text(0, x, 239,
+           locale_text(INSTALL_LABEL_RESTART_TO_ENTER_SINO_FROM_THE_HARD_DISK),
+           BLUE);
+    g_text(
+        0, x, 300,
+        locale_text(
+            INSTALL_LABEL_IF_THE_CD_BOOTS_AGAIN_EJECT_IT_AND_BOOT_THE_HARD_DISK),
+        0x667388);
   }
   if (install_step != 5) {
-    g_cliptext(x, h - 157, w - x - 24, error, 0xa0443b);
+    g_cliptext(x, h - 157, w - x - 24, locale_text(install_message_key),
+               0xa0443b);
     if (install_step > 0 && install_step < 5)
-      button(w - 282, h - 54, 110, "上一步", 0);
+      button(w - 282, h - 54, 110, locale_text(INSTALL_LABEL_BACK), 0);
     button(w - 158, h - 54, 132,
-           install_step == 6   ? "重新启动"
-           : install_step == 4 ? "开始安装"
-                               : "下一步",
+           install_step == 6   ? locale_text(INSTALL_LABEL_RESTART)
+           : install_step == 4 ? locale_text(INSTALL_LABEL_BEGIN_INSTALLATION)
+                               : locale_text(INSTALL_LABEL_NEXT),
            1);
   } else
-    g_text(0, x, h - 58, "请稍候...", 0x667388);
+    g_text(0, x, h - 58, locale_text(INSTALL_LABEL_PLEASE_WAIT), 0x667388);
   if (size_edit) {
     g_box(220, 174, 435, 196, BLUE, 0xf6f9fe);
-    g_text(1, 241, 192, "新建分区", INK);
-    g_text(0, 241, 237, "大小（MB）", INK);
+    g_text(1, 241, 192, locale_text(INSTALL_LABEL_NEW_PARTITION), INK);
+    g_text(0, 241, 237, locale_text(INSTALL_LABEL_SIZE_MB), INK);
     g_box(371, 233, 243, 33, 0x9eafc7, 0xffffff);
     g_text(0, 381, 239, size_text, INK);
-    button(393, 310, 100, "取消", 0);
-    button(507, 310, 110, "创建", 1);
+    button(393, 310, 100, locale_text(INSTALL_LABEL_CANCEL), 0);
+    button(507, 310, 110, locale_text(INSTALL_LABEL_CREATE), 1);
   }
 }
 int install_click(int x, int y, int w, int h) {
@@ -560,14 +660,15 @@ int install_click(int x, int y, int w, int h) {
       if (slot >= 0) {
         memset(&parts[slot], 0, sizeof(Partition));
         rows();
-        error = "删除已加入安装计划，磁盘尚未更改。";
+        install_set_message(
+            INSTALL_STATUS_DELETION_STAGED_THE_DISK_IS_UNCHANGED);
       }
     } else if (hit(x, y, 430, yy, 112, 31) && !table_error && selected >= 0 &&
                selected < region_count) {
       int slot = regions[selected].slot;
       if (slot >= 0 && (parts[slot].type == 1 || parts[slot].type == 0x7f)) {
         parts[slot].format = 1;
-        error = "格式化已加入安装计划，磁盘尚未更改。";
+        install_set_message(INSTALL_STATUS_FORMAT_STAGED_THE_DISK_IS_UNCHANGED);
       }
     } else if (hit(x, y, 553, yy, 126, 31))
       automatic();
@@ -575,7 +676,7 @@ int install_click(int x, int y, int w, int h) {
   if (install_step > 0 && install_step < 5 &&
       hit(x, y, w - 282, h - 54, 110, 31)) {
     install_step--;
-    error = "";
+    install_set_message(TEXT_NONE);
   } else if (hit(x, y, w - 158, h - 54, 132, 31)) {
     if (install_step == 3) {
       if (plan())

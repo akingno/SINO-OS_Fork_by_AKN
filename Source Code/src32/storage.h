@@ -1,11 +1,13 @@
 #ifndef SINO_STORAGE_H
 #define SINO_STORAGE_H
 #include "kernel.h"
+#include "locale.h"
 extern int storage_ready, storage_dirty;
 extern int storage_disk;
 extern u32 storage_partition;
 extern u32 storage_generation;
-extern const char *storage_error;
+extern const char* storage_error;
+extern TextKey storage_error_key;
 void storage_init(void);
 void storage_changed(void);
 void storage_poll(void);

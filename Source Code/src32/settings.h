@@ -2,7 +2,6 @@
 #define SINO_SETTINGS_H
 #include "kernel.h"
 extern int settings_language, settings_pending;
-const char *settings_text(const char *);
 void settings_init(void);
 void settings_boot(void);
 void settings_open(void);

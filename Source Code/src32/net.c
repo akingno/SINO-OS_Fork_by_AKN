@@ -1,3 +1,4 @@
+#include "klog.h"
 #include "kernel.h"
 /* Bounded IPv4 loopback transport. Frames really traverse the receive queue,
    IPv4 validator and UDP/TCP/ICMP decoders; no socket-to-socket copy shortcut.
@@ -28,8 +29,8 @@ typedef struct {
   u32 pending, tx_size;
   u8 rx[RX_CAP], tx[NET_MSS];
 } Socket;
-static Socket *sockets[NS];
-static u8 *packets[8];
+static Socket* sockets[NS];
+static u8* packets[8];
 static u32 lengths[8], head, tail;
 static u16 ephemeral = 49152, ip_id;
 static u32 last_ping, ping_reply, ping_id;
@@ -37,21 +38,21 @@ static u32 last_ping, ping_reply, ping_id;
 static int drop_ack;
 #endif
 NetDevice net_loop;
-static u16 get16(const u8 *p) {
+static u16 get16(const u8* p) {
   return (u16)(((u16)p[0] << 8) | p[1]);
 }
-static u32 get32(const u8 *p) {
+static u32 get32(const u8* p) {
   return ((u32)get16(p) << 16) | get16(p + 2);
 }
-static void put16(u8 *p, u16 n) {
+static void put16(u8* p, u16 n) {
   p[0] = (u8)(n >> 8);
   p[1] = (u8)n;
 }
-static void put32(u8 *p, u32 n) {
+static void put32(u8* p, u32 n) {
   put16(p, (u16)(n >> 16));
   put16(p + 2, (u16)n);
 }
-static u32 sum(const u8 *p, u32 size, u32 value) {
+static u32 sum(const u8* p, u32 size, u32 value) {
   while (size >= 2) {
     value += get16(p);
     p += 2;
@@ -63,10 +64,10 @@ static u32 sum(const u8 *p, u32 size, u32 value) {
     value = (value & 65535) + (value >> 16);
   return value;
 }
-static u16 check(const u8 *p, u32 size) {
+static u16 check(const u8* p, u32 size) {
   return (u16)~sum(p, size, 0);
 }
-static u16 transport(const u8 *p, u32 size, u8 protocol) {
+static u16 transport(const u8* p, u32 size, u8 protocol) {
   u8 pseudo[12];
   put32(pseudo, NET_LOOPBACK);
   put32(pseudo + 4, NET_LOOPBACK);
@@ -75,7 +76,7 @@ static u16 transport(const u8 *p, u32 size, u8 protocol) {
   put16(pseudo + 10, (u16)size);
   return (u16)~sum(p, size, sum(pseudo, 12, 0));
 }
-static int loop_tx(const u8 *p, u32 size) {
+static int loop_tx(const u8* p, u32 size) {
   if (size < 20 || size > 1500)
     return S_INVALID;
 #ifdef SELFTEST
@@ -90,7 +91,7 @@ static int loop_tx(const u8 *p, u32 size) {
     net_loop.stats.dropped++;
     return S_AGAIN;
   }
-  u8 *page = page_alloc();
+  u8* page = page_alloc();
   if (!page)
     return S_NOMEM;
   memcpy(page, p, size);
@@ -103,11 +104,11 @@ static int loop_tx(const u8 *p, u32 size) {
 void net_init(void) {
   net_loop =
       (NetDevice){"lo", NET_LOOPBACK, 0xff000000u, 1500, 1, loop_tx, 0, {0}};
-  debug(
+  pr_debug(
       "NETWORK lo 127.0.0.1 IPv4/ICMP/UDP/TCP initialized; no external NIC "
       "enabled\n");
 }
-static Socket *valid(int n) {
+static Socket* valid(int n) {
   return n >= 0 && n < NS ? sockets[n] : 0;
 }
 int net_socket(int type) {
@@ -115,7 +116,7 @@ int net_socket(int type) {
     return S_INVALID;
   for (int i = 0; i < NS; i++)
     if (!sockets[i]) {
-      Socket *s = page_alloc();
+      Socket* s = page_alloc();
       if (!s)
         return S_NOMEM;
       s->type = type;
@@ -140,7 +141,7 @@ static int occupied(int type, u16 port) {
       return 1;
   return 0;
 }
-static int autobind(Socket *s) {
+static int autobind(Socket* s) {
   for (u32 i = 0; i < 16384; i++) {
     u16 port = ephemeral++;
     if (ephemeral < 49152)
@@ -152,8 +153,8 @@ static int autobind(Socket *s) {
   }
   return S_LIMIT;
 }
-int net_bind(int n, const SockAddress *a) {
-  Socket *s = valid(n);
+int net_bind(int n, const SockAddress* a) {
+  Socket* s = valid(n);
   if (!s || s->state != IDLE || !a->port || a->family != 2 ||
       (a->address && a->address != NET_LOOPBACK))
     return S_INVALID;
@@ -163,7 +164,7 @@ int net_bind(int n, const SockAddress *a) {
   s->state = BOUND;
   return 0;
 }
-static int ip_output(u8 protocol, const u8 *payload, u32 size) {
+static int ip_output(u8 protocol, const u8* payload, u32 size) {
   if (size > 1480)
     return S_LIMIT;
   u8 frame[1500];
@@ -179,7 +180,7 @@ static int ip_output(u8 protocol, const u8 *payload, u32 size) {
   memcpy(frame + 20, payload, size);
   return net_loop.transmit(frame, size + 20);
 }
-static int tcp_emit(Socket *s, u32 sequence, u8 flags, const u8 *data,
+static int tcp_emit(Socket* s, u32 sequence, u8 flags, const u8* data,
                     u32 size) {
   u8 packet[NET_MSS + 24];
   u32 hdr = (flags & SYN) ? 24 : 20;
@@ -201,19 +202,19 @@ static int tcp_emit(Socket *s, u32 sequence, u8 flags, const u8 *data,
   put16(packet + 16, transport(packet, size + hdr, 6));
   return ip_output(6, packet, size + hdr);
 }
-static void transmit_pending(Socket *s) {
+static void transmit_pending(Socket* s) {
   tcp_emit(s, s->tx_start, (u8)s->pending, s->tx, s->tx_size);
   s->deadline = ticks + 50;
 }
 int net_listen(int n) {
-  Socket *s = valid(n);
+  Socket* s = valid(n);
   if (!s || s->type != NET_TCP || s->state != BOUND)
     return S_INVALID;
   s->state = LISTEN;
   return 0;
 }
-int net_connect(int n, const SockAddress *a) {
-  Socket *s = valid(n);
+int net_connect(int n, const SockAddress* a) {
+  Socket* s = valid(n);
   if (!s || a->address != NET_LOOPBACK || a->family != 2 || !a->port)
     return S_INVALID;
   if (s->state == ESTABLISHED || (s->type == NET_UDP && s->peer))
@@ -240,7 +241,7 @@ int net_connect(int n, const SockAddress *a) {
   return S_AGAIN;
 }
 int net_accept(int n) {
-  Socket *s = valid(n);
+  Socket* s = valid(n);
   if (!s || s->state != LISTEN)
     return S_INVALID;
   for (int i = 0; i < NS; i++)
@@ -251,8 +252,8 @@ int net_accept(int n) {
     }
   return S_AGAIN;
 }
-int net_send(int n, const u8 *data, u32 size) {
-  Socket *s = valid(n);
+int net_send(int n, const u8* data, u32 size) {
+  Socket* s = valid(n);
   if (!s || !size || size > NET_MSS)
     return S_INVALID;
   if (!s->peer)
@@ -284,8 +285,8 @@ int net_send(int n, const u8 *data, u32 size) {
   transmit_pending(s);
   return (int)size;
 }
-int net_recv(int n, u8 *out, u32 cap) {
-  Socket *s = valid(n);
+int net_recv(int n, u8* out, u32 cap) {
+  Socket* s = valid(n);
   if (!s || !cap)
     return S_INVALID;
   if (!s->rx_size) {
@@ -305,7 +306,7 @@ int net_recv(int n, u8 *out, u32 cap) {
   return (int)bytes;
 }
 int net_ready(int n) {
-  Socket *s = valid(n);
+  Socket* s = valid(n);
   if (!s)
     return S_BADHANDLE;
   int bits = s->rx_size || s->state == CLOSE_WAIT || s->state == CLOSED ? 1 : 0;
@@ -321,7 +322,7 @@ int net_ready(int n) {
         bits |= 1;
   return bits;
 }
-static void fin_start(Socket *s) {
+static void fin_start(Socket* s) {
   s->tx_start = s->tx_next++;
   s->tx_size = 0;
   s->pending = FIN | ACK;
@@ -330,7 +331,7 @@ static void fin_start(Socket *s) {
   transmit_pending(s);
 }
 void net_close(int n) {
-  Socket *s = valid(n);
+  Socket* s = valid(n);
   if (!s)
     return;
   if (s->state == LISTEN) {
@@ -353,7 +354,7 @@ void net_close(int n) {
   }
   destroy(n);
 }
-static void tcp_input(const u8 *p, u32 size) {
+static void tcp_input(const u8* p, u32 size) {
   if (size < 20) {
     net_loop.stats.malformed++;
     return;
@@ -370,12 +371,12 @@ static void tcp_input(const u8 *p, u32 size) {
   u16 source = get16(p), dest = get16(p + 2);
   u8 flags = p[13];
   u32 sequence = get32(p + 4), ack = get32(p + 8), bytes = size - hdr;
-  Socket *s = 0;
+  Socket* s = 0;
   int listener = -1;
   for (int i = 0; i < NS; i++)
     if (sockets[i] && sockets[i]->type == NET_TCP &&
         sockets[i]->local == dest) {
-      Socket *v = sockets[i];
+      Socket* v = sockets[i];
       if (v->state == LISTEN)
         listener = i;
       else if (v->peer == source) {
@@ -471,7 +472,7 @@ static void tcp_input(const u8 *p, u32 size) {
     tcp_emit(s, s->tx_next, ACK, 0, 0);
   }
 }
-static void input(u8 *p, u32 size) {
+static void input(u8* p, u32 size) {
   if (size < 20 || p[0] != 0x45 || get16(p + 2) != size ||
       (get16(p + 6) & 0x3fff) || !p[8] || get32(p + 12) != NET_LOOPBACK ||
       get32(p + 16) != NET_LOOPBACK) {
@@ -519,7 +520,7 @@ static void input(u8 *p, u32 size) {
   }
   u16 source = get16(p), dest = get16(p + 2);
   for (int i = 0; i < NS; i++) {
-    Socket *s = sockets[i];
+    Socket* s = sockets[i];
     if (s && s->type == NET_UDP && s->local == dest &&
         (!s->peer || s->peer == source)) {
       if (s->rx_size) {
@@ -536,14 +537,14 @@ static void input(u8 *p, u32 size) {
 }
 void net_poll(void) {
   for (int i = 0; i < 8 && tail != head; i++) {
-    u8 *p = packets[tail];
+    u8* p = packets[tail];
     u32 size = lengths[tail];
     tail = (tail + 1) & 7;
     input(p, size);
     page_free(p);
   }
   for (int i = 0; i < NS; i++) {
-    Socket *s = sockets[i];
+    Socket* s = sockets[i];
     if (!s)
       continue;
     if (s->closing && !s->pending &&
@@ -598,7 +599,7 @@ void net_tests(void) {
       net_connect(a, &q) || net_connect(b, &p))
     panic("UDP setup", 0, 0);
   u8 data[4];
-  if (net_send(a, (const u8 *)"udp!", 4) != 4)
+  if (net_send(a, (const u8*)"udp!", 4) != 4)
     panic("UDP send", 0, 0);
   net_poll();
   if (net_recv(b, data, 3) != S_LIMIT || net_recv(b, data, 4) != 4 ||
@@ -671,22 +672,22 @@ void net_tests(void) {
   if (free_pages != free_before) {
     for (int i = 0; i < NS; i++)
       if (sockets[i]) {
-        debug("NET remaining socket/state/pending: ");
-        debug_hex((u32)i);
-        debug_hex((u32)sockets[i]->state);
-        debug_hex(sockets[i]->pending);
-        debug("\n");
+        pr_debug("NET remaining socket/state/pending: ");
+        pr_debug_hex((u32)i);
+        pr_debug_hex((u32)sockets[i]->state);
+        pr_debug_hex(sockets[i]->pending);
+        pr_debug("\n");
       }
     panic("Network resources", free_pages, free_before);
   }
-  debug(
+  pr_debug(
       "NETWORK kernel checksum/SYN-loss/ACK-loss/duplicate/window/resource "
       "PASS\n");
 #endif
 }
 
-int net_sendto(int n, const u8 *data, u32 bytes, const SockAddress *a) {
-  Socket *s = valid(n);
+int net_sendto(int n, const u8* data, u32 bytes, const SockAddress* a) {
+  Socket* s = valid(n);
   if (!s || s->type != NET_UDP || a->address != NET_LOOPBACK ||
       a->family != 2 || !a->port)
     return S_INVALID;
@@ -698,8 +699,8 @@ int net_sendto(int n, const u8 *data, u32 bytes, const SockAddress *a) {
   s->peer = old;
   return r;
 }
-int net_recvfrom(int n, u8 *out, u32 cap, SockAddress *a) {
-  Socket *s = valid(n);
+int net_recvfrom(int n, u8* out, u32 cap, SockAddress* a) {
+  Socket* s = valid(n);
   if (!s || s->type != NET_UDP)
     return S_INVALID;
   int r = net_recv(n, out, cap);

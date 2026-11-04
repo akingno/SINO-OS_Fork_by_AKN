@@ -3,7 +3,9 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const shellSource = fs.readFileSync(path.join(__dirname, '../src32/shell.c'), 'utf8');
-const commandTable = shellSource.match(/static const char \*commands\[\]=\{([^}]+)\}/)[1];
+const commandTableMatch = shellSource.match(/static\s+const\s+char\s*\*\s*commands\s*\[\s*\]\s*=\s*\{([^}]+)\}/);
+if (!commandTableMatch) throw Error('Cannot locate the Shell public command table; review the help-coverage adapter.');
+const commandTable = commandTableMatch[1];
 const publicCommands = Array.from(commandTable.matchAll(/"([^"]+)"/g), match => match[1]);
 const helpCoverage = publicCommands.map(name => '(?=[\\s\\S]*\\b' + name + '\\b)').join('');
 

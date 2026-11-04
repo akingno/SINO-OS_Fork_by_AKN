@@ -1,8 +1,9 @@
+#include "klog.h"
 /* Opaque cached surfaces, grayscale text and a clipped alpha pointer. */
 #include "graphics.h"
 #include "settings.h"
-#define FRONT ((u32 *)0x1600000)
-#define ASSETS ((u8 *)0x700000)
+#define FRONT ((u32*)0x1600000)
+#define ASSETS ((u8*)0x700000)
 typedef struct {
   u32 w, h;
   const u8 *advance, *pixels;
@@ -11,8 +12,8 @@ static int pointer_visible, front_valid;
 static Font fonts[4];
 int gui_width = 1024, gui_height = 768, display_width = 1024,
     display_height = 768, display_scale = 100, display_contrast = 100;
-#define XMAP ((u16 *)0xe00000)
-#define YMAP ((u16 *)0xe01000)
+#define XMAP ((u16*)0xe00000)
+#define YMAP ((u16*)0xe01000)
 static u8 tone[256];
 static u32 output_color(u32 c) {
   return ((u32)tone[(c >> 16) & 255] << 16) | ((u32)tone[(c >> 8) & 255] << 8) |
@@ -61,14 +62,14 @@ int graphics_mode(int w, int h, int scale, int contrast) {
   return 1;
 }
 
-static u32 *surface;
+static u32* surface;
 static int sw, sh;
 static Rect clip;
-static const u8 *pointer_pixels;
+static const u8* pointer_pixels;
 static const u8 *chinese_pixels, *pinyin_data;
 static u32 chinese_count, pinyin_size;
 static int pointer_x = 512, pointer_y = 384, drawn_x, drawn_y;
-volatile u32 *graphics_video;
+volatile u32* graphics_video;
 u32 graphics_pitch, graphics_frames, graphics_pixels;
 int graphics_sse2, graphics_direct;
 static int min(int a, int b) {
@@ -85,7 +86,7 @@ static u32 mix(u32 back, u32 front, u32 a) {
 /* Only these leaf rendering routines use XMM. C compilation disables SSE and
    IRQ handlers use no XMM, so asynchronous PS/2/PIT interrupts preserve them.
  */
-void g_copy(u32 *to, const u32 *from, u32 count) {
+void g_copy(u32* to, const u32* from, u32 count) {
   if (graphics_sse2 && count >= 16) {
     u32 blocks = count / 16;
     __asm__ volatile(
@@ -99,7 +100,7 @@ void g_copy(u32 *to, const u32 *from, u32 count) {
   }
   __asm__ volatile("rep movsl" : "+D"(to), "+S"(from), "+c"(count)::"memory");
 }
-static void solid(u32 *p, u32 n, u32 color) {
+static void solid(u32* p, u32 n, u32 color) {
   if (graphics_sse2 && n >= 16) {
     u32 blocks = n / 16;
     __asm__ volatile(
@@ -113,7 +114,7 @@ static void solid(u32 *p, u32 n, u32 color) {
   }
   __asm__ volatile("rep stosl" : "+D"(p), "+c"(n) : "a"(color) : "memory");
 }
-void g_target(u32 *pixels, int w, int h) {
+void g_target(u32* pixels, int w, int h) {
   surface = pixels;
   sw = w;
   sh = h;
@@ -204,7 +205,7 @@ void g_bevel(int x, int y, int w, int h, int down) {
   g_line(x, y + h - 1, x + w - 1, y + h - 1, down ? 0xffffff : 0x72767e);
   g_line(x + w - 1, y, x + w - 1, y + h - 1, down ? 0xffffff : 0x72767e);
 }
-u32 utf_next(const char *s, int *at) {
+u32 utf_next(const char* s, int* at) {
   int i = *at;
   u8 c = (u8)s[i++];
   u32 cp = c;
@@ -238,7 +239,7 @@ u32 utf_next(const char *s, int *at) {
     return '?';
   return cp;
 }
-int utf_prev(const char *s, int i) {
+int utf_prev(const char* s, int i) {
   if (i > 0) {
     i--;
     while (i > 0 && ((u8)s[i] & 0xc0) == 0x80)
@@ -246,7 +247,7 @@ int utf_prev(const char *s, int i) {
   }
   return i;
 }
-int utf_encode(u32 cp, char *s) {
+int utf_encode(u32 cp, char* s) {
   if (cp < 128) {
     s[0] = (char)cp;
     return 1;
@@ -261,24 +262,23 @@ int utf_encode(u32 cp, char *s) {
   s[2] = (char)(0x80 | (cp & 63));
   return 3;
 }
-int g_candidates(const char *key, int start, u16 *out, int cap) {
-  u32 n = *(const u32 *)pinyin_data;
+int g_candidates(const char* key, int start, u16* out, int cap) {
+  u32 n = *(const u32*)pinyin_data;
   for (u32 i = 0; i < n; i++) {
-    const u8 *p = pinyin_data + 4 + i * 16;
-    if (!streq((const char *)p, key))
+    const u8* p = pinyin_data + 4 + i * 16;
+    if (!streq((const char*)p, key))
       continue;
-    u32 offset = *(const u32 *)(p + 8), count = *(const u16 *)(p + 12);
+    u32 offset = *(const u32*)(p + 8), count = *(const u16*)(p + 12);
     if (offset + count * 2 > pinyin_size)
       return 0;
     int written = 0;
     while (start < (int)count && written < cap)
-      out[written++] = *(const u16 *)(pinyin_data + offset + (u32)start++ * 2);
+      out[written++] = *(const u16*)(pinyin_data + offset + (u32)start++ * 2);
     return written;
   }
   return 0;
 }
-int g_width(int font, const char *s) {
-  s = settings_text(s);
+int g_width(int font, const char* s) {
   int width = 0, i = 0;
   while (s[i])
     width += g_advance(font, utf_next(s, &i));
@@ -295,14 +295,14 @@ void g_glyph(int font, int x, int y, u32 c, u32 color) {
   if (c >= 128) {
     u32 lo = 0, hi = chinese_count;
     while (lo < hi) {
-      u32 mid = (lo + hi) / 2, key = *(const u16 *)(chinese_pixels + mid * 34);
+      u32 mid = (lo + hi) / 2, key = *(const u16*)(chinese_pixels + mid * 34);
       if (key < c)
         lo = mid + 1;
       else
         hi = mid;
     }
-    if (lo < chinese_count && *(const u16 *)(chinese_pixels + lo * 34) == c) {
-      const u8 *p = chinese_pixels + lo * 34 + 2;
+    if (lo < chinese_count && *(const u16*)(chinese_pixels + lo * 34) == c) {
+      const u8* p = chinese_pixels + lo * 34 + 2;
       y += font == 1 ? 5 : 1;
       for (int j = 0; j < 16; j++)
         for (int i = 0; i < 16; i++)
@@ -316,7 +316,7 @@ void g_glyph(int font, int x, int y, u32 c, u32 color) {
     c = '?';
   if (c == ' ')
     return;
-  Font *f = &fonts[font];
+  Font* f = &fonts[font];
   u32 start = (c - 32) * f->w * f->h;
   for (u32 j = 0; j < f->h; j++)
     if (y + (int)j >= clip.y && y + (int)j < clip.y + clip.h)
@@ -330,8 +330,7 @@ void g_glyph(int font, int x, int y, u32 c, u32 color) {
           }
         }
 }
-void g_text(int font, int x, int y, const char *s, u32 color) {
-  s = settings_text(s);
+void g_text(int font, int x, int y, const char* s, u32 color) {
   int i = 0;
   while (s[i]) {
     u32 c = utf_next(s, &i);
@@ -339,11 +338,10 @@ void g_text(int font, int x, int y, const char *s, u32 color) {
     x += g_advance(font, c);
   }
 }
-void g_center(int x, int y, int w, const char *s, u32 color) {
+void g_center(int x, int y, int w, const char* s, u32 color) {
   g_text(0, x + (w - g_width(0, s)) / 2, y, s, color);
 }
-void g_cliptext(int x, int y, int width, const char *s, u32 color) {
-  s = settings_text(s);
+void g_cliptext(int x, int y, int width, const char* s, u32 color) {
   int right = x + width, i = 0;
   while (s[i]) {
     u32 c = utf_next(s, &i);
@@ -356,7 +354,7 @@ void g_cliptext(int x, int y, int width, const char *s, u32 color) {
     x += advance;
   }
 }
-void g_blit(const u32 *source, int stride, int x, int y, int width, int height,
+void g_blit(const u32* source, int stride, int x, int y, int width, int height,
             int sx, int sy) {
   int left = max(x, clip.x), top = max(y, clip.y),
       right = min(x + width, clip.x + clip.w),
@@ -396,7 +394,7 @@ static void pointer_draw(void) {
       int sx = XMAP[x] - drawn_x, sy = YMAP[y] - drawn_y;
       if (sx < 0 || sx >= 28 || sy < 0 || sy >= 34)
         continue;
-      const u8 *p = pointer_pixels + (sy * 28 + sx) * 4;
+      const u8* p = pointer_pixels + (sy * 28 + sx) * 4;
       if (p[3])
         graphics_video[y * graphics_pitch + x] =
             output_color(mix(FRONT[YMAP[y] * GUI_WIDTH + XMAP[x]],
@@ -436,7 +434,7 @@ void g_present(Rect r) {
     g_copy(old + first, row + first, (u32)(last - first));
     if (display_width == GUI_WIDTH && display_height == GUI_HEIGHT &&
         display_contrast == 100)
-      g_copy((u32 *)(graphics_video + y * graphics_pitch + first), row + first,
+      g_copy((u32*)(graphics_video + y * graphics_pitch + first), row + first,
              (u32)(last - first));
     else {
       int x1 = first * display_width / GUI_WIDTH,
@@ -477,12 +475,12 @@ void graphics_init(void) {
       __asm__ volatile("mov %0,%%cr0; mov %1,%%cr4" ::"r"(cr0), "r"(cr4)
                        : "memory");
       graphics_sse2 = 1;
-      debug("GRAPHICS SSE2 surface copies enabled\n");
+      pr_debug("GRAPHICS SSE2 surface copies enabled\n");
     }
   }
-  const u8 *vbe = (const u8 *)0x5800;
-  graphics_video = (volatile u32 *)*(const u32 *)(vbe + 40);
-  graphics_pitch = *(const u16 *)(vbe + 16) / 4;
+  const u8* vbe = (const u8*)0x5800;
+  graphics_video = (volatile u32*)*(const u32*)(vbe + 40);
+  graphics_pitch = *(const u16*)(vbe + 16) / 4;
   if (graphics_pitch < (u32)GUI_WIDTH)
     panic("VBE stride", graphics_pitch, 0);
   int index = -1;
@@ -494,32 +492,32 @@ void graphics_init(void) {
     panic("UI resources", 0, 0);
   u32 size = files[index].size;
   if (size < 64 || ASSETS[0] != 'S' || ASSETS[1] != 'N' || ASSETS[2] != 'U' ||
-      ASSETS[3] != 'I' || *(u32 *)(ASSETS + 4) != 2)
+      ASSETS[3] != 'I' || *(u32*)(ASSETS + 4) != 2)
     panic("UI resource header", 0, 0);
   for (int i = 0; i < 4; i++) {
-    u32 offset = *(u32 *)(ASSETS + 8 + i * 4);
+    u32 offset = *(u32*)(ASSETS + 8 + i * 4);
     if (offset > size - 112)
       panic("Font offset", offset, 0);
-    u8 *p = ASSETS + offset;
-    u32 w = *(u16 *)(p + 4), h = *(u16 *)(p + 6);
+    u8* p = ASSETS + offset;
+    u32 w = *(u16*)(p + 4), h = *(u16*)(p + 6);
     if (!w || !h || w > 32 || h > 40 || offset + 112 + 96 * w * h / 2 > size)
       panic("Font range", w, h);
     fonts[i] = (Font){w, h, p + 16, p + 112};
   }
-  u32 cursor = *(u32 *)(ASSETS + 24);
+  u32 cursor = *(u32*)(ASSETS + 24);
   if (cursor > size - 3808)
     panic("Pointer resource", cursor, 0);
   pointer_pixels = ASSETS + cursor;
-  u32 ch = *(u32 *)(ASSETS + 28), py = *(u32 *)(ASSETS + 44);
+  u32 ch = *(u32*)(ASSETS + 28), py = *(u32*)(ASSETS + 44);
   if (ch > size - 4 || py > size - 4)
     panic("Chinese resources", ch, py);
-  chinese_count = *(u32 *)(ASSETS + ch);
+  chinese_count = *(u32*)(ASSETS + ch);
   if (chinese_count > (size - ch - 4) / 34)
     panic("Chinese glyph range", ch, 0);
   chinese_pixels = ASSETS + ch + 4;
   pinyin_data = ASSETS + py;
   pinyin_size = size - py;
-  if (*(const u32 *)pinyin_data > (pinyin_size - 4) / 16)
+  if (*(const u32*)pinyin_data > (pinyin_size - 4) / 16)
     panic("Pinyin index range", py, 0);
   for (int i = 0; i < 256; i++)
     tone[i] = (u8)i;
@@ -528,5 +526,5 @@ void graphics_init(void) {
   for (int i = 0; i < 768; i++)
     YMAP[i] = (u16)i;
   g_target(GUI_BACK, GUI_WIDTH, GUI_HEIGHT);
-  debug("GRAPHICS Platinum bitmap fonts ready\n");
+  pr_debug("GRAPHICS Platinum bitmap fonts ready\n");
 }

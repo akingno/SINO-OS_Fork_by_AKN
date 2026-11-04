@@ -1,3 +1,4 @@
+#include "klog.h"
 #include "rtc.h"
 #include "kernel.h"
 #include "gui.h"
@@ -8,52 +9,42 @@
 #include "vfs.h"
 #include "net.h"
 #include "keyboard.h"
-void *memcpy(void *d, const void *s, u32 n) {
-  void *result = d;
+void* memcpy(void* d, const void* s, u32 n) {
+  void* result = d;
   u32 words = n / 4, tail = n & 3;
   __asm__ volatile("rep movsl" : "+D"(d), "+S"(s), "+c"(words)::"memory");
-  u8 *p = d;
-  const u8 *q = s;
+  u8* p = d;
+  const u8* q = s;
   while (tail--)
     *p++ = *q++;
   return result;
 }
-void *memset(void *d, int v, u32 n) {
-  void *result = d;
+void* memset(void* d, int v, u32 n) {
+  void* result = d;
   u32 words = n / 4, tail = n & 3, pattern = (u8)v * 0x01010101u;
   __asm__ volatile("rep stosl"
                    : "+D"(d), "+c"(words)
                    : "a"(pattern)
                    : "memory");
-  u8 *p = d;
+  u8* p = d;
   while (tail--)
     *p++ = (u8)v;
   return result;
 }
-u32 strlen(const char *s) {
+u32 strlen(const char* s) {
   u32 n = 0;
   while (s[n])
     n++;
   return n;
 }
-int streq(const char *a, const char *b) {
+int streq(const char* a, const char* b) {
   while (*a && *a == *b) {
     a++;
     b++;
   }
   return *a == *b;
 }
-void debug(const char *s) {
-  while (*s)
-    outb(0xe9, (u8)*s++);
-}
-void debug_hex(u32 v) {
-  const char *h = "0123456789ABCDEF";
-  debug("0x");
-  for (int n = 28; n >= 0; n -= 4)
-    outb(0xe9, h[(v >> n) & 15]);
-}
-void number(u32 v, char *s) {
+void number(u32 v, char* s) {
   char t[11];
   u32 n = 0;
   do {
@@ -65,15 +56,15 @@ void number(u32 v, char *s) {
     s[j++] = t[--n];
   s[j] = 0;
 }
-void panic(const char *s, u32 v, u32 e) {
+void panic(const char* s, u32 v, u32 e) {
   cli();
-  debug("KERNEL PANIC: ");
-  debug(s);
-  debug(" ");
-  debug_hex(v);
-  debug(" ");
-  debug_hex(e);
-  debug("\n");
+  pr_debug("KERNEL PANIC: ");
+  pr_debug(s);
+  pr_debug(" ");
+  pr_debug_hex(v);
+  pr_debug(" ");
+  pr_debug_hex(e);
+  pr_debug("\n");
   console_panic(s, v, e);
   for (;;)
     halt();
@@ -101,7 +92,7 @@ typedef struct PACKED {
   u32 base;
 } TablePointer;
 static Gate idt[256];
-extern void *isr_table[256];
+extern void* isr_table[256];
 static void wait_input(void) {
   for (u32 n = 0; n < 100000; n++)
     if (!(inb(0x64) & 2))
@@ -174,7 +165,7 @@ static void vm_mouse_init(void) {
     return;
   (void)vm_call(41, 0x53424152);
   mouse_absolute = 1;
-  debug("VMMOUSE absolute pointer ready\n");
+  pr_debug("VMMOUSE absolute pointer ready\n");
 }
 void mouse_poll(void) {
   if (!mouse_absolute)
@@ -213,7 +204,7 @@ static void mouse_byte(u8 v) {
   /* Coalesce motion only. Preserve button edges even during a slow repaint. */
   mouse_emit(x, y, packet[0] & 7, 0);
 }
-int mouse_read(MouseEvent *event) {
+int mouse_read(MouseEvent* event) {
   u32 flags;
   __asm__ volatile("pushfl; popl %0" : "=r"(flags));
   cli();
@@ -227,13 +218,13 @@ int mouse_read(MouseEvent *event) {
     sti();
   return ready;
 }
-void irq_dispatch(Frame *f) {
+void irq_dispatch(Frame* f) {
   if (f->vector < 32 || f->vector == 0x80)
     if (process_interrupt(f))
       return;
   if (f->vector < 32) {
     if (f->vector == 3) {
-      debug("BREAKPOINT exception handled\n");
+      pr_debug("BREAKPOINT exception handled\n");
       return;
     }
     if (fault_expected == f->vector && fault_resume) {
@@ -241,18 +232,18 @@ void irq_dispatch(Frame *f) {
       f->eip = fault_resume;
       fault_expected = 0;
       fault_resume = 0;
-      debug("EXPECTED exception handled: ");
-      debug_hex(f->vector);
-      debug("\n");
+      pr_debug("EXPECTED exception handled: ");
+      pr_debug_hex(f->vector);
+      pr_debug("\n");
       return;
     }
-    debug("Fault EIP=");
-    debug_hex(f->eip);
-    debug(" CR2=");
+    pr_debug("Fault EIP=");
+    pr_debug_hex(f->eip);
+    pr_debug(" CR2=");
     u32 cr2;
     __asm__ volatile("mov %%cr2,%0" : "=r"(cr2));
-    debug_hex(cr2);
-    debug("\n");
+    pr_debug_hex(cr2);
+    pr_debug("\n");
     panic("CPU exception", f->vector, f->error);
   }
   if (f->vector == 0x80) {
@@ -272,7 +263,7 @@ void irq_dispatch(Frame *f) {
     }
     if (f->eax == 1 && f->ebx >= native_base && f->edx <= native_size &&
         f->ebx - native_base <= native_size - f->edx) {
-      native_write((const char *)f->ebx, f->edx);
+      native_write((const char*)f->ebx, f->edx);
       f->eax = f->edx;
       return;
     }
@@ -349,13 +340,13 @@ void arch_init(void) {
   controller(0xae);
   controller(0xa8);
   if (!device_command(0, 0xf4))
-    debug("Keyboard ACK unavailable; continuing\n");
+    pr_debug("Keyboard ACK unavailable; continuing\n");
   mouse_present = device_command(1, 0xf6) && device_command(1, 0xf4);
   outb(0x21, 0xf8);
   outb(0xa1, mouse_present ? 0xef : 0xff);
-  debug("IDT 256 gates, PIC remapped, PIT 100 Hz\n");
-  debug(mouse_present ? "32-bit PS/2 mouse IRQ12 ready\n"
-                      : "PS/2 mouse unavailable\n");
+  pr_debug("IDT 256 gates, PIC remapped, PIT 100 Hz\n");
+  pr_debug(mouse_present ? "32-bit PS/2 mouse IRQ12 ready\n"
+                         : "PS/2 mouse unavailable\n");
   if (mouse_present)
     vm_mouse_init();
 }
@@ -383,8 +374,8 @@ typedef struct PACKED {
 } MemoryRange;
 void memory_init(void) {
   memset(pages, 2, sizeof(pages));
-  u32 count = *(volatile u16 *)0x4f00;
-  const MemoryRange *map = (const MemoryRange *)0x5000;
+  u32 count = *(volatile u16*)0x4f00;
+  const MemoryRange* map = (const MemoryRange*)0x5000;
   if (!count || count > 32)
     panic("Invalid E820 memory map", count, 0);
   for (u32 i = 0; i < count; i++)
@@ -408,25 +399,25 @@ void memory_init(void) {
     }
   if (!free_pages)
     panic("At least 64 MB RAM required", usable_memory, 0);
-  u32 *pd = (u32 *)0x90000;
-  u32 *pt = (u32 *)0x1e0000;
+  u32* pd = (u32*)0x90000;
+  u32* pt = (u32*)0x1e0000;
   memset(pd, 0, 4096);
   for (u32 i = 0; i < 16384; i++)
     pt[i] = (i * 4096) | 3;
   pt[0] = 0;
   for (u32 i = 0; i < 16; i++)
     pd[i] = (0x1e0000 + i * 4096) | 3;
-  const u8 *vbe = (const u8 *)0x5800;
-  u32 fb = *(const u32 *)(vbe + 40);
-  if (!fb || *(const u16 *)(vbe + 18) != GUI_WIDTH ||
-      *(const u16 *)(vbe + 20) != GUI_HEIGHT || vbe[25] != 32 || vbe[27] != 6 ||
+  const u8* vbe = (const u8*)0x5800;
+  u32 fb = *(const u32*)(vbe + 40);
+  if (!fb || *(const u16*)(vbe + 18) != GUI_WIDTH ||
+      *(const u16*)(vbe + 20) != GUI_HEIGHT || vbe[25] != 32 || vbe[27] != 6 ||
       vbe[31] != 8 || vbe[32] != 16 || vbe[33] != 8 || vbe[34] != 8 ||
       vbe[35] != 8 || vbe[36] != 0)
     panic("VBE direct-color mode unavailable", fb, vbe[25]);
   if ((fb >> 22) < 16 || (fb >> 22) > 1022)
     panic("Invalid VBE framebuffer", fb, 0);
   for (u32 bank = 0; bank < 3; bank++) {
-    u32 *video = (u32 *)(0x1f0000 + bank * 4096);
+    u32* video = (u32*)(0x1f0000 + bank * 4096);
     for (u32 i = 0; i < 1024; i++)
       video[i] = ((fb & 0xffc00000u) + (bank * 1024 + i) * 4096) | 0x1b;
     pd[(fb >> 22) + bank] = (u32)video | 3;
@@ -436,25 +427,25 @@ void memory_init(void) {
   __asm__ volatile("mov %%cr0,%0" : "=r"(cr0));
   cr0 = (cr0 & ~0x60000000u) | 0x80010000u;
   __asm__ volatile("mov %0,%%cr0" ::"r"(cr0) : "memory");
-  debug("PAGING enabled: CR0=");
-  debug_hex(cr0);
-  debug(" CR3=0x00090000, null page unmapped\n");
-  debug("VBE framebuffer mapped: ");
-  debug_hex(fb);
-  debug(" 1024x768x32\n");
+  pr_debug("PAGING enabled: CR0=");
+  pr_debug_hex(cr0);
+  pr_debug(" CR3=0x00090000, null page unmapped\n");
+  pr_debug("VBE framebuffer mapped: ");
+  pr_debug_hex(fb);
+  pr_debug(" 1024x768x32\n");
 }
-void *page_alloc(void) {
+void* page_alloc(void) {
   for (u32 i = 13312; i < 16384; i++)
     if (!pages[i]) {
       pages[i] = 1;
       free_pages--;
-      void *p = (void *)(i * 4096);
+      void* p = (void*)(i * 4096);
       memset(p, 0, 4096);
       return p;
     }
-  return (void *)0;
+  return (void*)0;
 }
-void *page_alloc_run(u32 count) {
+void* page_alloc_run(u32 count) {
   if (!count || count > 64)
     return 0;
   for (u32 i = 13312; i + count <= 16384; i++) {
@@ -465,7 +456,7 @@ void *page_alloc_run(u32 count) {
       for (j = 0; j < count; j++)
         pages[i + j] = 1;
       free_pages -= count;
-      void *p = (void *)(i * 4096);
+      void* p = (void*)(i * 4096);
       memset(p, 0, count * 4096);
       return p;
     }
@@ -473,7 +464,7 @@ void *page_alloc_run(u32 count) {
   }
   return 0;
 }
-int page_free_run(void *p, u32 count) {
+int page_free_run(void* p, u32 count) {
   u32 a = (u32)p;
   if (!count || count > 64 || (a & 4095) || a < 0x3400000 || a >= 0x4000000 ||
       count > (0x4000000 - a) / 4096)
@@ -486,7 +477,7 @@ int page_free_run(void *p, u32 count) {
   free_pages += count;
   return 1;
 }
-int page_free(void *p) {
+int page_free(void* p) {
   u32 a = (u32)p;
   if ((a & 4095) || a < 0x3400000 || a >= 0x4000000 || pages[a >> 12] != 1)
     return 0;
@@ -498,10 +489,10 @@ int page_free(void *p) {
 File files[224];
 u32 file_count;
 static u32 fat_offset, root_offset, data_offset, cluster_count, root_count;
-static u32 le16(const u8 *p) {
+static u32 le16(const u8* p) {
   return p[0] | ((u32)p[1] << 8);
 }
-static u32 le32(const u8 *p) {
+static u32 le32(const u8* p) {
   return le16(p) | (le16(p + 2) << 16);
 }
 int fs_init(void) {
@@ -521,12 +512,12 @@ int fs_init(void) {
     return 0;
   file_count = 0;
   for (u32 i = 0; i < root_count; i++) {
-    const u8 *e = RAMDISK + root_offset + i * 32;
+    const u8* e = RAMDISK + root_offset + i * 32;
     if (!e[0])
       break;
     if (e[0] == 0xe5 || (e[11] & 0x18))
       continue;
-    File *f = &files[file_count++];
+    File* f = &files[file_count++];
     u32 n = 0;
     for (u32 j = 0; j < 8; j++)
       if (e[j] != ' ')
@@ -540,10 +531,10 @@ int fs_init(void) {
     f->size = le32(e + 28);
     f->cluster = (u16)le16(e + 26);
   }
-  debug("FAT12 RAM disk ready, full 1.44 MB preloaded\n");
+  pr_debug("FAT12 RAM disk ready, full 1.44 MB preloaded\n");
   return 1;
 }
-int fs_read(u32 index, u8 *dest, u32 cap) {
+int fs_read(u32 index, u8* dest, u32 cap) {
   if (index >= file_count || files[index].size > cap)
     return 0;
   u32 left = files[index].size, c = files[index].cluster, steps = 0;
@@ -575,13 +566,13 @@ void kernel_tests(void) {
   if (*a != 0x46454c49 || *b != 0x58333221)
     panic("Memory read/write", 0, 0);
   if (!page_free(a) || !page_free(b) || page_free(a) ||
-      page_free((void *)0x200000) || free_pages != before)
+      page_free((void*)0x200000) || free_pages != before)
     panic("Page free validation", free_pages, before);
-  void *run = page_alloc_run(2);
+  void* run = page_alloc_run(2);
   if (!run || !page_free_run(run, 2) || page_free_run(run, 2) ||
       free_pages != before)
     panic("Page run", 0, 0);
-  debug("PAGE allocator self-check passed\n");
+  pr_debug("PAGE allocator self-check passed\n");
   __asm__ volatile("int3");
   u32 v = 2;
   __asm__ volatile("int $0x80" : "+a"(v)::"memory");
@@ -592,13 +583,13 @@ void kernel_tests(void) {
   test_page_fault();
   if (fault_count != 2)
     panic("Exception recovery", fault_count, 2);
-  debug("FAULT recovery self-check passed\n");
+  pr_debug("FAULT recovery self-check passed\n");
 #endif
 }
 void kmain(void) {
-  debug("SINO 0.10 native 32-bit kernel entered, CS=0x08\n");
+  pr_debug("SINO 0.10 native 32-bit kernel entered, CS=0x08\n");
 #ifdef SINO_BUILD_ID
-  debug("SINO BUILD ID: " SINO_BUILD_ID "\n");
+  pr_debug("SINO BUILD ID: " SINO_BUILD_ID "\n");
 #endif
   arch_init();
   memory_init();
@@ -618,7 +609,7 @@ void kmain(void) {
   u32 begin = ticks;
   while (ticks - begin < 3)
     halt();
-  debug("TIMER IRQ0 delivered in protected mode\n");
+  pr_debug("TIMER IRQ0 delivered in protected mode\n");
 #ifdef SELFTEST
   shell_tests();
   gui_tests();
@@ -626,7 +617,7 @@ void kmain(void) {
   if (vfs_lookup("/home/user/.sino/rollback/journal") >= 0)
     process_launch_args("/boot/setup.snx", CAP_HOME, "/recover-only");
   shell_bridge_init();
-  debug("SINO desktop ready\n");
+  pr_debug("SINO desktop ready\n");
   for (;;) {
     rtc_poll();
     gui_step();

@@ -1,3 +1,4 @@
+#include "klog.h"
 #include "console.h"
 #include "gui.h"
 #include "graphics.h"
@@ -115,15 +116,15 @@ void con_put(char c) {
   } else
     put_codepoint('?');
 }
-void con_write(const char *s) {
-  debug(s);
+void con_write(const char* s) {
+  pr_debug(s);
   while (*s)
     con_put(*s++);
 }
 u32 con_position(void) {
   return line * CON_COLS + column;
 }
-void con_edit(u32 anchor, const char *s, u32 length, u32 pos, u32 old_length) {
+void con_edit(u32 anchor, const char* s, u32 length, u32 pos, u32 old_length) {
   (void)old_length;
   u32 end = anchor, caret = anchor;
   int i = 0;
@@ -178,7 +179,7 @@ void con_flush(void) {
   if (scrollback > available)
     scrollback = available;
   u32 start = latest - scrollback;
-  volatile u16 *v = (volatile u16 *)0xb8000;
+  volatile u16* v = (volatile u16*)0xb8000;
   for (u32 y = 0; y < CON_ROWS; y++)
     for (u32 x = 0; x < CON_COLS; x++) {
       u32 c =
@@ -192,7 +193,7 @@ void con_flush(void) {
              ? -1
              : (int)(p - start * CON_COLS));
 }
-void con_snapshot(u32 *dest, u32 *position) {
+void con_snapshot(u32* dest, u32* position) {
   u32 latest = line >= CON_ROWS ? line - CON_ROWS + 1 : 0,
       earliest = line >= SCROLL_LINES ? line - SCROLL_LINES + 1 : 0;
   u32 available = latest > earliest ? latest - earliest : 0;
@@ -223,7 +224,7 @@ void con_scroll(int n) {
 u32 con_scrolled(void) {
   return scrollback;
 }
-void console_panic(const char *s, u32 vector, u32 error) {
+void console_panic(const char* s, u32 vector, u32 error) {
   if (gui_active) {
     gui_panic(s, vector, error);
     return;

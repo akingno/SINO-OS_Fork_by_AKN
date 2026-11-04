@@ -1,19 +1,22 @@
+#include "klog.h"
 #include "vfs.h"
 #include "storage.h"
 Node nodes[VFS_NODES];
 int cwd;
 u32 vfs_generation[VFS_NODES];
 static u32 next_generation;
-const char *vfs_error = "unknown error";
-static int fail(const char *s) {
+const char* vfs_error = "unknown error";
+TextKey vfs_error_key = VFS_ERROR_UNKNOWN_ERROR;
+static int vfs_fail(const char* s, TextKey key) {
   vfs_error = s;
+  vfs_error_key = key;
   return -1;
 }
-static void copy(char *d, const char *s) {
+static void copy(char* d, const char* s) {
   while ((*d++ = *s++)) {
   }
 }
-static int equal(const char *a, const char *b, int fold) {
+static int equal(const char* a, const char* b, int fold) {
   while (*a && *b) {
     char x = *a++, y = *b++;
     if (fold) {
@@ -27,7 +30,7 @@ static int equal(const char *a, const char *b, int fold) {
   }
   return *a == *b;
 }
-void vfs_path(int index, char *dest) {
+void vfs_path(int index, char* dest) {
   int chain[VFS_NODES], n = 0;
   while (index > 0 && n < VFS_NODES) {
     chain[n++] = index;
@@ -36,7 +39,7 @@ void vfs_path(int index, char *dest) {
   u32 p = 0;
   dest[p++] = '/';
   while (n) {
-    const char *s = nodes[chain[--n]].name;
+    const char* s = nodes[chain[--n]].name;
     while (*s && p < VFS_PATH - 1)
       dest[p++] = *s++;
     if (n && p < VFS_PATH - 1)
@@ -44,7 +47,7 @@ void vfs_path(int index, char *dest) {
   }
   dest[p] = 0;
 }
-int vfs_canonical(const char *path, char *out) {
+int vfs_canonical(const char* path, char* out) {
   char input[2 * VFS_PATH];
   u32 length = 0;
   if (!path || !path[0])
@@ -67,7 +70,7 @@ int vfs_canonical(const char *path, char *out) {
   }
   for (; *path; path++) {
     if (length >= sizeof(input) - 1)
-      return fail("path too long");
+      return vfs_fail("path too long", VFS_ERROR_PATH_TOO_LONG);
     input[length++] = *path == '\\' ? '/' : *path;
   }
   input[length] = 0;
@@ -80,7 +83,8 @@ int vfs_canonical(const char *path, char *out) {
     u32 n = 0;
     while (input[i] && input[i] != '/') {
       if (n >= VFS_NAME - 1)
-        return fail("file name too long (31 characters max)");
+        return vfs_fail("file name too long (31 characters max)",
+                        VFS_ERROR_NAME_TOO_LONG_31_UTF_8_BYTES_MAXIMUM);
       part[n++] = input[i++];
     }
     part[n] = 0;
@@ -99,25 +103,25 @@ int vfs_canonical(const char *path, char *out) {
     }
     if (pos > 1) {
       if (pos >= VFS_PATH - 1)
-        return fail("path too long");
+        return vfs_fail("path too long", VFS_ERROR_PATH_TOO_LONG);
       out[pos++] = '/';
     }
     if (pos + n >= VFS_PATH)
-      return fail("path too long");
+      return vfs_fail("path too long", VFS_ERROR_PATH_TOO_LONG);
     for (u32 j = 0; j < n; j++)
       out[pos++] = part[j];
   }
   out[pos] = 0;
   return 0;
 }
-int vfs_child(int parent, const char *name) {
+int vfs_child(int parent, const char* name) {
   for (int i = 1; i < VFS_NODES; i++)
     if (nodes[i].used && nodes[i].parent == parent &&
         equal(name, nodes[i].name, nodes[parent].readonly))
       return i;
   return -1;
 }
-static int absolute(const char *path) {
+static int absolute(const char* path) {
   int index = 0;
   u32 i = 1;
   while (path[i]) {
@@ -129,20 +133,21 @@ static int absolute(const char *path) {
     if (path[i] == '/')
       i++;
     if (!nodes[index].dir)
-      return fail("not a directory");
+      return vfs_fail("not a directory", VFS_ERROR_NOT_A_FOLDER);
     index = vfs_child(index, part);
     if (index < 0)
-      return fail("no such file or directory");
+      return vfs_fail("no such file or directory",
+                      VFS_ERROR_FILE_OR_FOLDER_NOT_FOUND);
   }
   return index;
 }
-int vfs_lookup(const char *path) {
+int vfs_lookup(const char* path) {
   char p[VFS_PATH];
   if (vfs_canonical(path, p) < 0)
     return -1;
   return absolute(p);
 }
-static int parent_name(const char *path, int *parent, char *name) {
+static int parent_name(const char* path, int* parent, char* name) {
   char p[VFS_PATH];
   if (vfs_canonical(path, p) < 0)
     return -1;
@@ -150,7 +155,8 @@ static int parent_name(const char *path, int *parent, char *name) {
   while (last > 0 && p[last - 1] != '/')
     last--;
   if (last == n)
-    return fail("cannot change the root directory");
+    return vfs_fail("cannot change the root directory",
+                    VFS_ERROR_THE_ROOT_FOLDER_CANNOT_BE_CHANGED);
   copy(name, p + last);
   if (last > 1)
     p[last - 1] = 0;
@@ -160,12 +166,13 @@ static int parent_name(const char *path, int *parent, char *name) {
   if (*parent < 0)
     return -1;
   if (!nodes[*parent].dir)
-    return fail("not a directory");
+    return vfs_fail("not a directory", VFS_ERROR_NOT_A_FOLDER);
   if (nodes[*parent].readonly)
-    return fail("read-only file system (/boot)");
+    return vfs_fail("read-only file system (/boot)",
+                    VFS_ERROR_READ_ONLY_LOCATION_CHOOSE_HOME_OR_DESKTOP);
   return 0;
 }
-static int allocate(int parent, const char *name, int dir) {
+static int allocate(int parent, const char* name, int dir) {
   for (int i = 1; i < VFS_NODES; i++)
     if (!nodes[i].used) {
       memset(&nodes[i], 0, sizeof(Node));
@@ -178,9 +185,9 @@ static int allocate(int parent, const char *name, int dir) {
       storage_changed();
       return i;
     }
-  return fail("File table is full (128 nodes)");
+  return vfs_fail("File table is full (128 nodes)", VFS_ERROR_NODE_LIMIT);
 }
-int vfs_create(const char *path, int dir, int parents) {
+int vfs_create(const char* path, int dir, int parents) {
   if (parents && dir) {
     char p[VFS_PATH];
     if (vfs_canonical(path, p) < 0)
@@ -197,13 +204,14 @@ int vfs_create(const char *path, int dir, int parents) {
       int next = vfs_child(parent, name);
       if (next < 0) {
         if (nodes[parent].readonly)
-          return fail("read-only file system (/boot)");
+          return vfs_fail("read-only file system (/boot)",
+                          VFS_ERROR_READ_ONLY_LOCATION_CHOOSE_HOME_OR_DESKTOP);
         next = allocate(parent, name, 1);
       }
       if (next < 0)
         return -1;
       if (!nodes[next].dir)
-        return fail("not a directory");
+        return vfs_fail("not a directory", VFS_ERROR_NOT_A_FOLDER);
       parent = next;
     }
     return parent;
@@ -216,21 +224,23 @@ int vfs_create(const char *path, int dir, int parents) {
   if (old >= 0) {
     if (!dir && !nodes[old].dir)
       return old;
-    return fail("file already exists");
+    return vfs_fail("file already exists",
+                    VFS_ERROR_AN_ITEM_WITH_THAT_NAME_ALREADY_EXISTS);
   }
   return allocate(parent, name, dir);
 }
-int vfs_read(int index, u8 *dest, u32 cap) {
+int vfs_read(int index, u8* dest, u32 cap) {
   if (index < 0 || index >= VFS_NODES || !nodes[index].used)
-    return fail("no such file");
-  Node *n = &nodes[index];
+    return vfs_fail("no such file", VFS_ERROR_FILE_NOT_FOUND);
+  Node* n = &nodes[index];
   if (n->dir)
-    return fail("is a directory");
+    return vfs_fail("is a directory", VFS_ERROR_THIS_ITEM_IS_A_FOLDER);
   if (n->size > cap)
-    return fail("file exceeds read buffer");
+    return vfs_fail("file exceeds read buffer", VFS_ERROR_FILE_IS_TOO_LARGE);
   if (n->boot >= 0)
-    return fs_read((u32)n->boot, dest, cap) ? (int)n->size
-                                            : fail("FAT12 read failed");
+    return fs_read((u32)n->boot, dest, cap)
+               ? (int)n->size
+               : vfs_fail("FAT12 read failed", VFS_ERROR_FAT12_READ_FAILED);
   for (u32 off = 0; off < n->size;) {
     u32 part = n->size - off;
     if (part > 4096)
@@ -240,17 +250,19 @@ int vfs_read(int index, u8 *dest, u32 cap) {
   }
   return (int)n->size;
 }
-int vfs_write(int index, const u8 *data, u32 length, int append) {
+int vfs_write(int index, const u8* data, u32 length, int append) {
   if (index < 0 || index >= VFS_NODES || !nodes[index].used)
-    return fail("no such file");
-  Node *n = &nodes[index];
+    return vfs_fail("no such file", VFS_ERROR_FILE_NOT_FOUND);
+  Node* n = &nodes[index];
   if (n->dir)
-    return fail("is a directory");
+    return vfs_fail("is a directory", VFS_ERROR_THIS_ITEM_IS_A_FOLDER);
   if (n->readonly)
-    return fail("read-only file system (/boot)");
+    return vfs_fail("read-only file system (/boot)",
+                    VFS_ERROR_READ_ONLY_LOCATION_CHOOSE_HOME_OR_DESKTOP);
   u32 offset = append ? n->size : 0;
   if (length > MAX_FILE - offset)
-    return fail("RAM file limit is 64 KB");
+    return vfs_fail("RAM file limit is 64 KB",
+                    VFS_ERROR_A_FILE_CAN_CONTAIN_AT_MOST_64_KB);
   u32 total = offset + length, old = (n->size + 4095) / 4096,
       needed = (total + 4095) / 4096, allocated = old;
   while (allocated < needed) {
@@ -261,7 +273,7 @@ int vfs_write(int index, const u8 *data, u32 length, int append) {
         page_free(n->pages[allocated]);
         n->pages[allocated] = 0;
       }
-      return fail("out of memory");
+      return vfs_fail("out of memory", VFS_ERROR_NOT_ENOUGH_MEMORY);
     }
     allocated++;
   }
@@ -276,20 +288,25 @@ int vfs_write(int index, const u8 *data, u32 length, int append) {
   storage_changed();
   return 0;
 }
-int vfs_remove(const char *path, int dir) {
+int vfs_remove(const char* path, int dir) {
   int index = vfs_lookup(path);
   if (index < 0)
     return -1;
-  Node *n = &nodes[index];
+  Node* n = &nodes[index];
   if (n->pinned || n->readonly)
-    return fail("protected or read-only path");
+    return vfs_fail("protected or read-only path",
+                    VFS_ERROR_THIS_ITEM_IS_PROTECTED_OR_READ_ONLY);
   if (n->dir != dir)
-    return fail(dir ? "not a directory" : "is a directory; use rmdir");
+    return vfs_fail(
+        dir ? "not a directory" : "is a directory; use rmdir",
+        dir ? VFS_ERROR_NOT_A_FOLDER : VFS_ERROR_IS_A_DIRECTORY_USE_RMDIR);
   if (index == cwd)
-    return fail("cannot remove current directory");
+    return vfs_fail("cannot remove current directory",
+                    VFS_ERROR_THE_CURRENT_FOLDER_CANNOT_BE_REMOVED);
   for (int i = 1; i < VFS_NODES; i++)
     if (nodes[i].used && nodes[i].parent == index)
-      return fail("directory is not empty");
+      return vfs_fail("directory is not empty",
+                      VFS_ERROR_THIS_FOLDER_IS_NOT_EMPTY_MOVE_ITS_FILES_FIRST);
   for (u32 i = 0; i < VFS_PAGES; i++)
     if (n->pages[i])
       page_free(n->pages[i]);
@@ -297,39 +314,44 @@ int vfs_remove(const char *path, int dir) {
   storage_changed();
   return 0;
 }
-static int destination(const char *path, const char *name, int *parent,
-                       char *out) {
+static int destination(const char* path, const char* name, int* parent,
+                       char* out) {
   int index = vfs_lookup(path);
   if (index >= 0 && nodes[index].dir) {
     if (nodes[index].readonly)
-      return fail("read-only file system (/boot)");
+      return vfs_fail("read-only file system (/boot)",
+                      VFS_ERROR_READ_ONLY_LOCATION_CHOOSE_HOME_OR_DESKTOP);
     char prefix[VFS_PATH];
     vfs_path(index, prefix);
     if (strlen(prefix) + (strlen(prefix) > 1) + strlen(name) >= VFS_PATH)
-      return fail("path too long");
+      return vfs_fail("path too long", VFS_ERROR_PATH_TOO_LONG);
     *parent = index;
     copy(out, name);
     return 0;
   }
   return parent_name(path, parent, out);
 }
-int vfs_move(const char *source, const char *dest) {
+int vfs_move(const char* source, const char* dest) {
   int index = vfs_lookup(source);
   if (index < 0)
     return -1;
-  Node *n = &nodes[index];
+  Node* n = &nodes[index];
   if (n->readonly || n->pinned)
-    return fail("protected or read-only path");
+    return vfs_fail("protected or read-only path",
+                    VFS_ERROR_THIS_ITEM_IS_PROTECTED_OR_READ_ONLY);
   int parent;
   char name[VFS_NAME];
   if (destination(dest, n->name, &parent, name) < 0)
     return -1;
   for (int p = parent; p > 0; p = nodes[p].parent)
     if (p == index)
-      return fail("cannot move a directory into itself");
+      return vfs_fail(
+          "cannot move a directory into itself",
+          VFS_ERROR_A_FOLDER_CANNOT_BE_MOVED_INTO_ITSELF_OR_ITS_DESCENDANTS);
   int existing = vfs_child(parent, name);
   if (existing >= 0 && existing != index)
-    return fail("destination exists");
+    return vfs_fail("destination exists",
+                    VFS_ERROR_THE_DESTINATION_ALREADY_CONTAINS_THAT_NAME);
   char prefix[VFS_PATH];
   vfs_path(parent, prefix);
   u32 base = strlen(prefix) + (strlen(prefix) > 1) + strlen(name);
@@ -342,14 +364,14 @@ int vfs_move(const char *source, const char *dest) {
         ancestor = nodes[ancestor].parent;
       }
       if (ancestor == index && base + relative >= VFS_PATH)
-        return fail("path too long");
+        return vfs_fail("path too long", VFS_ERROR_PATH_TOO_LONG);
     }
   n->parent = parent;
   copy(n->name, name);
   storage_changed();
   return 0;
 }
-int vfs_copy(const char *source, const char *dest, u8 *buffer) {
+int vfs_copy(const char* source, const char* dest, u8* buffer) {
   int index = vfs_lookup(source);
   if (index < 0)
     return -1;
@@ -385,7 +407,7 @@ void vfs_init(void) {
   for (u32 i = 0; i < file_count; i++) {
     char name[VFS_NAME];
     copy(name, files[i].name);
-    for (char *p = name; *p; p++)
+    for (char* p = name; *p; p++)
       if (*p >= 'A' && *p <= 'Z')
         *p += 32;
     int n = allocate(boot, name, 0);
@@ -405,7 +427,7 @@ void vfs_init(void) {
   nodes[desktop].pinned = nodes[trash].pinned = 1;
   /* Paint has been hidden 261103. Do not register its built-in application
    * entry. */
-  const char *app_names[] = {"TextEdit", "Calculator", "Clock",  "Terminal",
+  const char* app_names[] = {"TextEdit", "Calculator", "Clock",  "Terminal",
                              "Files",    "System",     "Install"};
   for (u32 i = 0; i < sizeof(app_names) / sizeof(app_names[0]); i++) {
     char path[VFS_PATH];
@@ -414,20 +436,20 @@ void vfs_init(void) {
     copy(path + strlen(path), ".app");
     int app = vfs_create(path, 0, 0);
     if (app < 0 ||
-        vfs_write(app, (const u8 *)app_names[i], strlen(app_names[i]), 0) < 0)
+        vfs_write(app, (const u8*)app_names[i], strlen(app_names[i]), 0) < 0)
       panic("Application registry", i, 0);
     nodes[app].readonly = nodes[app].pinned = 1;
   }
   nodes[apps].readonly = nodes[apps].pinned = 1;
-  const char *welcome =
+  const char* welcome =
       "Welcome to SINO Platinum Desktop.\n\nUse the SINO menu to launch "
       "applications.\nDouble-click desktop icons or files to open them.\nFile "
       "> New Folder / New Text Document creates real files.\n\nHome files are "
       "stored on the SINO data disk. /tmp is temporary.\n";
   int n = vfs_create("/home/user/welcome.txt", 0, 0);
-  if (n < 0 || vfs_write(n, (const u8 *)welcome, strlen(welcome), 0) < 0)
+  if (n < 0 || vfs_write(n, (const u8*)welcome, strlen(welcome), 0) < 0)
     panic("VFS welcome", 0, 0);
-  const char *desktop_readme =
+  const char* desktop_readme =
       "欢迎使用 SINO "
       "中文桌面\n\n右键桌面空白处可新建文件夹和文本文件。\n右键文件可打开、重命"
       "名、复制、剪切或移到废纸篓。\n按住文件拖到文件夹、文件窗口或桌面，然后松"
@@ -443,13 +465,13 @@ void vfs_init(void) {
       "文本编辑 / F4 计算器\nF6 时钟 / F7 关于 SINO\n";
   n = vfs_create("/home/user/Desktop/Read Me.txt", 0, 0);
   if (n < 0 ||
-      vfs_write(n, (const u8 *)desktop_readme, strlen(desktop_readme), 0) < 0)
+      vfs_write(n, (const u8*)desktop_readme, strlen(desktop_readme), 0) < 0)
     panic("Desktop readme", 0, 0);
-  const char *release =
+  const char* release =
       "NAME=SINO\nVERSION=0.10\nKERNEL=SINO32\nSHELL=SINO SH\n";
   n = vfs_create("/etc/os-release", 0, 0);
-  if (n < 0 || vfs_write(n, (const u8 *)release, strlen(release), 0) < 0)
+  if (n < 0 || vfs_write(n, (const u8*)release, strlen(release), 0) < 0)
     panic("VFS release", 0, 0);
   cwd = user;
-  debug("VFS ready: read-only /boot, writable RAM home and tmp\n");
+  pr_debug("VFS ready: read-only /boot, writable RAM home and tmp\n");
 }

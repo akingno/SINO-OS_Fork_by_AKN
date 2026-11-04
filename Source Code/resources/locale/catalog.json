@@ -1,0 +1,1928 @@
+[
+  {
+    "key": "VFS_ERROR_UNKNOWN_ERROR",
+    "module": "VFS",
+    "type": "ERROR",
+    "meaning": "Unknown error",
+    "parameters": []
+  },
+  {
+    "key": "VFS_ERROR_PATH_TOO_LONG",
+    "module": "VFS",
+    "type": "ERROR",
+    "meaning": "Path too long",
+    "parameters": []
+  },
+  {
+    "key": "VFS_ERROR_NAME_TOO_LONG_31_UTF_8_BYTES_MAXIMUM",
+    "module": "VFS",
+    "type": "ERROR",
+    "meaning": "Name too long (31 UTF-8 bytes maximum).",
+    "parameters": []
+  },
+  {
+    "key": "VFS_ERROR_NOT_A_FOLDER",
+    "module": "VFS",
+    "type": "ERROR",
+    "meaning": "Not a folder.",
+    "parameters": []
+  },
+  {
+    "key": "VFS_ERROR_FILE_OR_FOLDER_NOT_FOUND",
+    "module": "VFS",
+    "type": "ERROR",
+    "meaning": "File or folder not found.",
+    "parameters": []
+  },
+  {
+    "key": "VFS_ERROR_THE_ROOT_FOLDER_CANNOT_BE_CHANGED",
+    "module": "VFS",
+    "type": "ERROR",
+    "meaning": "The root folder cannot be changed.",
+    "parameters": []
+  },
+  {
+    "key": "VFS_ERROR_READ_ONLY_LOCATION_CHOOSE_HOME_OR_DESKTOP",
+    "module": "VFS",
+    "type": "ERROR",
+    "meaning": "Read-only location. Choose Home or Desktop.",
+    "parameters": []
+  },
+  {
+    "key": "VFS_ERROR_NODE_LIMIT",
+    "module": "VFS",
+    "type": "ERROR",
+    "meaning": "The file table is full (128 entries).",
+    "parameters": [
+      "count"
+    ]
+  },
+  {
+    "key": "VFS_ERROR_AN_ITEM_WITH_THAT_NAME_ALREADY_EXISTS",
+    "module": "VFS",
+    "type": "ERROR",
+    "meaning": "An item with that name already exists.",
+    "parameters": []
+  },
+  {
+    "key": "VFS_ERROR_FILE_NOT_FOUND",
+    "module": "VFS",
+    "type": "ERROR",
+    "meaning": "File not found.",
+    "parameters": []
+  },
+  {
+    "key": "VFS_ERROR_THIS_ITEM_IS_A_FOLDER",
+    "module": "VFS",
+    "type": "ERROR",
+    "meaning": "This item is a folder.",
+    "parameters": []
+  },
+  {
+    "key": "VFS_ERROR_FILE_IS_TOO_LARGE",
+    "module": "VFS",
+    "type": "ERROR",
+    "meaning": "File is too large.",
+    "parameters": []
+  },
+  {
+    "key": "VFS_ERROR_FAT12_READ_FAILED",
+    "module": "VFS",
+    "type": "ERROR",
+    "meaning": "FAT12 read failed",
+    "parameters": []
+  },
+  {
+    "key": "VFS_ERROR_A_FILE_CAN_CONTAIN_AT_MOST_64_KB",
+    "module": "VFS",
+    "type": "ERROR",
+    "meaning": "A file can contain at most 64 KB.",
+    "parameters": []
+  },
+  {
+    "key": "VFS_ERROR_NOT_ENOUGH_MEMORY",
+    "module": "VFS",
+    "type": "ERROR",
+    "meaning": "Not enough memory.",
+    "parameters": []
+  },
+  {
+    "key": "VFS_ERROR_THIS_ITEM_IS_PROTECTED_OR_READ_ONLY",
+    "module": "VFS",
+    "type": "ERROR",
+    "meaning": "This item is protected or read-only.",
+    "parameters": []
+  },
+  {
+    "key": "VFS_ERROR_IS_A_DIRECTORY_USE_RMDIR",
+    "module": "VFS",
+    "type": "ERROR",
+    "meaning": "is a directory; use rmdir",
+    "parameters": []
+  },
+  {
+    "key": "VFS_ERROR_THE_CURRENT_FOLDER_CANNOT_BE_REMOVED",
+    "module": "VFS",
+    "type": "ERROR",
+    "meaning": "The current folder cannot be removed.",
+    "parameters": []
+  },
+  {
+    "key": "VFS_ERROR_THIS_FOLDER_IS_NOT_EMPTY_MOVE_ITS_FILES_FIRST",
+    "module": "VFS",
+    "type": "ERROR",
+    "meaning": "This folder is not empty. Move its files first.",
+    "parameters": []
+  },
+  {
+    "key": "VFS_ERROR_A_FOLDER_CANNOT_BE_MOVED_INTO_ITSELF_OR_ITS_DESCENDANTS",
+    "module": "VFS",
+    "type": "ERROR",
+    "meaning": "A folder cannot be moved into itself or its descendants.",
+    "parameters": []
+  },
+  {
+    "key": "VFS_ERROR_THE_DESTINATION_ALREADY_CONTAINS_THAT_NAME",
+    "module": "VFS",
+    "type": "ERROR",
+    "meaning": "The destination already contains that name.",
+    "parameters": []
+  },
+  {
+    "key": "STORAGE_ERROR_NO_DATA_DISK_ATTACHED",
+    "module": "STORAGE",
+    "type": "ERROR",
+    "meaning": "No data disk attached",
+    "parameters": []
+  },
+  {
+    "key": "STORAGE_ERROR_DATA_VOLUME_IS_FULL",
+    "module": "STORAGE",
+    "type": "ERROR",
+    "meaning": "Data volume is full",
+    "parameters": []
+  },
+  {
+    "key": "STORAGE_ERROR_DATA_DISK_WRITE_FAILED",
+    "module": "STORAGE",
+    "type": "ERROR",
+    "meaning": "Data disk write failed",
+    "parameters": []
+  },
+  {
+    "key": "STORAGE_ERROR_DATA_DISK_PAYLOAD_FAILED",
+    "module": "STORAGE",
+    "type": "ERROR",
+    "meaning": "Data disk payload failed",
+    "parameters": []
+  },
+  {
+    "key": "STORAGE_ERROR_DATA_DISK_COMMIT_FAILED",
+    "module": "STORAGE",
+    "type": "ERROR",
+    "meaning": "Data disk commit failed",
+    "parameters": []
+  },
+  {
+    "key": "STORAGE_ERROR_UNRECOGNIZED_DATA_DISK_WRITES_DISABLED",
+    "module": "STORAGE",
+    "type": "ERROR",
+    "meaning": "Unrecognized data disk; writes disabled",
+    "parameters": []
+  },
+  {
+    "key": "STORAGE_ERROR_DATA_SNAPSHOT_RESTORE_FAILED",
+    "module": "STORAGE",
+    "type": "ERROR",
+    "meaning": "Data snapshot restore failed",
+    "parameters": []
+  },
+  {
+    "key": "STORAGE_ERROR_NO_VALID_DATA_SNAPSHOT_WRITES_DISABLED",
+    "module": "STORAGE",
+    "type": "ERROR",
+    "meaning": "No valid data snapshot; writes disabled",
+    "parameters": []
+  },
+  {
+    "key": "STORAGE_ERROR_DATA_VOLUME_HEADER_READ_FAILED",
+    "module": "STORAGE",
+    "type": "ERROR",
+    "meaning": "Data volume header read failed",
+    "parameters": []
+  },
+  {
+    "key": "STORAGE_ERROR_DATA_VOLUME_HEADER_WRITE_FAILED",
+    "module": "STORAGE",
+    "type": "ERROR",
+    "meaning": "Data volume header write failed",
+    "parameters": []
+  },
+  {
+    "key": "STORAGE_ERROR_DATA_VOLUME_HEADER_FLUSH_FAILED",
+    "module": "STORAGE",
+    "type": "ERROR",
+    "meaning": "Data volume header flush failed",
+    "parameters": []
+  },
+  {
+    "key": "SETTINGS_STATUS_CHOOSE_YOUR_SETTINGS_THEN_SELECT_APPLY",
+    "module": "SETTINGS",
+    "type": "STATUS",
+    "meaning": "Choose your settings, then select Apply.",
+    "parameters": []
+  },
+  {
+    "key": "SETTINGS_ERROR_SETTINGS_COULD_NOT_BE_SAVED_CHECK_THE_DATA_DISK",
+    "module": "SETTINGS",
+    "type": "ERROR",
+    "meaning": "Settings could not be saved. Check the data disk.",
+    "parameters": []
+  },
+  {
+    "key": "SETTINGS_STATUS_APPLIED_FOR_THIS_SESSION_NO_PERSISTENT_DISK",
+    "module": "SETTINGS",
+    "type": "STATUS",
+    "meaning": "Applied for this session; no persistent disk.",
+    "parameters": []
+  },
+  {
+    "key": "SETTINGS_STATUS_SETTINGS_SAVED_AND_WILL_SURVIVE_A_RESTART",
+    "module": "SETTINGS",
+    "type": "STATUS",
+    "meaning": "Settings saved and will survive a restart.",
+    "parameters": []
+  },
+  {
+    "key": "SETTINGS_STATUS_PREVIOUS_DISPLAY_SETTINGS_RESTORED",
+    "module": "SETTINGS",
+    "type": "STATUS",
+    "meaning": "Previous display settings restored.",
+    "parameters": []
+  },
+  {
+    "key": "SETTINGS_ERROR_THIS_RESOLUTION_AND_SCALE_COMBINATION_IS_UNAVAILABLE",
+    "module": "SETTINGS",
+    "type": "ERROR",
+    "meaning": "This resolution and scale combination is unavailable.",
+    "parameters": []
+  },
+  {
+    "key": "SETTINGS_STATUS_SELECT_APPLY_TO_RESTORE_THE_DEFAULT_SETTINGS",
+    "module": "SETTINGS",
+    "type": "STATUS",
+    "meaning": "Select Apply to restore the default settings.",
+    "parameters": []
+  },
+  {
+    "key": "SETTINGS_LABEL_SETTINGS",
+    "module": "SETTINGS",
+    "type": "LABEL",
+    "meaning": "Settings",
+    "parameters": []
+  },
+  {
+    "key": "SETTINGS_LABEL_SYSTEM",
+    "module": "SETTINGS",
+    "type": "LABEL",
+    "meaning": "System",
+    "parameters": []
+  },
+  {
+    "key": "SETTINGS_LABEL_DISPLAY",
+    "module": "SETTINGS",
+    "type": "LABEL",
+    "meaning": "Display",
+    "parameters": []
+  },
+  {
+    "key": "SETTINGS_LABEL_LANGUAGE",
+    "module": "SETTINGS",
+    "type": "LABEL",
+    "meaning": "Language",
+    "parameters": []
+  },
+  {
+    "key": "SETTINGS_LABEL_ABOUT",
+    "module": "SETTINGS",
+    "type": "LABEL",
+    "meaning": "About",
+    "parameters": []
+  },
+  {
+    "key": "SETTINGS_LABEL_SINO_OPERATING_SYSTEM",
+    "module": "SETTINGS",
+    "type": "LABEL",
+    "meaning": "SINO operating system",
+    "parameters": []
+  },
+  {
+    "key": "SETTINGS_LABEL_VERSION_0_10_SINO32",
+    "module": "SETTINGS",
+    "type": "LABEL",
+    "meaning": "Version 0.10  /  SINO32",
+    "parameters": []
+  },
+  {
+    "key": "SETTINGS_LABEL_32_BIT_X86_CUSTOM_KERNEL_DRIVERS_AND_DESKTOP",
+    "module": "SETTINGS",
+    "type": "LABEL",
+    "meaning": "32-bit x86; custom kernel, drivers and desktop.",
+    "parameters": []
+  },
+  {
+    "key": "SETTINGS_LABEL_BOOT_SOURCE_INSTALLED_HARD_DISK",
+    "module": "SETTINGS",
+    "type": "LABEL",
+    "meaning": "Boot source: installed hard disk",
+    "parameters": []
+  },
+  {
+    "key": "SETTINGS_LABEL_BOOT_SOURCE_ISO_LIVE_SESSION",
+    "module": "SETTINGS",
+    "type": "LABEL",
+    "meaning": "Boot source: ISO / live session",
+    "parameters": []
+  },
+  {
+    "key": "SETTINGS_LABEL_HOME_FILES_PERSISTENT_DATA_VOLUME",
+    "module": "SETTINGS",
+    "type": "LABEL",
+    "meaning": "Home files: persistent data volume",
+    "parameters": []
+  },
+  {
+    "key": "SETTINGS_LABEL_HOME_FILES_TEMPORARY_MEMORY_ONLY",
+    "module": "SETTINGS",
+    "type": "LABEL",
+    "meaning": "Home files: temporary memory only",
+    "parameters": []
+  },
+  {
+    "key": "SETTINGS_LABEL_FREE_MEMORY_KB",
+    "module": "SETTINGS",
+    "type": "LABEL",
+    "meaning": "Free memory (KB)",
+    "parameters": []
+  },
+  {
+    "key": "SETTINGS_LABEL_DISPLAY_SETTINGS",
+    "module": "SETTINGS",
+    "type": "LABEL",
+    "meaning": "Display settings",
+    "parameters": []
+  },
+  {
+    "key": "SETTINGS_LABEL_LANGUAGE_SETTINGS",
+    "module": "SETTINGS",
+    "type": "LABEL",
+    "meaning": "Language settings",
+    "parameters": []
+  },
+  {
+    "key": "SETTINGS_LABEL_SCREEN_RESOLUTION",
+    "module": "SETTINGS",
+    "type": "LABEL",
+    "meaning": "Screen resolution",
+    "parameters": []
+  },
+  {
+    "key": "SETTINGS_LABEL_SCALE",
+    "module": "SETTINGS",
+    "type": "LABEL",
+    "meaning": "Scale",
+    "parameters": []
+  },
+  {
+    "key": "SETTINGS_LABEL_CONTRAST",
+    "module": "SETTINGS",
+    "type": "LABEL",
+    "meaning": "Contrast",
+    "parameters": []
+  },
+  {
+    "key": "SETTINGS_LABEL_SCALE_CHANGES_TEXT_CONTROLS_AND_DESKTOP_SPACE",
+    "module": "SETTINGS",
+    "type": "LABEL",
+    "meaning": "Scale changes text, controls and desktop space.",
+    "parameters": []
+  },
+  {
+    "key": "SETTINGS_LABEL_DISPLAY_LANGUAGE",
+    "module": "SETTINGS",
+    "type": "LABEL",
+    "meaning": "Display language",
+    "parameters": []
+  },
+  {
+    "key": "SETTINGS_LABEL_CHINESE_SIMPLIFIED",
+    "module": "SETTINGS",
+    "type": "LABEL",
+    "meaning": "Chinese (Simplified)",
+    "parameters": []
+  },
+  {
+    "key": "SETTINGS_LABEL_YOUR_FILENAMES_AND_DOCUMENT_CONTENTS_REMAIN_UNCHANGED",
+    "module": "SETTINGS",
+    "type": "LABEL",
+    "meaning": "Your filenames and document contents remain unchanged.",
+    "parameters": []
+  },
+  {
+    "key": "SETTINGS_LABEL_CHINESE_INPUT_CTRL_SPACE_TOGGLES_PINYIN",
+    "module": "SETTINGS",
+    "type": "LABEL",
+    "meaning": "Chinese input: Ctrl+Space toggles Pinyin.",
+    "parameters": []
+  },
+  {
+    "key": "SETTINGS_LABEL_SPACE_SELECTS_1_7_CHOOSE_PAGE",
+    "module": "SETTINGS",
+    "type": "LABEL",
+    "meaning": "Space selects; 1-7 choose; [ ] page.",
+    "parameters": []
+  },
+  {
+    "key": "SETTINGS_LABEL_CHARACTERS_AND_COMMON_PHRASES_NO_SENTENCE_PREDICTION",
+    "module": "SETTINGS",
+    "type": "LABEL",
+    "meaning": "Characters and common phrases; no sentence prediction.",
+    "parameters": []
+  },
+  {
+    "key": "SETTINGS_LABEL_KERNEL_DESKTOP_INSTALLER_CUSTOM_C_ASSEMBLY",
+    "module": "SETTINGS",
+    "type": "LABEL",
+    "meaning": "Kernel, desktop, installer: custom C / assembly.",
+    "parameters": []
+  },
+  {
+    "key": "SETTINGS_LABEL_OPEN_SOURCE_QEMU_UNIFONT_AND_CLASSIC_FONTS",
+    "module": "SETTINGS",
+    "type": "LABEL",
+    "meaning": "Open source: QEMU, Unifont and classic fonts.",
+    "parameters": []
+  },
+  {
+    "key": "SETTINGS_LABEL_PINYIN_CHARACTER_DATA_PINYIN_DATA_MIT",
+    "module": "SETTINGS",
+    "type": "LABEL",
+    "meaning": "Pinyin character data: pinyin-data (MIT).",
+    "parameters": []
+  },
+  {
+    "key": "SETTINGS_LABEL_BIOS_MBR_BOOT_NATIVE_SINO_DATA_FILESYSTEM",
+    "module": "SETTINGS",
+    "type": "LABEL",
+    "meaning": "BIOS / MBR boot; native SINO data filesystem.",
+    "parameters": []
+  },
+  {
+    "key": "SETTINGS_LABEL_NATIVE_APPS_USE_USER_MODE_LEGACY_APPS_REMAIN_IN_KERNEL",
+    "module": "SETTINGS",
+    "type": "LABEL",
+    "meaning": "Native apps use user mode; legacy apps remain in kernel.",
+    "parameters": []
+  },
+  {
+    "key": "SETTINGS_LABEL_SOURCE_AND_COMPONENT_LICENSES_ARE_INCLUDED",
+    "module": "SETTINGS",
+    "type": "LABEL",
+    "meaning": "Source and component licenses are included.",
+    "parameters": []
+  },
+  {
+    "key": "SETTINGS_LABEL_KEEP_THESE_DISPLAY_SETTINGS_THEY_REVERT_AUTOMATICALLY",
+    "module": "SETTINGS",
+    "type": "LABEL",
+    "meaning": "Keep these display settings? They revert automatically.",
+    "parameters": []
+  },
+  {
+    "key": "SETTINGS_LABEL_SECONDS",
+    "module": "SETTINGS",
+    "type": "LABEL",
+    "meaning": "seconds",
+    "parameters": []
+  },
+  {
+    "key": "SETTINGS_LABEL_REVERT",
+    "module": "SETTINGS",
+    "type": "LABEL",
+    "meaning": "Revert",
+    "parameters": []
+  },
+  {
+    "key": "SETTINGS_LABEL_KEEP_CHANGES",
+    "module": "SETTINGS",
+    "type": "LABEL",
+    "meaning": "Keep changes",
+    "parameters": []
+  },
+  {
+    "key": "SETTINGS_LABEL_DEFAULTS",
+    "module": "SETTINGS",
+    "type": "LABEL",
+    "meaning": "Defaults",
+    "parameters": []
+  },
+  {
+    "key": "SETTINGS_LABEL_APPLY",
+    "module": "SETTINGS",
+    "type": "LABEL",
+    "meaning": "Apply",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_ERROR_CANNOT_READ_THE_DISK",
+    "module": "INSTALL",
+    "type": "ERROR",
+    "meaning": "Cannot read the disk.",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_ERROR_GPT_UNSUPPORTED",
+    "module": "INSTALL",
+    "type": "ERROR",
+    "meaning": "GPT disk; this installer supports MBR only.",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_ERROR_INVALID_PARTITION_TABLE_DISK_WRITES_ARE_DISABLED",
+    "module": "INSTALL",
+    "type": "ERROR",
+    "meaning": "Invalid partition table; disk writes are disabled.",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_ERROR_OVERLAPPING_PARTITIONS_DISK_WRITES_ARE_DISABLED",
+    "module": "INSTALL",
+    "type": "ERROR",
+    "meaning": "Overlapping partitions; disk writes are disabled.",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_ERROR_UNKNOWN_DISK_LAYOUT_AUTOMATIC_WRITES_ARE_DISABLED",
+    "module": "INSTALL",
+    "type": "ERROR",
+    "meaning": "Unknown disk layout; automatic writes are disabled.",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_STATUS_DELETE_EXISTING_PARTITIONS_BEFORE_AUTOMATIC_PARTITIONING",
+    "module": "INSTALL",
+    "type": "STATUS",
+    "meaning": "Delete existing partitions before automatic partitioning.",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_ERROR_SETUP_NEEDS_A_DEDICATED_DISK_OF_AT_LEAST_64_MB",
+    "module": "INSTALL",
+    "type": "ERROR",
+    "meaning": "Setup needs a dedicated disk of at least 64 MB.",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_STATUS_SYSTEM_AND_DATA_PARTITIONS_PLANNED_NO_DISK_WRITES_YET",
+    "module": "INSTALL",
+    "type": "STATUS",
+    "meaning": "System and data partitions planned; no disk writes yet.",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_ERROR_SELECT_UNALLOCATED_SPACE",
+    "module": "INSTALL",
+    "type": "ERROR",
+    "meaning": "Select unallocated space.",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_ERROR_PARTITION_SIZE_IS_OUT_OF_RANGE",
+    "module": "INSTALL",
+    "type": "ERROR",
+    "meaning": "Partition size is out of range.",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_ERROR_ENTER_A_PARTITION_SIZE_GREATER_THAN_ZERO",
+    "module": "INSTALL",
+    "type": "ERROR",
+    "meaning": "Enter a partition size greater than zero.",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_ERROR_THAT_SIZE_EXCEEDS_THE_SELECTED_UNALLOCATED_SPACE",
+    "module": "INSTALL",
+    "type": "ERROR",
+    "meaning": "That size exceeds the selected unallocated space.",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_ERROR_MBR_SUPPORTS_AT_MOST_FOUR_PRIMARY_PARTITIONS",
+    "module": "INSTALL",
+    "type": "ERROR",
+    "meaning": "MBR supports at most four primary partitions.",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_ERROR_SYSTEM_NEEDS_4_MB_DATA_NEEDS_AT_LEAST_16_MB",
+    "module": "INSTALL",
+    "type": "ERROR",
+    "meaning": "System needs 4 MB; data needs at least 16 MB.",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_STATUS_PARTITION_ADDED_TO_THE_PLAN_NO_DISK_WRITES_YET",
+    "module": "INSTALL",
+    "type": "STATUS",
+    "meaning": "Partition added to the plan; no disk writes yet.",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_ERROR_A_SYSTEM_PARTITION_AND_A_SINO_DATA_PARTITION_ARE_REQUIRED",
+    "module": "INSTALL",
+    "type": "ERROR",
+    "meaning": "A system partition and a SINO data partition are required.",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_ERROR_BOOT_THE_ISO_TO_REINSTALL_THIS_SYSTEM_IS_CURRENTLY_RUNNING",
+    "module": "INSTALL",
+    "type": "ERROR",
+    "meaning": "Boot the ISO to reinstall; this system is currently running.",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_ERROR_THE_CURRENT_DATA_VOLUME_CANNOT_SYNC_SETUP_STOPPED",
+    "module": "INSTALL",
+    "type": "ERROR",
+    "meaning": "The current data volume cannot sync. Setup stopped.",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_ERROR_MBR_BOOT_FILE_MISSING",
+    "module": "INSTALL",
+    "type": "ERROR",
+    "meaning": "The CD is missing its MBR boot file.",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_ERROR_WRITE_OR_VERIFICATION_FAILED_INSTALLATION_IS_INCOMPLETE",
+    "module": "INSTALL",
+    "type": "ERROR",
+    "meaning": "Write or verification failed. Installation is incomplete.",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_STATUS_DELETION_STAGED_THE_DISK_IS_UNCHANGED",
+    "module": "INSTALL",
+    "type": "STATUS",
+    "meaning": "Deletion staged; the disk is unchanged.",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_STATUS_FORMAT_STAGED_THE_DISK_IS_UNCHANGED",
+    "module": "INSTALL",
+    "type": "STATUS",
+    "meaning": "Format staged; the disk is unchanged.",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_SETUP",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "Setup",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_1_PREPARE",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "1  Prepare",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_2_CHOOSE_DISK",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "2  Choose disk",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_3_INSTALL",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "3  Install",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_4_FINISH",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "4  Finish",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_LANGUAGE_AND_REGION",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "Language and region",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_INSTALL_SINO",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "Install SINO",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_LICENSE_AND_INSTALLATION",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "License and installation",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_WHERE_DO_YOU_WANT_TO_INSTALL_SINO",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "Where do you want to install SINO?",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_CONFIRM_INSTALLATION",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "Confirm installation",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_INSTALLING_SINO",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "Installing SINO",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_SINO_HAS_BEEN_INSTALLED",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "SINO has been installed",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_CHOOSE_THE_SETUP_AND_SYSTEM_LANGUAGE",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "Choose the setup and system language",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_CHINESE_SIMPLIFIED",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "Chinese (Simplified)",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_STANDARD_PC_KEYBOARD_WITH_BUILT_IN_BASIC_PINYIN",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "Standard PC keyboard with built-in basic Pinyin.",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_ONLY_THE_SELECTED_VIRTUAL_HARD_DISK_IS_TARGETED",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "Only the selected virtual hard disk is targeted.",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_INSTALL_TO_A_HARD_DISK_AND_BOOT_WITHOUT_THE_CD",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "Install to a hard disk and boot without the CD.",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_SETUP_PARTITIONS_COPIES_VERIFIES_AND_INSTALLS_BOOT_CODE",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "Setup partitions, copies, verifies and installs boot code.",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_YOU_CAN_ALSO_EXIT_SETUP_AND_TRY_THE_DESKTOP",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "You can also exit setup and try the desktop.",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_INSTALL_NOW",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "Install now",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_TRY_DESKTOP",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "Try desktop",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_THE_SINO_KERNEL_DESKTOP_AND_INSTALLER_USE_MIT",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "The SINO kernel, desktop and installer use MIT.",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_QEMU_FONTS_AND_PINYIN_RETAIN_THEIR_OWN_LICENSES",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "QEMU, fonts and Pinyin retain their own licenses.",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_CONTINUE_TO_USE_SINO_UNDER_THE_INCLUDED_LICENSES",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "Continue to use SINO under the included licenses.",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_SETUP_CHANGES_PARTITIONS_AND_DATA_ON_THE_SELECTED_DISK",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "Setup changes partitions and data on the selected disk.",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_BACK_UP_ANY_FILES_YOU_NEED_TO_KEEP_FIRST",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "Back up any files you need to keep first.",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_BIOS_MBR_SUPPORTED_GPT_AND_UEFI_ARE_UNAVAILABLE",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "BIOS / MBR supported; GPT and UEFI are unavailable.",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_PARTITION_UNALLOCATED_SPACE",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "Partition / unallocated space",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_CAPACITY",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "Capacity",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_TYPE",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "Type",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_UNALLOCATED_SPACE",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "Unallocated space",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_SINO_SYSTEM_PARTITION",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "SINO system partition",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_SINO_DATA_PARTITION",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "SINO data partition",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_OTHER_PARTITION",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "Other partition",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_WILL_FORMAT",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "Will format",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_FREE",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "Free",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_PRESERVE",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "Preserve",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_NEW",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "New",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_DELETE",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "Delete",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_FORMAT",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "Format",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_AUTOMATIC",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "Automatic",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_TARGET_VIRTUAL_HARD_DISK",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "Target virtual hard disk:",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_SYSTEM_PARTITION_REPLACE_SYSTEM_FILES",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "System partition: replace system files",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_DATA_PARTITION_FORMAT_AS_SINO_FS",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "Data partition: format as SINO FS",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_DATA_PARTITION_PRESERVE_EXISTING_CONTENT",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "Data partition: preserve existing content",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_EXISTING_CONTENT_ON_SELECTED_PARTITIONS_MAY_BE_LOST",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "Existing content on selected partitions may be lost.",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_THE_DISK_CHANGES_ONLY_AFTER_BEGIN_INSTALLATION",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "The disk changes only after Begin installation.",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_COPYING_SYSTEM_FILES",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "Copying system files...",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_READING_BACK_AND_VERIFYING_SYSTEM_FILES",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "Reading back and verifying system files...",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_CONFIGURING_THE_DATA_PARTITION_AND_BOOT_CODE",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "Configuring the data partition and boot code...",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_KEEP_THE_VM_RUNNING_AND_THE_DISK_CONNECTED",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "Keep the VM running and the disk connected.",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_SYSTEM_FILES_COPIED_AND_VERIFIED_SECTOR_BY_SECTOR",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "System files copied and verified sector by sector.",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_MBR_BOOT_AND_A_PERSISTENT_DATA_PARTITION_ARE_READY",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "MBR boot and a persistent data partition are ready.",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_RESTART_TO_ENTER_SINO_FROM_THE_HARD_DISK",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "Restart to enter SINO from the hard disk.",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_IF_THE_CD_BOOTS_AGAIN_EJECT_IT_AND_BOOT_THE_HARD_DISK",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "If the CD boots again, eject it and boot the hard disk.",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_BACK",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "Back",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_RESTART",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "Restart",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_BEGIN_INSTALLATION",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "Begin installation",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_NEXT",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "Next",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_PLEASE_WAIT",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "Please wait...",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_NEW_PARTITION",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "New partition",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_SIZE_MB",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "Size (MB)",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_CANCEL",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "Cancel",
+    "parameters": []
+  },
+  {
+    "key": "INSTALL_LABEL_CREATE",
+    "module": "INSTALL",
+    "type": "LABEL",
+    "meaning": "Create",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_DESKTOP",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Desktop",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_FILES",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Files",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_TEXTEDIT",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "TextEdit",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_CALCULATOR",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Calculator",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_PAINT",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Paint",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_CLOCK",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Clock",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_TERMINAL",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Terminal",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_SETTINGS",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Settings",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_INSTALL_SINO",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Install SINO",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_NATIVE_APPLICATION",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Native application",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_SINO",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "SINO",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_FILE",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "File",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_EDIT",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Edit",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_DISPLAY",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Display",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_WINDOW",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Window",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_TOOLS",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Tools",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_PLATINUM_DESKTOP_0_10",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Platinum Desktop / 0.10",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_HOME",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Home",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_STARTUP_DISK",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Startup Disk",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_APPLICATIONS",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Applications",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_TRASH",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Trash",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_EIGHT_WINDOWS_ARE_OPEN_CLOSE_ONE_FIRST",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Eight windows are open. Close one first.",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_DOCUMENTS",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Documents",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_COMPUTER",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Computer",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_CLOSE_SOME_APPLICATIONS_TO_FREE_A_WINDOW",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Close some applications to free a window.",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_CANNOT_START_CLOCK_CHECK_BOOT_FILES_OR_CLOSE_SOME_APPLICATIONS",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Cannot start Clock. Check boot files or close some applications.",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_PAINT_IS_UNAVAILABLE_DRAWINGS_ARE_PRESERVED",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Paint is unavailable; drawings are preserved.",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_CANNOT_START_CALCULATOR_CHECK_BOOT_FILES_OR_CLOSE_SOME_APPLICATIONS",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Cannot start Calculator. Check boot files or close some applications.",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_UNTITLED",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Untitled",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_UNTITLED_DRAWING",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Untitled Drawing",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_NOT_ENOUGH_DRAWING_MEMORY",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Not enough drawing memory.",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_CANNOT_START_PACKAGE_INSTALLER",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Cannot start package installer",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_CANNOT_OPEN_SHORTCUT",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Cannot open shortcut",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_CANNOT_START_NATIVE_APPLICATION",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Cannot start native application",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_TEXTEDIT_SUPPORTS_FILES_UP_TO_16_KB",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "TextEdit supports files up to 16 KB.",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_THIS_IS_NOT_A_SINO_PAINT_DRAWING",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "This is not a SINO Paint drawing.",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_INSTALLATION_IS_IN_PROGRESS_PLEASE_WAIT",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Installation is in progress. Please wait.",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_SAVE_CHANGES_BEFORE_CLOSING",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Save changes before closing?",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_SAVE_AS_FULL_PATH",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Save As (full path)",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_NEW_FOLDER",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "New Folder",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_NEW_TEXT_FILE",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "New Text File",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_UNTITLED_TXT",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Untitled.txt",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_OPEN_FULL_PATH",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Open (full path)",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_RENAME",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Rename",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_HOME_FILES_HAVE_BEEN_SAVED_TO_THE_DATA_DISK",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Home files have been saved to the data disk.",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_MOVE_TO_FULL_PATH",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Move to (full path)",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_USE_UP_TO_31_ASCII_LETTERS_OR_10_CHINESE_CHARACTERS_NO_SLASHES",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Use up to 31 ASCII letters or 10 Chinese characters; no slashes.",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_THE_PATH_IS_TOO_LONG_USE_A_SHORTER_NAME",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "The path is too long. Use a shorter name.",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_A_FILE_OR_FOLDER_ALREADY_HAS_THAT_NAME",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "A file or folder already has that name.",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_THIS_FILE_ALREADY_EXISTS_CHOOSE_ANOTHER_NAME",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "This file already exists. Choose another name.",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_UP",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Up",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_NEW_TEXT",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "New Text",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_OPEN",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Open",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_NAME",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Name",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_SIZE",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Size",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_FOLDER",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Folder",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_SAVE",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Save",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_SAVE_AS",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Save As",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_EDITED",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Edited",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_UTF_8_TEXT_CTRL_SPACE_PINYIN",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "UTF-8 text / Ctrl+Space: Pinyin",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_LN",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Ln",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_COL",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Col",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_UNSAVED_DOCUMENT",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Unsaved document",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_THIS_DOCUMENT_HAS_REACHED_THE_16_KB_LIMIT",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "This document has reached the 16 KB limit.",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_THE_COPIED_FILE_NO_LONGER_EXISTS",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "The copied file no longer exists.",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_THE_DESTINATION_PATH_IS_TOO_LONG",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "The destination path is too long.",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_ERASER",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Eraser",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_PENCIL",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Pencil",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_CLEAR",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Clear",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_256_X_160_PIXELS",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "256 x 160 pixels",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_SINO_SH_CTRL_L_CLEAR_PAGE_UP_SCROLL",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "SINO SH / Ctrl+L clear / Page Up scroll",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_NEW_WINDOW_DOCUMENT_CTRL_N",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "New window / document  Ctrl+N",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_OPEN_CTRL_O",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Open...  Ctrl+O",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_SAVE_CTRL_S",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Save  Ctrl+S",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_SAVE_AS_ALTERNATE",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Save As...",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_MOVE_TO",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Move to...",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_MOVE_TO_TRASH_DELETE",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Move to Trash / Delete",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_CLOSE_WINDOW_CTRL_W",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Close window  Ctrl+W",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_SELECT_ALL_CTRL_A",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Select all  Ctrl+A",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_COPY_CTRL_C",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Copy  Ctrl+C",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_CUT_CTRL_X",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Cut  Ctrl+X",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_PASTE_CTRL_V",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Paste  Ctrl+V",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_HOME_ALTERNATE",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Home",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_REFRESH_DESKTOP",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Refresh desktop",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_SAVE_HOME_TO_DISK",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Save home to disk",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_DESKTOP_HELP",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Desktop help",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_NO_OPEN_WINDOWS",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "No open windows",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_PINYIN",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Pinyin",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_CANCEL",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Cancel",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_OK",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "OK",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_DISCARDING_LOSES_YOUR_UNSAVED_CHANGES",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Discarding loses your unsaved changes.",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_DISCARD",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Discard",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_CHOOSE_A_WRITABLE_DESTINATION_FOLDER",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Choose a writable destination folder.",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_A_FOLDER_CANNOT_BE_MOVED_INTO_ITSELF",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "A folder cannot be moved into itself.",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_THE_DESTINATION_CONTAINS_AN_ITEM_WITH_THAT_NAME",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "The destination contains an item with that name.",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_RENAME_ALTERNATE",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Rename...",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_COPY_CTRL_C_ALTERNATE",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Copy   Ctrl+C",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_CUT_CTRL_X_ALTERNATE",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Cut   Ctrl+X",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_PASTE_CTRL_V_ALTERNATE",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Paste   Ctrl+V",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_PROPERTIES",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Properties",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_NEW_FOLDER_ALTERNATE",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "New Folder...",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_NEW_TEXT_FILE_ALTERNATE",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "New Text File...",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_REFRESH",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Refresh",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_FOLDER_ALTERNATE",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "  Folder",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_FILE_ALTERNATE",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "  File",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_BYTES",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": " bytes",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_RELEASE_TO_MOVE",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Release to move",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_CANNOT_DROP_HERE",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Cannot drop here",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_PINYIN_SPACE_SELECTS_PAGE",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Pinyin: Space selects; [ ] page",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_CONTINUE_PINYIN_OR_ENTER_FOR_THE_TYPED_LETTERS",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Continue Pinyin, or Enter for the typed letters",
+    "parameters": []
+  },
+  {
+    "key": "GUI_TEMPLATE_FILE_PROPERTIES",
+    "module": "GUI",
+    "type": "TEMPLATE",
+    "meaning": "File properties",
+    "parameters": [
+      "name",
+      "count"
+    ]
+  },
+  {
+    "key": "GUI_TEMPLATE_FOLDER_PROPERTIES",
+    "module": "GUI",
+    "type": "TEMPLATE",
+    "meaning": "Folder properties",
+    "parameters": [
+      "name",
+      "count"
+    ]
+  }
+]

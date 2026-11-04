@@ -1,3 +1,4 @@
+#include "klog.h"
 /* ATA PIO user volume. Two checksummed snapshots; commit header is written
  * last. */
 #include "storage.h"
@@ -8,23 +9,35 @@
 #define STORE_MAGIC 0x31534653u
 int storage_ready, storage_dirty;
 u32 storage_generation;
-const char *storage_error = "No data disk attached";
+const char* storage_error = "No data disk attached";
+TextKey storage_error_key = STORAGE_ERROR_NO_DATA_DISK_ATTACHED;
+static TextKey reported_error;
+static void storage_set_error(TextKey key) {
+  storage_error_key = key;
+  storage_error = locale_text_for(1, key);
+  if (key != TEXT_NONE && key != reported_error) {
+    pr_debug("STORAGE failed: ");
+    pr_debug(storage_error);
+    pr_debug("\n");
+  }
+  reported_error = key;
+}
 static int current_bank = -1, loading;
 static u32 changed_at, sectors, crc_table[256];
 static u8 io_sector[512], file_buffer[MAX_FILE];
 int storage_disk = -1;
 u32 storage_partition;
 static u32 volume_base;
-static int ata_read(u32 lba, u8 *dest) {
+static int ata_read(u32 lba, u8* dest) {
   return disk_read(storage_disk, lba, dest);
 }
-static int ata_write(u32 lba, const u8 *source) {
+static int ata_write(u32 lba, const u8* source) {
   return disk_write(storage_disk, lba, source);
 }
 static int ata_flush(void) {
   return disk_flush(storage_disk);
 }
-static u32 crc_step(u32 crc, const u8 *p, u32 length) {
+static u32 crc_step(u32 crc, const u8* p, u32 length) {
   while (length--)
     crc = (crc >> 8) ^ crc_table[(crc ^ *p++) & 255];
   return crc;
@@ -32,12 +45,12 @@ static u32 crc_step(u32 crc, const u8 *p, u32 length) {
 static int identify(void) {
   u8 mbr[512];
   int first =
-      *(volatile u8 *)0x4f0c >= 0x80 ? (int)*(volatile u8 *)0x4f0c - 0x80 : 0;
-  if (*(volatile u8 *)0x4f0c >= 0x80) {
-    u32 signature = *(volatile u32 *)0x4f10;
+      *(volatile u8*)0x4f0c >= 0x80 ? (int)*(volatile u8*)0x4f0c - 0x80 : 0;
+  if (*(volatile u8*)0x4f0c >= 0x80) {
+    u32 signature = *(volatile u32*)0x4f10;
     for (int d = 0; d < 4; d++)
       if (disks[d].present && disk_read(d, 0, mbr) && mbr[510] == 0x55 &&
-          mbr[511] == 0xaa && *(u32 *)(mbr + 440) == signature) {
+          mbr[511] == 0xaa && *(u32*)(mbr + 440) == signature) {
         first = d;
         break;
       }
@@ -59,8 +72,8 @@ static int identify(void) {
     }
     if (mbr[510] == 0x55 && mbr[511] == 0xaa) {
       for (int i = 0; i < 4; i++) {
-        u8 *p = mbr + 446 + i * 16;
-        u32 start = *(u32 *)(p + 8), length = *(u32 *)(p + 12);
+        u8* p = mbr + 446 + i * 16;
+        u32 start = *(u32*)(p + 8), length = *(u32*)(p + 12);
         if (p[4] == 0x7f && start >= 2048 && length >= 8 + 2 * BANK_SECTORS &&
             start < disks[d].sectors && length <= disks[d].sectors - start) {
           storage_disk = d;
@@ -86,7 +99,7 @@ static Snapshot inspect(int bank) {
   Snapshot s = {0, 0, 0, 0, bank, 0};
   if (!ata_read(BANK_START(bank), io_sector))
     return s;
-  u32 *header = (u32 *)io_sector;
+  u32* header = (u32*)io_sector;
   if (header[0] != STORE_MAGIC || header[1] != 1 || header[6] != 0x434f4d54 ||
       header[3] > (BANK_SECTORS - 1) * 512 || header[4] > VFS_NODES)
     return s;
@@ -108,7 +121,7 @@ static Snapshot inspect(int bank) {
 typedef struct {
   u32 lba, offset, left;
 } Reader;
-static int read_bytes(Reader *r, u8 *dest, u32 length) {
+static int read_bytes(Reader* r, u8* dest, u32 length) {
   if (length > r->left)
     return 0;
   while (length) {
@@ -148,17 +161,17 @@ static int restore(Snapshot s) {
   for (u32 i = 0; i < s.count; i++) {
     if (!read_bytes(&r, record, 160) || !record[0] || record[127] != 0)
       return 0;
-    const char *path = (const char *)record;
+    const char* path = (const char*)record;
     char canonical[VFS_PATH];
     if (strlen(path) < 11 || vfs_canonical(path, canonical) < 0 ||
         !streq(path, canonical))
       return 0;
-    const char *prefix = "/home/user/";
+    const char* prefix = "/home/user/";
     for (u32 j = 0; j < 11; j++)
       if (path[j] != prefix[j])
         return 0;
-    u32 size = *(u32 *)(record + 132);
-    if (size > MAX_FILE || *(u32 *)(record + 128) > 1 ||
+    u32 size = *(u32*)(record + 132);
+    if (size > MAX_FILE || *(u32*)(record + 128) > 1 ||
         !read_bytes(&r, file_buffer, size))
       return 0;
   }
@@ -175,9 +188,9 @@ static int restore(Snapshot s) {
   for (u32 i = 0; i < s.count; i++) {
     if (!read_bytes(&r, record, 160))
       return 0;
-    char *path = (char *)record;
-    u32 size = *(u32 *)(record + 132);
-    int dir = *(u32 *)(record + 128) != 0;
+    char* path = (char*)record;
+    u32 size = *(u32*)(record + 132);
+    int dir = *(u32*)(record + 128) != 0;
     char parent[VFS_PATH];
     memcpy(parent, path, VFS_PATH);
     u32 n = strlen(parent);
@@ -200,7 +213,7 @@ typedef struct {
   int ok;
   u8 data[512];
 } Writer;
-static void write_bytes(Writer *w, const u8 *source, u32 length) {
+static void write_bytes(Writer* w, const u8* source, u32 length) {
   w->crc = crc_step(w->crc, source, length);
   w->bytes += length;
   while (length && w->ok) {
@@ -236,12 +249,12 @@ int storage_sync(void) {
       total += 160 + (nodes[i].dir ? 0 : nodes[i].size);
     }
   if (total > (BANK_SECTORS - 1) * 512) {
-    storage_error = "Data volume is full";
+    storage_set_error(STORAGE_ERROR_DATA_VOLUME_IS_FULL);
     return 0;
   }
   memset(io_sector, 0, 512);
   if (!ata_write(BANK_START(bank), io_sector)) {
-    storage_error = "Data disk write failed";
+    storage_set_error(STORAGE_ERROR_DATA_DISK_WRITE_FAILED);
     return 0;
   }
   Writer w = {BANK_START(bank) + 1, 0, 0, 0xffffffff, 1, {0}};
@@ -249,9 +262,9 @@ int storage_sync(void) {
     if (nodes[i].used && storage_tracks_node(i)) {
       u8 record[160];
       memset(record, 0, sizeof(record));
-      vfs_path(i, (char *)record);
-      *(u32 *)(record + 128) = (u32)nodes[i].dir;
-      *(u32 *)(record + 132) = nodes[i].dir ? 0 : nodes[i].size;
+      vfs_path(i, (char*)record);
+      *(u32*)(record + 128) = (u32)nodes[i].dir;
+      *(u32*)(record + 132) = nodes[i].dir ? 0 : nodes[i].size;
       write_bytes(&w, record, 160);
       if (!nodes[i].dir) {
         int n = vfs_read(i, file_buffer, MAX_FILE);
@@ -267,11 +280,11 @@ int storage_sync(void) {
     w.ok = ata_write(w.lba, w.data);
   }
   if (!w.ok || !ata_flush()) {
-    storage_error = "Data disk payload failed";
+    storage_set_error(STORAGE_ERROR_DATA_DISK_PAYLOAD_FAILED);
     return 0;
   }
   memset(io_sector, 0, 512);
-  u32 *header = (u32 *)io_sector;
+  u32* header = (u32*)io_sector;
   header[0] = STORE_MAGIC;
   header[1] = 1;
   header[2] = storage_generation + 1;
@@ -280,18 +293,18 @@ int storage_sync(void) {
   header[5] = w.crc ^ 0xffffffff;
   header[6] = 0x434f4d54;
   if (!ata_write(BANK_START(bank), io_sector) || !ata_flush()) {
-    storage_error = "Data disk commit failed";
+    storage_set_error(STORAGE_ERROR_DATA_DISK_COMMIT_FAILED);
     return 0;
   }
   storage_generation++;
   current_bank = bank;
   storage_dirty = 0;
-  storage_error = "";
-  debug("STORAGE committed generation ");
+  storage_set_error(TEXT_NONE);
+  pr_debug("STORAGE committed generation ");
   char b[11];
   number(storage_generation, b);
-  debug(b);
-  debug("\n");
+  pr_debug(b);
+  pr_debug("\n");
   return 1;
 }
 void storage_poll(void) {
@@ -308,11 +321,13 @@ void storage_init(void) {
     crc_table[i] = c;
   }
   if (!identify()) {
-    debug("STORAGE no writable ATA data volume; RAM mode\n");
+    pr_debug("STORAGE no writable ATA data volume; RAM mode\n");
     return;
   }
-  if (!ata_read(volume_base, io_sector))
+  if (!ata_read(volume_base, io_sector)) {
+    storage_set_error(STORAGE_ERROR_DATA_VOLUME_HEADER_READ_FAILED);
     return;
+  }
   const char magic[8] = {'S', 'I', 'N', 'O', 'D', 'S', 'K', '1'};
   int known = 1, blank = 1;
   for (int i = 0; i < 8; i++)
@@ -322,7 +337,7 @@ void storage_init(void) {
     if (io_sector[i])
       blank = 0;
   if (!known && !blank) {
-    storage_error = "Unrecognized data disk; writes disabled";
+    storage_set_error(STORAGE_ERROR_UNRECOGNIZED_DATA_DISK_WRITES_DISABLED);
     return;
   }
   Snapshot a = inspect(0), b = inspect(1);
@@ -338,31 +353,38 @@ void storage_init(void) {
     }
     loading = 0;
     if (!ok) {
-      storage_error = "Data snapshot restore failed";
+      storage_set_error(STORAGE_ERROR_DATA_SNAPSHOT_RESTORE_FAILED);
       return;
     }
     storage_generation = first.generation;
     current_bank = first.bank;
     storage_ready = 1;
     storage_dirty = 0;
-    storage_error = "";
-    debug("STORAGE restored generation ");
+    storage_set_error(TEXT_NONE);
+    pr_debug("STORAGE restored generation ");
     char number_text[11];
     number(storage_generation, number_text);
-    debug(number_text);
-    debug("\n");
+    pr_debug(number_text);
+    pr_debug("\n");
   } else if (blank) {
     memset(io_sector, 0, 512);
     memcpy(io_sector, magic, 8);
-    if (!ata_write(volume_base, io_sector) || !ata_flush())
+    if (!ata_write(volume_base, io_sector)) {
+      storage_set_error(STORAGE_ERROR_DATA_VOLUME_HEADER_WRITE_FAILED);
       return;
+    }
+    if (!ata_flush()) {
+      storage_set_error(STORAGE_ERROR_DATA_VOLUME_HEADER_FLUSH_FAILED);
+      return;
+    }
     storage_ready = 1;
-    storage_error = "";
+    storage_set_error(TEXT_NONE);
     storage_dirty = 1;
-    (void)storage_sync();
-    debug("STORAGE initialized SINO data volume\n");
+    if (!storage_sync())
+      return;
+    pr_debug("STORAGE initialized SINO data volume\n");
   } else {
-    storage_error = "No valid data snapshot; writes disabled";
-    debug("STORAGE recovery required\n");
+    storage_set_error(STORAGE_ERROR_NO_VALID_DATA_SNAPSHOT_WRITES_DISABLED);
+    pr_debug("STORAGE recovery required\n");
   }
 }

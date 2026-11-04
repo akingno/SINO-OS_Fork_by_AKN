@@ -6,6 +6,7 @@ const crypto = require('node:crypto');
 const net = require('node:net');
 const {spawn, execFileSync} = require('node:child_process');
 const {QMP} = require('./qmp');
+const host = require('./host-tools');
 const sourceRoot = path.resolve(__dirname, '..');
 const repoRoot = path.dirname(sourceRoot);
 const devRoot = path.join(repoRoot, 'Build Output', 'dev');
@@ -32,7 +33,7 @@ function sources() {
             else if (item.isFile()) files.push(file);
         }
     }
-    for (const name of ['src32','user','disk32','packages','tools']) walk(path.join(sourceRoot, name));
+    for (const name of ['src32','user','disk32','packages','resources','tools']) walk(path.join(sourceRoot, name));
     for (const name of fs.readdirSync(sourceRoot)) if (/^build.*\.(js|ps1)$/.test(name)) files.push(path.join(sourceRoot, name));
     files.push(path.join(sourceRoot, 'LICENSE'));
     files.push(path.join(repoRoot, 'dev.ps1'));
@@ -200,6 +201,7 @@ if (require.main === module) (async()=>{
     if (command==='check') return check();
     const directory = runPath(value);
     if (command==='prepare') {
+        execFileSync(host.python(), [path.join(sourceRoot,'tools/build-locale.py')], {windowsHide:true,stdio:'inherit'});
         if (!/^[A-Za-z0-9._-]{1,64}$/.test(buildId || '')) throw Error('Invalid build ID.');
         fs.mkdirSync(directory,{recursive:true});
         let commit='unknown';

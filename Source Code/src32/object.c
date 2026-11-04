@@ -1,3 +1,4 @@
+#include "klog.h"
 #include "kernel.h"
 #include "object.h"
 #include "gui.h"
@@ -15,7 +16,7 @@ int object_new(u32 type, int value) {
     }
   return S_LIMIT;
 }
-int handle_open(Handle *table, int index, u32 rights) {
+int handle_open(Handle* table, int index, u32 rights) {
   if (index < 0 || index >= OBJECTS || !objects[index].refs)
     return S_BADHANDLE;
   for (int i = 0; i < HANDLES; i++)
@@ -28,25 +29,25 @@ int handle_open(Handle *table, int index, u32 rights) {
     }
   return S_LIMIT;
 }
-Object *handle_get(Handle *table, u32 h, u32 type, u32 rights) {
+Object* handle_get(Handle* table, u32 h, u32 type, u32 rights) {
   u32 slot = (h & 255) - 1;
   if (slot >= HANDLES)
     return 0;
-  Handle *r = &table[slot];
+  Handle* r = &table[slot];
   if (!r->generation || r->cookie != (h >> 8) || r->object >= OBJECTS ||
       (r->rights & rights) != rights)
     return 0;
-  Object *o = &objects[r->object];
+  Object* o = &objects[r->object];
   return o->refs && o->generation == r->generation && o->type == type ? o : 0;
 }
-int handle_close(Handle *table, u32 h) {
+int handle_close(Handle* table, u32 h) {
   u32 slot = (h & 255) - 1;
   if (slot >= HANDLES)
     return S_BADHANDLE;
-  Handle *r = &table[slot];
+  Handle* r = &table[slot];
   if (!r->generation || r->cookie != (h >> 8))
     return S_BADHANDLE;
-  Object *o = &objects[r->object];
+  Object* o = &objects[r->object];
   if (o->generation != r->generation || !o->refs)
     return S_BADHANDLE;
   memset(r, 0, sizeof(*r));
@@ -58,12 +59,12 @@ int handle_close(Handle *table, u32 h) {
   }
   return 0;
 }
-int handle_duplicate(Handle *t, u32 h, u32 rights) {
+int handle_duplicate(Handle* t, u32 h, u32 rights) {
   u32 slot = (h & 255) - 1;
   if (slot >= HANDLES || !t[slot].generation || t[slot].cookie != (h >> 8) ||
       !rights || (rights & ~t[slot].rights))
     return S_BADHANDLE;
-  Object *o = &objects[t[slot].object];
+  Object* o = &objects[t[slot].object];
   if (!o->refs || o->generation != t[slot].generation)
     return S_BADHANDLE;
   int result = handle_open(t, (int)t[slot].object, rights);
@@ -71,7 +72,7 @@ int handle_duplicate(Handle *t, u32 h, u32 rights) {
     o->refs++;
   return result;
 }
-void handles_close(Handle *t) {
+void handles_close(Handle* t) {
   for (u32 i = 0; i < HANDLES; i++)
     if (t[i].generation)
       handle_close(t, (t[i].cookie << 8) | (i + 1));
@@ -100,5 +101,5 @@ void object_tests(void) {
   handles_close(t);
   if (objects[b].refs)
     panic("Object reference release", 0, 0);
-  debug("OBJECT handles rights/stale/release PASS\n");
+  pr_debug("OBJECT handles rights/stale/release PASS\n");
 }

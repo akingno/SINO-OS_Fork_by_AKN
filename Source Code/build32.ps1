@@ -2,6 +2,9 @@ param([switch]$TestImage,[string]$BuildId,[switch]$ShellBridge)
 $ErrorActionPreference = 'Stop'
 if ($BuildId -and $BuildId -notmatch '^[A-Za-z0-9._-]{1,64}$') { throw 'BuildId must contain 1-64 ASCII letters, digits, dots, underscores or hyphens.' }
 $taskRoot = $PSScriptRoot
+$localePython = if ($env:SINO_PYTHON) { $env:SINO_PYTHON } else { 'python' }
+& $localePython (Join-Path $taskRoot 'tools/build-locale.py')
+if ($LASTEXITCODE -ne 0) { throw 'Locale resource validation failed.' }
 $nasmPath = Join-Path $taskRoot 'tools\nasm-3.02\nasm.exe'
 $toolRoot = $env:SINO_TOOLCHAIN
 if (-not $toolRoot) {
@@ -37,11 +40,11 @@ foreach ($variant in $variants) {
     if ($variant -eq 'test') { $cflags += '-DSELFTEST=1' }
     if ($ShellBridge) { $cflags += '-DSINO_SHELL_BRIDGE=1' }
     if ($BuildId) { $cflags += @('-include',(Join-Path $buildPath 'build-id.h')) }
-    foreach ($source in @('kernel','rtc','keyboard','object','process','net','console','vfs','shell','storage','disk','settings','install','graphics','gui')) {
+    foreach ($source in @('kernel','klog','locale','rtc','keyboard','object','process','net','console','vfs','shell','storage','disk','settings','install','graphics','gui')) {
         & $gcc @cflags -c (Join-Path $sourcePath "$source.c") -o (Join-Path $buildPath "$source-$variant.o")
         if ($LASTEXITCODE -ne 0) { throw "C compilation failed: $source ($variant)" }
     }
-    & $ld -m i386pe --image-base 0x10000 --file-alignment 0x200 --section-alignment 0x1000 --disable-reloc-section --disable-dynamicbase --no-insert-timestamp -T (Join-Path $sourcePath 'linker.ld') (Join-Path $buildPath 'entry.o') (Join-Path $buildPath "kernel-$variant.o") (Join-Path $buildPath "rtc-$variant.o") (Join-Path $buildPath "keyboard-$variant.o") (Join-Path $buildPath "object-$variant.o") (Join-Path $buildPath "process-$variant.o") (Join-Path $buildPath "net-$variant.o") (Join-Path $buildPath "console-$variant.o") (Join-Path $buildPath "vfs-$variant.o") (Join-Path $buildPath "shell-$variant.o") (Join-Path $buildPath "storage-$variant.o") (Join-Path $buildPath "disk-$variant.o") (Join-Path $buildPath "settings-$variant.o") (Join-Path $buildPath "install-$variant.o") (Join-Path $buildPath "graphics-$variant.o") (Join-Path $buildPath "gui-$variant.o") -Map (Join-Path $buildPath "kernel-$variant.map") -o (Join-Path $buildPath "kernel-$variant.exe")
+    & $ld -m i386pe --image-base 0x10000 --file-alignment 0x200 --section-alignment 0x1000 --disable-reloc-section --disable-dynamicbase --no-insert-timestamp -T (Join-Path $sourcePath 'linker.ld') (Join-Path $buildPath 'entry.o') (Join-Path $buildPath "kernel-$variant.o") (Join-Path $buildPath "klog-$variant.o") (Join-Path $buildPath "locale-$variant.o") (Join-Path $buildPath "rtc-$variant.o") (Join-Path $buildPath "keyboard-$variant.o") (Join-Path $buildPath "object-$variant.o") (Join-Path $buildPath "process-$variant.o") (Join-Path $buildPath "net-$variant.o") (Join-Path $buildPath "console-$variant.o") (Join-Path $buildPath "vfs-$variant.o") (Join-Path $buildPath "shell-$variant.o") (Join-Path $buildPath "storage-$variant.o") (Join-Path $buildPath "disk-$variant.o") (Join-Path $buildPath "settings-$variant.o") (Join-Path $buildPath "install-$variant.o") (Join-Path $buildPath "graphics-$variant.o") (Join-Path $buildPath "gui-$variant.o") -Map (Join-Path $buildPath "kernel-$variant.map") -o (Join-Path $buildPath "kernel-$variant.exe")
     if ($LASTEXITCODE -ne 0) { throw '32-bit kernel link failed' }
     & $objcopy -O binary (Join-Path $buildPath "kernel-$variant.exe") (Join-Path $buildPath "kernel-$variant.bin")
     if ($LASTEXITCODE -ne 0) { throw 'Flat kernel extraction failed' }
