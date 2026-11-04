@@ -22,3 +22,14 @@ int ui_dialog(int window,UiScene *scene,const char *prompt,char *out,int input){
 
 int text_encode(u32 cp,char *s){if(cp<128){s[0]=(char)cp;return 1;}if(cp<2048){s[0]=(char)(0xc0|(cp>>6));s[1]=(char)(0x80|(cp&63));return 2;}if(cp<65536&&!(cp>=0xd800&&cp<=0xdfff)){s[0]=(char)(0xe0|(cp>>12));s[1]=(char)(0x80|((cp>>6)&63));s[2]=(char)(0x80|(cp&63));return 3;}if(cp<=0x10ffff){s[0]=(char)(0xf0|(cp>>18));s[1]=(char)(0x80|((cp>>12)&63));s[2]=(char)(0x80|((cp>>6)&63));s[3]=(char)(0x80|(cp&63));return 4;}return 0;}
 u32 text_previous(const char *s,u32 n){if(!n)return 0;n--;while(n&&((u8)s[n]&0xc0)==0x80)n--;return n;}
+
+/* Explicit 256-command builder; old UiScene constructors keep their 64 limit. */
+void ui_canvas_begin(UiCanvas *s){memset(s,0,sizeof(*s));}
+static int canvas_command(UiCanvas *s,int kind,int x,int y,int w,int h,u32 color,const char *text){
+ if(s->count>=UI_CANVAS_COMMANDS)return S_LIMIT;if(text&&strlen(text)>79)return S_LIMIT;
+ UiCommand *c=&s->commands[s->count++];memset(c,0,sizeof(*c));c->kind=kind;c->x=x;c->y=y;c->w=w;c->h=h;c->color=color;if(text)copy(c->text,text);return 0;
+}
+int ui_canvas_fill(UiCanvas *s,int x,int y,int w,int h,u32 color){return canvas_command(s,UI_FILL,x,y,w,h,color,0);}
+int ui_canvas_text(UiCanvas *s,int x,int y,int font,const char *text,u32 color){return canvas_command(s,UI_TEXT,x,y,0,font,color,text);}
+int ui_canvas_line(UiCanvas *s,int x,int y,int x2,int y2,u32 color){return canvas_command(s,UI_LINE,x,y,x2-x,y2-y,color,0);}
+int ui_canvas_ellipse(UiCanvas *s,int x,int y,int w,int h,u32 color){return canvas_command(s,UI_ELLIPSE,x,y,w,h,color,0);}

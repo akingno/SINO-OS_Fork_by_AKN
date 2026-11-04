@@ -6,6 +6,7 @@
 #include "storage.h"
 #include "net.h"
 #include "settings.h"
+#include "rtc.h"
 #define NP 8
 #define NT 4
 typedef struct {Frame frame;u32 useresp,ss;} UserFrame;
@@ -34,7 +35,7 @@ int process_launch_args(const char *path,u32 caps,const char *arguments){int n=v
  for(u32 i=0;i<(h->memory_bytes+4095)/4096;i++){if(!map_page(p,i,i*4096<h->data_offset?5:7)){release(p);return S_NOMEM;}u32 offset=i*4096,length=h->image_bytes>offset?h->image_bytes-offset:0;if(length>4096)length=4096;if(length)memcpy((void *)(p->pt[i]&~4095u),bytes+offset,length);}
  if(!map_page(p,48,5)){release(p);return S_NOMEM;}memcpy((void *)(p->pt[48]&~4095u),arguments,strlen(arguments)+1);char executable[128];vfs_path(n,executable);memcpy((void *)((p->pt[48]&~4095u)+256),executable,strlen(executable)+1);
  for(u32 i=60;i<64;i++)if(!map_page(p,i,7)){release(p);return S_NOMEM;}
- p->pid=next_pid++;if(!next_pid)next_pid=1;p->state=1;p->caps=caps&7;/* Boot calculator has no write, network or management grant, regardless of launcher. */if(nodes[n].readonly&&nodes[n].boot>=0&&streq(executable,"/boot/calc.snx"))p->caps=0;u32 j=0;while(nodes[n].name[j]&&j<31){p->name[j]=nodes[n].name[j];j++;}initial(&p->thread[0],USER_BASE+h->entry,USER_STACK(0));debug("PROCESS start ");debug(p->name);debug(" pid=");debug_hex(p->pid);debug("\n");return (int)p->pid;
+ p->pid=next_pid++;if(!next_pid)next_pid=1;p->state=1;p->caps=caps&7;/* Boot utilities have no write, network or management grant, regardless of launcher. */if(nodes[n].readonly&&nodes[n].boot>=0&&(streq(executable,"/boot/calc.snx")||streq(executable,"/boot/clock.snx")))p->caps=0;u32 j=0;while(nodes[n].name[j]&&j<31){p->name[j]=nodes[n].name[j];j++;}initial(&p->thread[0],USER_BASE+h->entry,USER_STACK(0));debug("PROCESS start ");debug(p->name);debug(" pid=");debug_hex(p->pid);debug("\n");return (int)p->pid;
 }
 int process_kill(u32 pid,i32 code){for(int i=0;i<NP;i++)if(processes[i].state&&processes[i].pid==pid){processes[i].state=2;processes[i].code=code;return 0;}return S_NOTFOUND;}
 void process_message(u32 pid,UiEvent e){for(int i=0;i<NP;i++)if(processes[i].state==1&&processes[i].pid==pid){Process *p=&processes[i];u32 previous=(p->head-1)&15;if(e.type==MSG_MOUSE_MOVE&&p->head!=p->tail&&p->queue[previous].type==MSG_MOUSE_MOVE){p->queue[previous]=e;return;}u32 next=(p->head+1)&15;if(next==p->tail)return;p->queue[p->head]=e;p->head=next;}}
@@ -55,6 +56,7 @@ static int syscall(Frame *f){u32 a=f->ebx,b=f->ecx,c=f->edx;char path[VFS_PATH];
  case SYS_NET_READY:o=handle_get(current->handles,a,OBJ_SOCKET,1);return o?net_ready(o->value):S_BADHANDLE;
  case SYS_NET_INFO:if(!range(a,sizeof(NetStats),1))return S_INVALID;*(NetStats *)a=net_loop.stats;return 0;
  case SYS_PING:return net_ping(a,b);
+ case SYS_TIME:if(b<sizeof(TimeOfDay)||!range(a,sizeof(TimeOfDay),1))return S_INVALID;{TimeOfDay value;int result=rtc_time(&value);if(!result)*(TimeOfDay *)a=value;return result;}
  case SYS_UI_LANGUAGE:return settings_language;
  case SYS_WINDOW_TITLE:o=handle_get(current->handles,a,OBJ_WINDOW,2);if(!o)return S_BADHANDLE;{char title[64];if(!string(b,title,sizeof(title)))return S_INVALID;return gui_user_title(o->value,title);}
  case SYS_DUP:return handle_duplicate(current->handles,a,b);
@@ -91,3 +93,5 @@ void process_step(void){for(int i=0;i<NP;i++)if(processes[i].state==2)release(&p
 void process_tests(void){debug("PROCESS address spaces initialized (8 processes x 4 threads)\n");}
 
 int process_list(ProcessInfo *out,u32 cap){u32 count=0;for(int i=0;i<NP&&count<cap;i++)if(processes[i].state){Process *p=&processes[i];ProcessInfo *v=&out[count++];memset(v,0,sizeof(*v));v->pid=p->pid;v->state=p->state;v->exit_code=p->code;memcpy(v->name,p->name,32);for(int j=0;j<NT;j++)if(p->thread[j].state)v->threads++;for(int j=0;j<1024;j++)if(p->pt[j]&1)v->pages++;}return (int)count;}
+
+int process_alive(u32 pid){for(int i=0;i<NP;i++)if(processes[i].pid==pid&&processes[i].state==1)return 1;return 0;}

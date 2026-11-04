@@ -22,6 +22,7 @@ static inline const char *Arguments(void){return (const char *)USER_ARGUMENTS;}
    device completion failures, never acknowledge until SYS_SYNC confirms. */
 static inline int Sync(void){int r=S_IO;for(int i=0;i<3;i++){r=api(SYS_SYNC,0,0,0);if(r!=S_IO)return r;if(i<2)Yield(1);}return r;}
 static inline int Window(const char *p,int w,int h){return api(SYS_WINDOW,(u32)p,(u32)w,(u32)h);}
+static inline int Time(TimeOfDay *value){return api(SYS_TIME,(u32)value,sizeof(*value),0);}
 static inline int UiLanguage(void){return api(SYS_UI_LANGUAGE,0,0,0);}
 static inline int WindowTitle(int h,const char *title){return api(SYS_WINDOW_TITLE,(u32)h,(u32)title,0);}
 static inline int Scene(int h,const UiScene *s){return api(SYS_SCENE,(u32)h,(u32)s,0);}
@@ -32,6 +33,11 @@ int text_encode(u32,char *);
 u32 text_previous(const char *,u32);
 void Log(const char *);
 void ui_begin(UiScene *);
+void ui_canvas_begin(UiCanvas *);
+int ui_canvas_fill(UiCanvas *,int,int,int,int,u32);
+int ui_canvas_text(UiCanvas *,int,int,int,const char *,u32);
+int ui_canvas_line(UiCanvas *,int,int,int,int,u32);
+int ui_canvas_ellipse(UiCanvas *,int,int,int,int,u32);
 void ui_text(UiScene *,int,int,const char *);
 void ui_mono(UiScene *,int,int,const char *,u32);
 void ui_mono_clip(UiScene *,int,int,int,const char *,u32);

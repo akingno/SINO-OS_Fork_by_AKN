@@ -4,6 +4,8 @@ static int event_handle;
 static UiScene scene;
 static UiCanvas large_scene;
 static char title_test[65];
+static u32 time_buffer[4];
+static char canvas_long_text[81];
 static void worker(void){worker_done=123;api(SYS_EVENT_SET,(u32)event_handle,1,0);api(SYS_THREAD_EXIT,0,0,0);for(;;){}}
 static void check(int ok,const char *s){if(!ok){Log("USER PROBE FAIL: ");Log(s);Log("\n");Exit(1);}}
 int main(void){
@@ -20,6 +22,14 @@ int main(void){
  while(prefix[offset]&&arg[offset]==prefix[offset])offset++;
  if(!prefix[offset]){u32 handle=0;for(;arg[offset];offset++){check(arg[offset]>='0'&&arg[offset]<='9'&&handle<=214748364u,"foreign handle syntax");handle=handle*10+(u32)(arg[offset]-'0');}check(WindowTitle((int)handle,"Hijacked")==S_BADHANDLE,"foreign window title denied");Log("FOREIGN WINDOW TITLE DENIED PASS\n");return 0;}
  check(api(SYS_SOCKET,1,0,0)==S_DENIED,"network default deny");
+ for(int i=0;i<4;i++)time_buffer[i]=0xccccccccu;
+ check(api(SYS_TIME,(u32)time_buffer,11,0)==S_INVALID&&time_buffer[0]==0xccccccccu,"time short buffer untouched");
+ check(api(SYS_TIME,0,12,0)==S_INVALID&&api(SYS_TIME,0xffffffffu,12,0)==S_INVALID,"time invalid pointers");
+ check(api(SYS_TIME,0x100000,12,0)==S_INVALID,"time kernel output");
+ check(api(SYS_TIME,USER_BASE,12,0)==S_INVALID,"time readonly code output");
+ check(api(SYS_TIME,USER_STACK(0)-8,12,0)==S_INVALID,"time stack guard crossing");
+ check(api(SYS_TIME,(u32)time_buffer,sizeof(time_buffer),0)==0&&time_buffer[0]<24&&time_buffer[1]<60&&time_buffer[2]<60&&time_buffer[3]==0xccccccccu,"time bounded output");
+ Log("TIME ABI PASS: pointer rights capacity and output bounds\n");
  check(Read("/boot/readme.txt",(void *)0x100000,20)==S_INVALID,"kernel pointer");
  check(Write("/etc/hacked","bad",3)==S_DENIED,"protected directory");
  check(Write("/home/user/../../etc/hacked","bad",3)==S_DENIED,"canonical traversal");
@@ -48,6 +58,17 @@ int main(void){
  Log("WINDOW TITLE ABI PASS: pointers length rights type stale handles\n");
  large_scene.count=UI_CANVAS_COMMANDS;for(u32 i=0;i<large_scene.count;i++){UiCommand *c=&large_scene.commands[i];c->kind=UI_FILL;c->x=24;c->y=60;c->w=c->h=2;}
  check(Scene(w,(const UiScene *)&large_scene)==0,"large canvas");large_scene.count=UI_CANVAS_COMMANDS+1;check(Scene(w,(const UiScene *)&large_scene)==S_INVALID,"canvas count bound");large_scene.count=1;large_scene.commands[0].kind=UI_PANEL;large_scene.commands[0].w=0;check(Scene(w,(const UiScene *)&large_scene)==S_INVALID,"panel bounds");check(Scene(w,(const UiScene *)0xffffffffu)==S_INVALID,"canvas pointer bound");
+ ui_canvas_begin(&large_scene);
+ for(int i=0;i<UI_CANVAS_COMMANDS;i++)check(ui_canvas_fill(&large_scene,24,60,2,2,0)==0,"canvas builder capacity");
+ check(ui_canvas_fill(&large_scene,24,60,2,2,0)==S_LIMIT&&large_scene.count==UI_CANVAS_COMMANDS,"canvas builder overflow");
+ ui_canvas_begin(&large_scene);for(int i=0;i<80;i++)canvas_long_text[i]='X';canvas_long_text[80]=0;
+ check(ui_canvas_text(&large_scene,24,60,0,canvas_long_text,0)==S_LIMIT&&!large_scene.count,"canvas text bound");
+ for(int dx=-100;dx<=100;dx+=100)for(int dy=-100;dy<=100;dy+=100){ui_canvas_begin(&large_scene);check(ui_canvas_line(&large_scene,200,200,200+dx,200+dy,0)==0&&Scene(w,(const UiScene *)&large_scene)==0,"line directions");}
+ large_scene.commands[0].w=(i32)0x80000000u;check(Scene(w,(const UiScene *)&large_scene)==S_INVALID,"line negative extreme");large_scene.commands[0].w=0;large_scene.commands[0].h=0x7fffffff;check(Scene(w,(const UiScene *)&large_scene)==S_INVALID,"line positive extreme");
+ ui_canvas_begin(&large_scene);check(ui_canvas_line(&large_scene,1000,714,2000,1428,0)==0&&Scene(w,(const UiScene *)&large_scene)==0,"legacy clipped positive line");
+ ui_canvas_begin(&large_scene);check(ui_canvas_ellipse(&large_scene,20,60,1,1,0)==0&&Scene(w,(const UiScene *)&large_scene)==0,"ellipse singleton");
+ large_scene.commands[0].w=0;check(Scene(w,(const UiScene *)&large_scene)==S_INVALID,"ellipse zero width");large_scene.commands[0].w=-1;check(Scene(w,(const UiScene *)&large_scene)==S_INVALID,"ellipse negative width");large_scene.commands[0].w=1001;check(Scene(w,(const UiScene *)&large_scene)==S_INVALID,"ellipse oversized");large_scene.commands[0].kind=999;check(Scene(w,(const UiScene *)&large_scene)==S_INVALID,"unknown draw command");
+ Log("CLOCK GRAPHICS ABI PASS: canvas signed lines ellipse bounds\n");
  ui_begin(&scene);ui_text(&scene,24,60,"真正运行在 Ring 3 的独立原生应用");ui_text(&scene,24,98,"页表隔离、线程、句柄、文件 API 已通过测试。");ui_button(&scene,24,160,170,"关闭测试程序");check(Scene(w,&scene)==0,"original ABI scene");
  for(;;){UiEvent e;if(Event(&e)==0&&(ui_hit(&e,24,160,170,26)||(e.type==MSG_KEY&&e.key==27)))break;Yield(1);}
 #endif

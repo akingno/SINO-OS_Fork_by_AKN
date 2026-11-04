@@ -1,3 +1,4 @@
+#include "rtc.h"
 #include "kernel.h"
 #include "gui.h"
 #include "storage.h"
@@ -212,7 +213,7 @@ void kmain(void){
     debug("SINO BUILD ID: " SINO_BUILD_ID "\n");
 #endif
     arch_init();memory_init();if(!fs_init())panic("FAT12 mount failed",0,0);
-    process_init();net_init();kernel_tests();net_tests();shell_init();disk_init();storage_init();settings_init();gui_init();sti();
+    process_init();net_init();kernel_tests();net_tests();shell_init();disk_init();storage_init();settings_init();rtc_init();gui_init();sti();
     u32 begin=ticks;while(ticks-begin<3)halt();debug("TIMER IRQ0 delivered in protected mode\n");
 #ifdef SELFTEST
     shell_tests();
@@ -221,5 +222,5 @@ void kmain(void){
     if(vfs_lookup("/home/user/.sino/rollback/journal")>=0)process_launch_args("/boot/setup.snx",CAP_HOME,"/recover-only");
     shell_bridge_init();
     debug("SINO desktop ready\n");
-    for(;;){gui_step();shell_bridge_poll();net_poll();process_step();cli();sti();halt();}
+    for(;;){rtc_poll();gui_step();shell_bridge_poll();net_poll();process_step();cli();sti();halt();}
 }

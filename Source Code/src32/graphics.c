@@ -51,6 +51,18 @@ void g_target(u32 *pixels,int w,int h){surface=pixels;sw=w;sh=h;clip=(Rect){0,0,
 void g_clip(Rect r){int right=min(sw,r.x+r.w),bottom=min(sh,r.y+r.h);r.x=max(0,r.x);r.y=max(0,r.y);r.w=max(0,right-r.x);r.h=max(0,bottom-r.y);clip=r;}
 void g_fill(int x,int y,int w,int h,u32 color){int right=min(x+w,clip.x+clip.w),bottom=min(y+h,clip.y+clip.h);x=max(x,clip.x);y=max(y,clip.y);if(right<=x)return;for(int j=y;j<bottom;j++)solid(surface+j*sw+x,(u32)(right-x),color);}
 void g_line(int x,int y,int x2,int y2,u32 color){int dx=x2>x?x2-x:x-x2,sx=x<x2?1:-1,dy=y2>y?y-y2:y2-y,sy=y<y2?1:-1,e=dx+dy;for(;;){if(x>=clip.x&&x<clip.x+clip.w&&y>=clip.y&&y<clip.y+clip.h)surface[y*sw+x]=color;if(x==x2&&y==y2)break;int p=2*e;if(p>=dy){e+=dy;x+=sx;}if(p<=dx){e+=dx;y+=sy;}}}
+/* Bounded scanlines. Products need 40 bits at the public 1000x714 maximum;
+   only multiplication/comparison is used, no floating point or 64-bit divide. */
+void g_ellipse(int x,int y,int w,int h,u32 color){
+ if(w<1||h<1)return;u32 rx=(u32)(w-1),ry=(u32)(h-1);
+ unsigned long long xx=(unsigned long long)rx*rx,yy=(unsigned long long)ry*ry,total=xx*yy;
+ int first=max(0,clip.y-y),last=min(h,clip.y+clip.h-y);
+ for(int row=first;row<last;row++){
+  int dy=2*row-(int)ry;unsigned long long vertical=(unsigned long long)(dy*dy)*xx;u32 lo=0,hi=rx;
+  while(lo<hi){u32 mid=(lo+hi+1)/2;if((unsigned long long)mid*mid*yy+vertical<=total)lo=mid;else hi=mid-1;}
+  int left=(int)(rx-lo+1)/2,right=(int)(rx+lo)/2;g_fill(x+left,y+row,right-left+1,1,color);
+ }
+}
 void g_round(int x,int y,int w,int h,int r,u32 color){g_fill(x+r,y,w-2*r,h,color);g_fill(x,y+r,r,h-2*r,color);g_fill(x+w-r,y+r,r,h-2*r,color);for(int j=0;j<r;j++){int d=r-1;while(d>0&&d*d+(r-j-1)*(r-j-1)>r*r)d--;g_fill(x+r-d,y+j,2*d+w-2*r,1,color);g_fill(x+r-d,y+h-j-1,2*d+w-2*r,1,color);}}
 void g_box(int x,int y,int w,int h,u32 border,u32 background){g_fill(x,y,w,h,border);g_fill(x+1,y+1,w-2,h-2,background);}
 void g_bevel(int x,int y,int w,int h,int down){g_fill(x,y,w,h,down?0xc9cbd0:0xdfe0e4);g_line(x,y,x+w-1,y,down?0x62666d:0xffffff);g_line(x,y,x,y+h-1,down?0x62666d:0xffffff);g_line(x,y+h-1,x+w-1,y+h-1,down?0xffffff:0x72767e);g_line(x+w-1,y,x+w-1,y+h-1,down?0xffffff:0x72767e);}

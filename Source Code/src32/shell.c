@@ -1,3 +1,4 @@
+#include "rtc.h"
 /* SINO SH: project-specific shell, separate from the SINO32 kernel. */
 #include "console.h"
 #include "graphics.h"
@@ -59,12 +60,9 @@ static void list_tree(Sink *out,int parent,u32 depth){if(depth>16)return;for(int
 static int run_program(Context *c,const char *path,const char *args){int n=vfs_lookup(path);if(n<0)return verror(c->out,path);if(nodes[n].size>=32){int size=vfs_read(n,work,MAX_FILE);if(size>=32&&*(u32 *)work==NATIVE_MAGIC){int pid=process_launch_args(path,CAP_HOME,args);if(pid<0)return error(c->out,path,"native launch failed");put(c->out,"Started user process ");num(c->out,(u32)pid);put(c->out,"\n");return 0;}}if(nodes[n].boot<0||!streq(nodes[n].name,"hello.f32"))return error(c->out,path,"legacy ring-0 binaries are restricted to trusted boot demo");int bytes=vfs_read(n,work,4096);if(bytes<0)return verror(c->out,path);if(bytes<16||work[0]!='F'||work[1]!='X'||work[2]!='3'||work[3]!='2')return error(c->out,path,"not a native F32 executable");u32 entry=*(u32 *)(work+4);if(entry<16||entry>=(u32)bytes)return error(c->out,path,"invalid F32 entry");
     native_base=(u32)page_alloc();if(!native_base)return error(c->out,path,"out of memory");native_size=(u32)bytes;memcpy((void *)native_base,work,native_size);native_sink=c->out;native_running=1;debug("NATIVE32 shell program entered\n");run_native(native_base+entry);native_running=0;native_sink=0;if(!page_free((void *)native_base))panic("Native page release",native_base,0);native_base=native_size=0;debug("NATIVE32 shell program returned\n");return 0;
 }
-static u8 cmos(u8 r){outb(0x70,r);return inb(0x71);}
-static u32 bcd(u8 v,int binary){return binary?v:(v>>4)*10+(v&15);}
 static void two(Sink *out,u32 n){if(n<10)put(out,"0");num(out,n);}
-static void clock_output(Sink *out,int date){u8 a[7],b[7];const u8 reg[]={0,2,4,7,8,9,0x32};u8 format=cmos(0x0b);for(u32 tries=0;tries<8;tries++){u32 guard=100000;while((cmos(10)&128)&&guard--){}for(u32 i=0;i<7;i++)a[i]=cmos(reg[i]);guard=100000;while((cmos(10)&128)&&guard--){}int equal=1;for(u32 i=0;i<7;i++){b[i]=cmos(reg[i]);if(a[i]!=b[i])equal=0;}if(equal)break;}
-    u32 v[7];for(u32 i=0;i<7;i++)v[i]=bcd(a[i],format&4);v[2]=bcd(a[2]&127,format&4);if(!(format&2))v[2]=v[2]%12+((a[2]&128)?12:0);
-    if(date){num(out,(v[6]?v[6]:20)*100+v[5]);put(out,"-");two(out,v[4]);put(out,"-");two(out,v[3]);}else{two(out,v[2]);put(out,":");two(out,v[1]);put(out,":");two(out,v[0]);}put(out,"\n");
+static int clock_output(Sink *out,int date){rtc_poll();RtcDateTime t;if(rtc_read(&t))return error(out,date?"date":"time","RTC time unavailable");
+ if(date){num(out,t.year);put(out,"-");two(out,t.month);put(out,"-");two(out,t.day);}else{two(out,t.hour);put(out,":");two(out,t.minute);put(out,":");two(out,t.second);}put(out,"\n");return 0;
 }
 static int command(Context *c,int argc,char **argv){Sink *out=c->out;char *cmd=argv[0];for(char *p=cmd;*p;p++)if(*p>='A'&&*p<='Z')*p+=32;
     if(streq(cmd,"dir"))cmd="ls";if(streq(cmd,"type"))cmd="cat";if(streq(cmd,"cls"))cmd="clear";if(streq(cmd,"md"))cmd="mkdir";if(streq(cmd,"del"))cmd="rm";if(streq(cmd,"copy"))cmd="cp";if(streq(cmd,"ren"))cmd="mv";if(streq(cmd,"."))cmd="source";
@@ -135,7 +133,7 @@ static int command(Context *c,int argc,char **argv){Sink *out=c->out;char *cmd=a
     if(streq(cmd,"mem")||streq(cmd,"free")){put(out,"Mapped usable range: ");num(out,usable_memory/1024);put(out," KiB\nFree memory: ");num(out,free_pages*4);put(out," KiB / ");num(out,free_pages);put(out," pages (4 KiB each)\n");return 0;}
     if(streq(cmd,"df")){u32 pages=0;for(int i=1;i<VFS_NODES;i++)if(nodes[i].used&&!nodes[i].readonly)pages+=(nodes[i].size+4095)/4096;put(out,"Mount   Type    Mode  Usage\n/boot   FAT12   ro    1440 KiB boot image\n/       RAMFS   rw    ");num(out,pages*4);put(out," KiB allocated; home is mirrored to the data disk\n");return 0;}
     if(streq(cmd,"uptime")){put(out,"up ");num(out,ticks/100);put(out," seconds (100 Hz kernel clock)\n");return 0;}
-    if(streq(cmd,"date")||streq(cmd,"time")){clock_output(out,streq(cmd,"date"));return 0;}
+    if(streq(cmd,"date")||streq(cmd,"time")){return clock_output(out,streq(cmd,"date"));}
     if(streq(cmd,"whoami")){put(out,"user\n");return 0;}
     if(streq(cmd,"hostname")){if(argc>1){u32 n=strlen(argv[1]);if(!n||n>=sizeof(hostname))return error(out,cmd,"use 1-31 characters");for(u32 i=0;i<n;i++)if(!(argv[1][i]>='a'&&argv[1][i]<='z')&&!(argv[1][i]>='A'&&argv[1][i]<='Z')&&!(argv[1][i]>='0'&&argv[1][i]<='9')&&argv[1][i]!='-')return error(out,cmd,"use letters, digits or hyphens");strcopy(hostname,argv[1]);}put(out,hostname);put(out,"\n");return 0;}
     if(streq(cmd,"env")){const char *names[]={"USER","HOME","PWD","HOSTNAME","SHELL","PATH","VERSION",0};for(int i=0;names[i];i++){char b[VFS_PATH];put(out,names[i]);put(out,"=");put(out,variable(names[i],b));put(out,"\n");}return 0;}

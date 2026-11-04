@@ -7,6 +7,7 @@ void g_target(u32 *,int,int);
 void g_clip(Rect);
 void g_fill(int,int,int,int,u32);
 void g_line(int,int,int,int,u32);
+void g_ellipse(int,int,int,int,u32);
 void g_round(int,int,int,int,int,u32);
 void g_box(int,int,int,int,u32,u32);
 void g_bevel(int,int,int,int,int);
