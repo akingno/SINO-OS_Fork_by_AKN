@@ -248,4 +248,5 @@ static const Translation translations[]={
 {"格式化已加入安装计划，磁盘尚未更改。","Format staged; the disk is unchanged."},
 {"经典桌面  /  0.8 中文版","Platinum Desktop / 0.10"},
 {"经典桌面  /  0.10","Platinum Desktop / 0.10"},
+{"画板已暂停，画稿已保留。","Paint is unavailable; drawings are preserved."},
 };

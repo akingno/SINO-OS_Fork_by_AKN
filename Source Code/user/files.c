@@ -1,12 +1,20 @@
+/* Paint has been hidden 261103. Preserve drawings and filter obsolete launcher aliases. */
 /* Native ring-3 file browser. Legacy desktop Files remains available during migration. */
 #include "sdk.h"
 static FileInfo files[128];static UiScene scene;
 static char folder[128]="/home/user/Documents",name[64]="New file.txt",status[128];
 static int window,count,selected=-1,first,field,context,cx,cy,drag_index=-1,dragging,start_x,start_y;
 static u32 clicked;static int last_selected=-1;
-static void refresh(void){count=List(folder,files,128);if(count<0){copy(status,"无法打开目录。");count=0;}if(selected>=count)selected=-1;if(first>=count)first=count>15?count-15:0;}
+static int hidden_paint(const char *);
+static void refresh(void){count=List(folder,files,128);if(count<0){copy(status,"无法打开目录。");count=0;}int visible=0;for(int i=0;i<count;i++)if(files[i].dir||!hidden_paint(files[i].name))files[visible++]=files[i];count=visible;if(selected>=count)selected=-1;if(first>=count)first=count>15?count-15:0;}
 static int join(char *out,const char *leaf){u32 n=strlen(folder),m=strlen(leaf);if(n+m+2>=128)return 0;copy(out,folder);if(n>1)out[n++]='/';copy(out+n,leaf);return 1;}
-static void open(void){if(selected<0||selected>=count)return;char path[128];if(!join(path,files[selected].name))return;if(files[selected].dir){copy(folder,path);selected=-1;first=0;refresh();}else{u32 n=strlen(path);if(n>=4&&streq(path+n-4,".snx")){if(Spawn(path)<0)copy(status,"程序启动失败。");}else if(SpawnArgs("/home/user/Programs/editor/editor.snx",path)<0)copy(status,"请先安装 /boot/editor.sxp 文本编辑器。");}}
+static int ending(const char *s,const char *end){u32 n=strlen(s),m=strlen(end);if(n<m)return 0;for(u32 i=0;i<m;i++){char a=s[n-m+i],b=end[i];if(a>='A'&&a<='Z')a+=32;if(a!=b)return 0;}return 1;}
+static int paint_name(const char *s){return strlen(s)==9&&ending(s,"paint.app");}
+static int hidden_paint(const char *name){
+ if(paint_name(name))return 1;
+ if(ending(name,".lnk")){char path[128],link[200];if(join(path,name)){int size=Read(path,link,199);if(size>0){link[size]=0;char *leaf=link;for(int i=0;link[i];i++){if(link[i]=='\n'||link[i]=='\r'){link[i]=0;break;}if(link[i]=='/'||link[i]=='\\')leaf=link+i+1;}return paint_name(leaf);}}}return 0;
+}
+static void open(void){if(selected<0||selected>=count)return;char path[128];if(!join(path,files[selected].name))return;if(files[selected].dir){copy(folder,path);selected=-1;first=0;refresh();}else{if(ending(path,".snp")){copy(status,UiLanguage()?"Paint is unavailable; drawings are preserved.":"画板已暂停，画稿已保留。");return;}u32 n=strlen(path);if(n>=4&&streq(path+n-4,".snx")){if(Spawn(path)<0)copy(status,"程序启动失败。");}else if(SpawnArgs("/home/user/Programs/editor/editor.snx",path)<0)copy(status,"请先安装 /boot/editor.sxp 文本编辑器。");}}
 static void draw(void){ui_begin(&scene);const char *buttons[]={"打开","上级","新建文件","新建目录","重命名","删除","刷新"};for(int i=0;i<7;i++)ui_button(&scene,18+i*95,43,88,buttons[i]);ui_fill(&scene,18,84,665,28,field==1?0xe4efff:0xf0f2f5);ui_text(&scene,23,88,folder);ui_fill(&scene,18,118,665,28,field==2?0xe4efff:0xf0f2f5);ui_text(&scene,23,122,name);
  for(int row=0;row<15&&first+row<count;row++){int i=first+row;if(i==selected)ui_fill(&scene,18,161+row*21,665,21,0xdce8f8);ui_text(&scene,23,162+row*21,files[i].name);char text[20];if(files[i].dir)copy(text,"<目录>");else number(files[i].size,text);ui_mono(&scene,555,162+row*21,text,0x617087);}ui_text(&scene,18,486,status);if(context){const char *labels[]={"新建文件","新建目录","重命名","删除"};for(int i=0;i<4;i++)ui_button(&scene,cx,cy+i*28,155,labels[i]);}Scene(window,&scene);}
 static void edit(UiEvent *e){char *s=field==1?folder:name;u32 cap=field==1?127:31,n=strlen(s);if(e->type==MSG_TEXT){char text[4];int bytes=text_encode((u32)e->key,text);if(n+(u32)bytes<=cap){memcpy(s+n,text,(u32)bytes);s[n+bytes]=0;}}else if(e->key==1)s[0]=0;else if(e->key==8&&n)s[text_previous(s,n)]=0;else if(e->key>=32&&e->key<127&&n<cap){s[n]=(char)e->key;s[n+1]=0;}else if(e->key==13){field=0;refresh();}}

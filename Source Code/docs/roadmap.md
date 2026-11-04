@@ -23,3 +23,5 @@ Rollback: commits preserve each source stage; rebuild the chosen stage. User dat
 
 
 2026-10-24 update: SysBASIC 0.2 now has the classic docked layout and separate executable/installer output. Installer buffers were removed from the IDE by launching the independent installer, but embedded-output and canvas buffers still leave only about 13 KiB below the 192 KiB process image/data cap. Full BASIC semantics, a user heap, adaptive layout and multiple forms remain subsequent work.
+
+2026-11-03: Paint entry hiding is complete. Menu, global F5, built-in registry and old desktop/file aliases are disabled, and drawing associations report unavailability while preserving files. Legacy code remains in the kernel; a future migration/removal is separate work.

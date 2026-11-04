@@ -9,7 +9,7 @@ const legacy=process.argv.includes('--legacy');
   for(let i=0;i<8;i++){await vm.key('f6');assert.equal((await clock(vm,undefined,legacy)).id,w.id);}
   assert.equal((await vm.state()).windows.length,1);
   await vm.click(w.x+w.w-39,w.y+15);assert.equal((await vm.state()).windows.find(q=>q.id===w.id).minimized,1);await vm.key('f6');w=await clock(vm,w.id,legacy);assert.equal(w.minimized,0);
-  await vm.click(22,13);await vm.click(46,188);assert.equal((await clock(vm,undefined,legacy)).id,w.id);pass('Repeated F6, minimize/restore and SINO menu keep a single clock');
+  await vm.click(22,13);await vm.click(46,legacy?188:160);assert.equal((await clock(vm,undefined,legacy)).id,w.id);pass('Repeated F6, minimize/restore and SINO menu keep a single clock');
   await vm.key('f1');await vm.key('ctrl','o');await vm.type('/Applications/Clock.app');await vm.key('ret');assert.equal((await clock(vm,undefined,legacy)).id,w.id);await vm.key('ctrl','w');await vm.key('ctrl','w');
   await waitFor(async()=>(await vm.state()).windows.length===0,'clock and file browser close');pass('Original Clock.app dispatch and Ctrl+W');
   const top=await topTime(vm);await waitFor(async()=>await topTime(vm)!==top,'top bar independent of clock',5000);pass('Top bar keeps time after the clock application closes');

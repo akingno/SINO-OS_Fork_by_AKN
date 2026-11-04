@@ -75,7 +75,7 @@ module.exports = [
     {command:'stat /home/user', status:0, contains:'directory recreated at boot; descendants use user snapshots'},
     {command:'stat /boot/readme.txt', status:0, contains:'Storage: FAT12 boot image (read-only)'},
     {command:'stat /boot', status:0, contains:'Storage: FAT12 boot image (read-only)'},
-    {command:'stat /Applications/Paint.app', status:0, contains:'Storage: RAM (read-only)\nPersistence: none'},
+    {command:'stat /Applications/Calculator.app', status:0, contains:'Storage: RAM (read-only)\nPersistence: none'},
     {command:'touch /tmp/stat-check; stat /tmp/stat-check', status:0, contains:'Storage: RAM\nPersistence: none'},
     {command:'stat /tmp', status:0, contains:'Persistence: none (outside user snapshots)'},
     {command:'mkdir /home/user2; touch /home/user2/check; stat /home/user2/check', status:0, contains:'Persistence: none (outside user snapshots)'},

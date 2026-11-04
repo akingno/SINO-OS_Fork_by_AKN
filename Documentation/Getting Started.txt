@@ -25,7 +25,7 @@ The host requirement is Windows 10/11 x64. This release was tested with QEMU 11.
 Inside SINO, press F11 or open the SysBASIC software entry in Applications.
 F9 opens the application manager. SysBASIC, File Manager, Text Editor, Task Manager, and Hello are preinstalled.
 First Program is also registered through the independent installer and can be launched, repaired, or removed.
-F1–F7 retain legacy desktop shortcuts; F8 opens the native installer, F9 the application manager, and F10 the task manager.
+F1–F4 and F6–F7 open desktop applications. Paint is hidden and global F5 is disabled; F8 opens the native installer, F9 the application manager, and F10 the task manager.
 In SysBASIC, F5 runs and F8 steps. Esc stops or cancels the current operation.
 For programming, make sure the indicator at the upper right shows EN. Press Ctrl+Space to switch to system Pinyin input.
 Underscore: Shift + minus. Double quote: Shift + apostrophe. Parentheses: Shift + 9/0.
