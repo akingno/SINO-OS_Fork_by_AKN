@@ -272,5 +272,8 @@
   "INSTALL_ERROR_GPT_UNSUPPORTED": "GPT disk; this installer supports MBR only.",
   "INSTALL_ERROR_MBR_BOOT_FILE_MISSING": "The CD is missing its MBR boot file.",
   "GUI_TEMPLATE_FILE_PROPERTIES": "{name}  File  {count} bytes",
-  "GUI_TEMPLATE_FOLDER_PROPERTIES": "{name}  Folder  {count} bytes"
+  "GUI_TEMPLATE_FOLDER_PROPERTIES": "{name}  Folder  {count} bytes",
+  "GUI_STATUS_FILES_LAUNCH_FAILED": "Cannot start Files; check /boot/files.snx or close applications.",
+  "GUI_STATUS_DROP_HOME_REQUIRED": "Choose a writable home directory.",
+  "GUI_STATUS_DROP_PROTECTED_SOURCE": "Protected source."
 }

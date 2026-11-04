@@ -275,4 +275,7 @@ static const char *const resources[TEXT_KEY_COUNT][2] = {
   {"继续输入拼音，或回车输入原文", "Continue Pinyin, or Enter for the typed letters"},
   {"{name}  文件  {count} 字节", "{name}  File  {count} bytes"},
   {"{name}  文件夹  {count} 字节", "{name}  Folder  {count} bytes"},
+  {"无法启动文件管理器，请检查启动文件或关闭部分应用。", "Cannot start Files; check /boot/files.snx or close applications."},
+  {"请选择个人目录中的可写文件夹。", "Choose a writable home directory."},
+  {"无法移动受保护的源文件。", "Protected source."},
 };

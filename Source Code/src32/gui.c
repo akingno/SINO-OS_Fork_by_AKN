@@ -36,6 +36,16 @@ u32 gui_window_stride = sizeof(Window);
 int gui_active, gui_focus = -1;
 static u32 user_owner[NW], user_guard[NW];
 static UiCanvas* user_scene[NW];
+typedef struct {
+  int x, y, w, h, node;
+  u32 generation, flags;
+} DropRegion;
+typedef struct {
+  u32 count;
+  DropRegion zone[DROP_ZONES];
+} DropMap;
+static DropMap* user_drop[NW];
+static u32 file_clip_generation, press_generation;
 static int user_files_dirty;
 static int order[NW], count, desk_selected = -1, desk_nodes[32], desk_count;
 static int menu = -1, menu_row = -1, drag = -1, resize = -1, dx, dy,
@@ -166,13 +176,13 @@ static void changed(int i) {
 }
 static const char* node_label(int);
 static void all_changed(void) {
+  for (int i = 0; i < NW; i++)
+    if (windows[i].used && windows[i].app == USERAPP &&
+        (user_guard[i] & WINDOW_DESKTOP_COMMANDS))
+      process_message(user_owner[i],
+                      (UiEvent){MSG_FILES_CHANGED, (u32)i, 0, 0, 0});
   for (int i = 0; i < NW; i++) {
     Window* w = &windows[i];
-    if (w->used && w->app == FILES) {
-      if (!nodes[w->folder].used)
-        w->folder = vfs_lookup("/home/user");
-      copy(w->title, node_label(w->folder));
-    }
     if (w->used && w->node >= 0 && (w->app == EDIT || w->app == PAINT)) {
       if (!nodes[w->node].used ||
           vfs_generation[w->node] != w->node_generation) {
@@ -354,6 +364,8 @@ static void focus(int id) {
 /* Paint has been hidden 261103. Reject direct legacy window allocation as well.
  */
 static int new_window(int app, const char* title, int width, int height) {
+  if (app == FILES)
+    return -1;
   if (app == PAINT)
     return -1;
   int id;
@@ -388,11 +400,12 @@ static int new_window(int app, const char* title, int width, int height) {
 }
 static void open_node(int);
 static void folder_open(int n) {
-  if (n < 0)
+  if (n < 0 || !nodes[n].used || !nodes[n].dir)
     return;
-  int id = new_window(FILES, node_label(n), 650, 450);
-  if (id >= 0)
-    windows[id].folder = n;
+  char path[VFS_PATH];
+  vfs_path(n, path);
+  if (count >= NW || process_launch_args("/boot/files.snx", CAP_HOME, path) < 0)
+    notice(locale_text(GUI_STATUS_FILES_LAUNCH_FAILED));
 }
 static int app_from_name(const char* s) {
   const char* names[] = {"Files.app",  "TextEdit.app", "Calculator.app",
@@ -618,18 +631,25 @@ static void prompt(int what, int id, const char* title, const char* initial) {
   invalidate((Rect){DIALOG_X, DIALOG_Y, 474, 224});
 }
 static int current_folder(void) {
-  return gui_focus >= 0 && windows[gui_focus].app == FILES
-             ? windows[gui_focus].folder
-             : vfs_lookup("/home/user/Desktop");
+  return vfs_lookup("/home/user/Desktop");
 }
 static void close_now(int id) {
   if (id < 0)
     return;
   Window* w = &windows[id];
+  user_guard[id] = 0;
+  if (press_owner == id) {
+    press_node = -999;
+    dnd = 0;
+  }
   if (user_owner[id]) {
     u32 pid = user_owner[id];
     user_owner[id] = 0;
     process_kill(pid, 0);
+  }
+  if (user_drop[id]) {
+    page_free(user_drop[id]);
+    user_drop[id] = 0;
   }
   if (user_scene[id]) {
     page_free_run(user_scene[id], (sizeof(UiCanvas) + 4095) / 4096);
@@ -733,6 +753,11 @@ static void command(int cmd) {
   int id = gui_focus;
   Window* w = id >= 0 ? &windows[id] : 0;
   char p[VFS_PATH];
+  if (w && w->app == USERAPP && (user_guard[id] & WINDOW_DESKTOP_COMMANDS) &&
+      cmd != 7 && cmd != 12 && cmd != 13) {
+    process_message(user_owner[id], (UiEvent){MSG_COMMAND, (u32)id, 0, 0, cmd});
+    return;
+  }
   switch (cmd) {
     case 1:
       launch(EDIT);
@@ -757,17 +782,7 @@ static void command(int cmd) {
                                  : "/home/user/Desktop/Untitled.txt");
       break;
     case 6:
-      if (w && w->app == FILES && w->selected >= 0) {
-        int n = w->selected;
-        if (nodes[n].dir) {
-          w->folder = n;
-          w->first = 0;
-          w->selected = -1;
-          copy(w->title, node_label(n));
-          changed(id);
-        } else
-          open_node(n);
-      } else if (desk_selected >= 0)
+      if (desk_selected >= 0)
         open_node(desk_selected);
       else
         prompt(5, id, locale_text(GUI_LABEL_OPEN_FULL_PATH), "/home/user/");
@@ -776,13 +791,13 @@ static void command(int cmd) {
       close_window(id);
       break;
     case 8: {
-      int n = w && w->app == FILES ? w->selected : desk_selected;
+      int n = desk_selected;
       if (n >= 0)
         prompt(3, id, locale_text(GUI_LABEL_RENAME), nodes[n].name);
       break;
     }
     case 9:
-      trash_node(w && w->app == FILES ? w->selected : desk_selected);
+      trash_node(desk_selected);
       break;
     case 10:
       folder_open(vfs_lookup("/home/user"));
@@ -801,7 +816,7 @@ static void command(int cmd) {
             locale_text(GUI_LABEL_HOME_FILES_HAVE_BEEN_SAVED_TO_THE_DATA_DISK));
       break;
     case 14: {
-      int n = w && w->app == FILES ? w->selected : desk_selected;
+      int n = desk_selected;
       if (n >= 0) {
         vfs_path(n, p);
         prompt(6, id, locale_text(GUI_LABEL_MOVE_TO_FULL_PATH), p);
@@ -828,8 +843,6 @@ static void accept_dialog(void) {
     return;
   int what = action, id = owner, dir = current_folder(), result = -1;
   char p[VFS_PATH], source[VFS_PATH];
-  if (id >= 0 && windows[id].used && windows[id].app == FILES)
-    dir = windows[id].folder;
   if (what == 1 || what == 2) {
     if (!valid_name(dialog)) {
       copy(
@@ -850,8 +863,7 @@ static void accept_dialog(void) {
     }
     result = vfs_create(p, what == 1, 0);
   } else if (what == 3 || what == 6) {
-    int n = id >= 0 && windows[id].app == FILES ? windows[id].selected
-                                                : desk_selected;
+    int n = desk_selected;
     if (n < 0)
       return;
     vfs_path(n, source);
@@ -915,71 +927,6 @@ static void accept_dialog(void) {
   all_changed();
   if (what == 2)
     open_node(result);
-}
-static int rows(Window* w) {
-  return (w->h - 139) / 28;
-}
-static int file_list(Window* w, int* list) {
-  int n = 0, library = w->folder == vfs_lookup("/Applications"),
-      links = library ? vfs_lookup("/home/user/.sino/menu") : -1;
-  for (int i = 1; i < VFS_NODES; i++)
-    if (nodes[i].used && !hidden_paint_node(i) &&
-        (nodes[i].parent == w->folder ||
-         (library && links >= 0 && nodes[i].parent == links &&
-          suffix(nodes[i].name, ".lnk"))))
-      list[n++] = i;
-  return n;
-}
-static void files_draw(Window* w) {
-  char p[VFS_PATH], b[16];
-  vfs_path(w->folder, p);
-  g_fill(2, 30, w->w - 4, 40, 0xe4e5e8);
-  button(12, 37, 44, locale_text(GUI_LABEL_UP));
-  button(66, 37, 95, locale_text(GUI_LABEL_NEW_FOLDER));
-  button(171, 37, 95, locale_text(GUI_LABEL_NEW_TEXT));
-  button(276, 37, 68, locale_text(GUI_LABEL_OPEN));
-  button(354, 37, 70, locale_text(GUI_LABEL_TRASH));
-  g_fill(2, 78, 135, w->h - 80, 0xe7e9ed);
-  const char* side[] = {
-      locale_text(GUI_LABEL_HOME),         locale_text(GUI_LABEL_DESKTOP),
-      locale_text(GUI_LABEL_DOCUMENTS),    locale_text(GUI_LABEL_APPLICATIONS),
-      locale_text(GUI_LABEL_STARTUP_DISK), locale_text(GUI_LABEL_TRASH)};
-  const char* paths[] = {"/home/user",
-                         "/home/user/Desktop",
-                         "/home/user/Documents",
-                         "/Applications",
-                         "/boot",
-                         "/home/user/Trash"};
-  for (int j = 0; j < 6; j++) {
-    if (w->folder == vfs_lookup(paths[j]))
-      g_fill(5, 93 + j * 37, 128, 30, 0xc4d0e1);
-    g_text(0, 16, 97 + j * 37, side[j], INK);
-  }
-  g_text(0, 150, 78, locale_text(GUI_LABEL_NAME), 0x656a72);
-  g_text(0, w->w - 109, 78, locale_text(GUI_LABEL_SIZE), 0x656a72);
-  g_line(141, 102, w->w - 13, 102, 0xc8cbd1);
-  int list[VFS_NODES], n = file_list(w, list), visible = rows(w);
-  w->first = max(0, min(w->first, max(0, n - visible)));
-  for (int row = 0; row < visible && row + w->first < n; row++) {
-    int i = list[row + w->first], y = 106 + row * 28;
-    if (i == w->selected)
-      g_fill(142, y, w->w - 154, 28, BLUE);
-    else if (row & 1)
-      g_fill(142, y, w->w - 154, 28, 0xf1f3f5);
-    icon(151, y + 4, node_kind(i), 1);
-    g_cliptext(181, y + 3, w->w - 303, node_label(i),
-               i == w->selected ? 0xffffff : INK);
-    number(nodes[i].size, b);
-    g_text(0, w->w - 108, y + 3,
-           nodes[i].dir ? locale_text(GUI_LABEL_FOLDER) : b,
-           i == w->selected ? 0xe4eaf4 : 0x69717e);
-  }
-  if (n > visible) {
-    button(w->w - 31, 34, 20, "^");
-    button(w->w - 31, w->h - 55, 20, "v");
-  }
-  g_fill(2, w->h - 27, w->w - 4, 25, BG);
-  g_cliptext(12, w->h - 25, w->w - 35, p, 0x555b65);
 }
 static void edit_position(Window* w, int pos, int* line, int* col) {
   *line = 0;
@@ -1189,21 +1136,26 @@ static void edit_key(Window* w, int key) {
 static void edit_command(int key) {
   int id = gui_focus;
   Window* w = id >= 0 ? &windows[id] : 0;
+  if (w && w->app == USERAPP && (user_guard[id] & WINDOW_DESKTOP_COMMANDS)) {
+    process_message(user_owner[id], (UiEvent){MSG_KEY, (u32)id, 0, 0, key});
+    return;
+  }
   if (w && w->app == EDIT) {
     edit_key(w, key);
     changed(id);
     return;
   }
-  int selected = w && w->app == FILES ? w->selected : desk_selected;
+  int selected = desk_selected;
   if ((key == 3 || key == 24) && selected >= 0) {
     vfs_path(selected, file_clipboard);
     file_cut = key == 24;
+    file_clip_generation = vfs_generation[selected];
     return;
   }
   if (key != 22 || !file_clipboard[0])
     return;
   int source = vfs_lookup(file_clipboard);
-  if (source < 0) {
+  if (source < 0 || vfs_generation[source] != file_clip_generation) {
     notice(locale_text(GUI_LABEL_THE_COPIED_FILE_NO_LONGER_EXISTS));
     return;
   }
@@ -1418,9 +1370,7 @@ static void window_draw(int id) {
     case USERAPP:
       user_draw(id);
       break;
-    case FILES:
-      files_draw(w);
-      break;
+
     case EDIT:
       edit_draw(w);
       break;
@@ -1437,7 +1387,8 @@ static void window_draw(int id) {
       install_draw(w->w, w->h);
       break;
   }
-  if (w->app == FILES || w->app == EDIT)
+  if (w->app == EDIT ||
+      (w->app == USERAPP && (user_guard[id] & WINDOW_DESKTOP_COMMANDS)))
     for (int j = 0; j < 3; j++)
       g_line(w->w - 13 + j * 4, w->h - 3, w->w - 3, w->h - 13 + j * 4,
              0x8c929d);
@@ -1632,13 +1583,23 @@ static int hit_window(int x, int y) {
   }
   return -1;
 }
-static int files_hit(Window* w, int x, int y) {
+static int drop_hit(int id, int x, int y, u32 flags) {
+  DropMap* m = user_drop[id];
+  Window* w = &windows[id];
+  if (!m)
+    return -1;
   x -= w->x;
   y -= w->y;
-  if (x < 142 || x > w->w - 12 || y < 106 || y >= w->h - 28)
-    return -1;
-  int list[VFS_NODES], n = file_list(w, list), row = (y - 106) / 28 + w->first;
-  return row < n ? list[row] : -1;
+  for (int i = (int)m->count - 1; i >= 0; i--) {
+    DropRegion* z = &m->zone[i];
+    if (inside(x, y, z->x, z->y, z->w, z->h)) {
+      if (!(z->flags & flags) || !nodes[z->node].used ||
+          vfs_generation[z->node] != z->generation)
+        return -1;
+      return z->node;
+    }
+  }
+  return -1;
 }
 static int drop_folder(int x, int y) {
   if (y < 31)
@@ -1646,22 +1607,8 @@ static int drop_folder(int x, int y) {
   int id = hit_window(x, y);
   if (id >= 0) {
     Window* w = &windows[id];
-    if (w->app != FILES)
-      return -1;
-    int xx = x - w->x, yy = y - w->y;
-    if (xx < 137 && yy >= 93 && yy < 315) {
-      const char* paths[] = {"/home/user",
-                             "/home/user/Desktop",
-                             "/home/user/Documents",
-                             "/Applications",
-                             "/boot",
-                             "/home/user/Trash"};
-      return vfs_lookup(paths[(yy - 93) / 37]);
-    }
-    if (xx < 142 || yy < 106 || yy >= w->h - 28)
-      return -1;
-    int n = files_hit(w, x, y);
-    return n >= 0 ? (nodes[n].dir ? n : -1) : w->folder;
+    (void)w;
+    return drop_hit(id, x, y, DROP_TARGET);
   }
   int n = desktop_hit(x, y);
   if (n == -2)
@@ -1676,6 +1623,7 @@ static int drop_folder(int x, int y) {
 }
 static void file_press(int n, int id, int x, int y, u32 time) {
   press_node = n;
+  press_generation = n >= 0 ? vfs_generation[n] : 0;
   press_owner = id;
   press_x = x;
   press_y = y;
@@ -1683,15 +1631,15 @@ static void file_press(int n, int id, int x, int y, u32 time) {
   last_node = n;
   last_click = time;
 }
-static void file_release(void) {
+static void file_release(int x, int y) {
   int n = press_node;
   press_node = -999;
   if (dnd) {
     dnd = 0;
     invalidate((Rect){dnd_x - 4, dnd_y - 4, 150, 87});
-    if (n < 0)
+    if (n < 0 || !nodes[n].used || vfs_generation[n] != press_generation)
       return;
-    int dest = dnd_target;
+    int dest = drop_folder(x, y);
     if (dest < 0 || nodes[dest].readonly) {
       notice(locale_text(GUI_LABEL_CHOOSE_A_WRITABLE_DESTINATION_FOLDER));
       return;
@@ -1699,6 +1647,30 @@ static void file_release(void) {
     if (n == dest) {
       notice(locale_text(GUI_LABEL_A_FOLDER_CANNOT_BE_MOVED_INTO_ITSELF));
       return;
+    }
+    char target_path[VFS_PATH], source_path[VFS_PATH];
+    vfs_path(dest, target_path);
+    vfs_path(n, source_path);
+    if (!streq(target_path, "/home/user")) {
+      const char* prefix = "/home/user/";
+      int valid = 1;
+      for (int j = 0; prefix[j]; j++)
+        if (target_path[j] != prefix[j]) {
+          valid = 0;
+          break;
+        }
+      if (!valid) {
+        notice(locale_text(GUI_STATUS_DROP_HOME_REQUIRED));
+        return;
+      }
+    }
+    if (!nodes[n].readonly) {
+      const char* prefix = "/home/user/";
+      for (int j = 0; prefix[j]; j++)
+        if (source_path[j] != prefix[j]) {
+          notice(locale_text(GUI_STATUS_DROP_PROTECTED_SOURCE));
+          return;
+        }
     }
     int desktop = vfs_lookup("/home/user/Desktop");
     if (nodes[n].parent == desktop && dest == desktop) {
@@ -1735,12 +1707,13 @@ static void file_release(void) {
                                  : "/home/user/Trash";
     folder_open(vfs_lookup(path));
   } else if (press_owner >= 0 && windows[press_owner].used &&
-             windows[press_owner].app == FILES) {
-    focus(press_owner);
-    command(6);
+             windows[press_owner].app == USERAPP) {
+    /* Native clients decide what a double click means. */
+    return;
   } else
     open_node(n);
 }
+
 static int context_count(void) {
   return context_node >= 0 ? 7 : 4;
 }
@@ -1812,22 +1785,15 @@ static void right_click(int x, int y) {
   if (ime_len)
     ime_reset();
   int id = hit_window(x, y);
-  if (id >= 0) {
-    if (windows[id].app != FILES)
-      return;
-    focus(id);
-    context_node = files_hit(&windows[id], x, y);
-    windows[id].selected = context_node;
-    changed(id);
-  } else {
-    changed(gui_focus);
-    gui_focus = -1;
-    context_node = desktop_hit(x, y);
-    if (context_node < 0)
-      context_node = -1;
-    desk_selected = context_node;
-    desktop_dirty = 1;
-  }
+  if (id >= 0)
+    return;
+  changed(gui_focus);
+  gui_focus = -1;
+  context_node = desktop_hit(x, y);
+  if (context_node < 0)
+    context_node = -1;
+  desk_selected = context_node;
+  desktop_dirty = 1;
   context_open = 1;
   context_row = -1;
   context_x = min(x, GUI_WIDTH - 224);
@@ -2174,7 +2140,8 @@ static void menu_choose(int m, int row) {
 static void zoom(int id) {
   Window* w = &windows[id];
   invalidate(bounds(w));
-  if (w->app != FILES && w->app != EDIT)
+  if (w->app != EDIT &&
+      !(w->app == USERAPP && (user_guard[id] & WINDOW_DESKTOP_COMMANDS)))
     return;
   if (w->zoomed) {
     w->x = w->ox;
@@ -2303,58 +2270,15 @@ static void click(int x, int y, u32 time) {
       dy = yy;
       return;
     }
-    if ((w->app == FILES || w->app == EDIT) && xx > w->w - 19 &&
-        yy > w->h - 19) {
+    if ((w->app == EDIT ||
+         (w->app == USERAPP && (user_guard[id] & WINDOW_DESKTOP_COMMANDS))) &&
+        xx > w->w - 19 && yy > w->h - 19) {
       resize = id;
       dx = w->w - xx;
       dy = w->h - yy;
       return;
     }
-    if (w->app == FILES) {
-      if (xx > w->w - 35 && yy >= 34 && yy < 61)
-        w->first = max(0, w->first - rows(w));
-      else if (xx > w->w - 35 && yy >= w->h - 55 && yy < w->h - 29)
-        w->first += rows(w);
-      else if (yy >= 35 && yy < 66) {
-        if (xx < 60) {
-          if (w->folder)
-            w->folder = nodes[w->folder].parent;
-          w->first = 0;
-          w->selected = -1;
-          copy(w->title, node_label(w->folder));
-        } else if (xx < 165)
-          command(2);
-        else if (xx < 270)
-          command(3);
-        else if (xx < 350)
-          command(6);
-        else if (xx < 430)
-          command(9);
-      } else if (xx < 137 && yy >= 93 && yy < 93 + 6 * 37) {
-        const char* paths[] = {"/home/user",
-                               "/home/user/Desktop",
-                               "/home/user/Documents",
-                               "/Applications",
-                               "/boot",
-                               "/home/user/Trash"};
-        int n = vfs_lookup(paths[(yy - 93) / 37]);
-        if (n >= 0) {
-          w->folder = n;
-          copy(w->title, node_label(n));
-          w->first = 0;
-          w->selected = -1;
-        }
-      } else if (xx >= 142 && yy >= 106 && yy < w->h - 28) {
-        int list[VFS_NODES], n = file_list(w, list),
-                             row = (yy - 106) / 28 + w->first;
-        if (row < n) {
-          int selected = list[row];
-          w->selected = selected;
-          file_press(selected, id, x, y, time);
-        }
-      }
-      changed(id);
-    } else if (w->app == EDIT) {
+    if (w->app == EDIT) {
       if (yy >= 35 && yy < 63) {
         if (xx < 80)
           save_window(id);
@@ -2390,7 +2314,13 @@ static void click(int x, int y, u32 time) {
       }
       changed(id);
     } else if (w->app == USERAPP) {
-      process_message(user_owner[id], (UiEvent){MSG_CLICK, (u32)id, xx, yy, 0});
+      {
+        process_message(user_owner[id],
+                        (UiEvent){MSG_CLICK, (u32)id, xx, yy, 0});
+        int source = drop_hit(id, x, y, DROP_SOURCE);
+        if (source >= 0)
+          file_press(source, id, x, y, time);
+      }
     } else if (w->app == SYSTEM) {
       settings_click(xx, yy, w->w, w->h);
       changed(id);
@@ -2544,7 +2474,7 @@ static void keyboard(int key) {
     changed(id);
     return;
   }
-  if ((!w || w->app == FILES) && (key == 3 || key == 24 || key == 22)) {
+  if ((!w) && (key == 3 || key == 24 || key == 22)) {
     edit_command(key);
     return;
   }
@@ -2553,10 +2483,7 @@ static void keyboard(int key) {
     return;
   }
   if (key == 14) {
-    if (w && w->app == FILES)
-      folder_open(w->folder);
-    else
-      launch(EDIT);
+    launch(EDIT);
     return;
   }
   if (key == 15) {
@@ -2593,32 +2520,9 @@ static void keyboard(int key) {
   } else if (w->app == EDIT) {
     edit_key(w, key);
     changed(id);
-  } else if (w->app == FILES) {
-    int list[VFS_NODES], n = file_list(w, list), row = -1;
-    for (int i = 0; i < n; i++)
-      if (list[i] == w->selected)
-        row = i;
-    if (key == 0x148 || key == 0x150) {
-      row = max(0, min(n - 1, row + (key == 0x148 ? -1 : 1)));
-      if (n)
-        w->selected = list[row];
-      if (row < w->first)
-        w->first = row;
-      if (row >= w->first + rows(w))
-        w->first = row - rows(w) + 1;
-    } else if (key == 13)
-      command(6);
-    else if (key == 8) {
-      if (w->folder)
-        w->folder = nodes[w->folder].parent;
-      w->first = 0;
-      w->selected = -1;
-      copy(w->title, node_label(w->folder));
-    } else if (key == 0x153)
-      command(9);
-    changed(id);
   }
 }
+
 void gui_refresh(void) {
   const int zh[] = {10, 167, 213, 260, 311, 387},
             en[] = {10, 167, 222, 280, 352, 432};
@@ -2631,8 +2535,7 @@ void gui_refresh(void) {
       w->h = min(w->h, GUI_HEIGHT - 48);
       w->x = max(0, min(w->x, GUI_WIDTH - w->w - 5));
       w->y = max(32, min(w->y, GUI_HEIGHT - w->h - 5));
-      if (w->app != FILES && w->app != EDIT && w->app != PAINT &&
-          w->app != USERAPP)
+      if (w->app != EDIT && w->app != PAINT && w->app != USERAPP)
         copy(w->title, locale_text(appnames[w->app]));
     }
   for (int i = 0; i < VFS_NODES; i++) {
@@ -2675,6 +2578,10 @@ void gui_files_changed(void) {
 void gui_step(void) {
   if (user_files_dirty) {
     user_files_dirty = 0;
+    for (int i = 0; i < NW; i++)
+      if (windows[i].used && (user_guard[i] & WINDOW_DESKTOP_COMMANDS))
+        process_message(user_owner[i],
+                        (UiEvent){MSG_FILES_CHANGED, (u32)i, 0, 0, 0});
     all_changed();
   }
   mouse_poll();
@@ -2743,7 +2650,7 @@ void gui_step(void) {
       }
     }
     if (!(e.buttons & 1) && (old_buttons & 1) && press_node != -999)
-      file_release();
+      file_release(e.x, e.y);
     if (context_open) {
       int row =
           inside(e.x, e.y, context_x, context_y + 4, 220, context_count() * 28)
@@ -2776,8 +2683,10 @@ void gui_step(void) {
       painting = -1;
     if (e.wheel && gui_focus >= 0) {
       Window* w = &windows[gui_focus];
-      if (w->app == FILES)
-        w->first = max(0, w->first + e.wheel * 3);
+      if (w->app == USERAPP)
+        process_message(
+            user_owner[gui_focus],
+            (UiEvent){MSG_SCROLL, (u32)gui_focus, 0, 0, e.wheel * 3});
       else if (w->app == EDIT)
         w->scroll = max(0, w->scroll + e.wheel * 3);
       else if (w->app == TERM)
@@ -2924,7 +2833,7 @@ int gui_clip_write(const u8* data, u32 size) {
 int gui_user_policy(int token, u32 flags) {
   int id = token & 255;
   u32 pid = (u32)token >> 8;
-  if (id >= NW || user_owner[id] != pid || flags > 7)
+  if (id >= NW || user_owner[id] != pid || flags > 15)
     return S_INVALID;
   user_guard[id] = flags;
   return 0;
@@ -2939,5 +2848,85 @@ int gui_user_title(int token, const char* title) {
   copy(windows[id].title, title);
   changed(id);
   invalidate((Rect){0, 0, GUI_WIDTH, 31});
+  return 0;
+}
+
+/* Public desktop integration: value-only requests, never a legacy FILES window.
+ */
+int gui_open_path(const char* path) {
+  int n = vfs_lookup(path);
+  if (n < 0)
+    return S_NOTFOUND;
+  open_node(n);
+  return S_OK;
+}
+int gui_file_clip(int op, FileClipboard* p) {
+  if (op == 2) {
+    file_clipboard[0] = 0;
+    return 0;
+  }
+  if (op == 1) {
+    int n = vfs_lookup(p->path);
+    if (n < 0)
+      return S_NOTFOUND;
+    copy(file_clipboard, p->path);
+    file_cut = (int)p->cut;
+    file_clip_generation = vfs_generation[n];
+    return 0;
+  }
+  int n = vfs_lookup(file_clipboard);
+  if (!file_clipboard[0] || n < 0 || vfs_generation[n] != file_clip_generation)
+    return S_NOTFOUND;
+  copy(p->path, file_clipboard);
+  p->cut = (u32)file_cut;
+  return 0;
+}
+int gui_user_size(int token, WindowSize* out) {
+  int id = token & 255;
+  if (id >= NW || user_owner[id] != (u32)token >> 8 || !windows[id].used)
+    return S_BADHANDLE;
+  out->width = (u32)windows[id].w;
+  out->height = (u32)windows[id].h;
+  return 0;
+}
+int gui_user_drop_zones(int token, const UiDropZone* in, u32 count) {
+  int id = token & 255;
+  if (id >= NW || !windows[id].used || user_owner[id] != (u32)token >> 8)
+    return S_BADHANDLE;
+  if (count > DROP_ZONES)
+    return S_LIMIT;
+  if (!count) {
+    if (user_drop[id])
+      page_free(user_drop[id]);
+    user_drop[id] = 0;
+    return 0;
+  }
+  DropMap* next = page_alloc();
+  if (!next)
+    return S_NOMEM;
+  next->count = count;
+  for (u32 i = 0; i < count; i++) {
+    const UiDropZone* z = &in[i];
+    u32 len = 0;
+    while (len < 128 && z->path[len])
+      len++;
+    if (len == 128 || !len || z->path[0] != '/' || !z->flags ||
+        (z->flags & ~3u) || z->x < 0 || z->y < 30 || z->w <= 0 || z->h <= 0 ||
+        z->w > windows[id].w || z->h > windows[id].h ||
+        z->x > windows[id].w - z->w || z->y > windows[id].h - z->h) {
+      page_free(next);
+      return S_INVALID;
+    }
+    int n = vfs_lookup(z->path);
+    if (n < 0 || ((z->flags & DROP_TARGET) && !nodes[n].dir)) {
+      page_free(next);
+      return S_INVALID;
+    }
+    next->zone[i] =
+        (DropRegion){z->x, z->y, z->w, z->h, n, vfs_generation[n], z->flags};
+  }
+  if (user_drop[id])
+    page_free(user_drop[id]);
+  user_drop[id] = next;
   return 0;
 }

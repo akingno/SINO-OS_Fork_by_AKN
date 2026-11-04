@@ -22,4 +22,8 @@ void gui_user_close(int);
 int gui_user_policy(int, u32);
 int gui_user_title(int, const char *);
 int gui_user_scene(int, const UiScene *);
+int gui_open_path(const char *);
+int gui_file_clip(int, FileClipboard *);
+int gui_user_drop_zones(int, const UiDropZone *, u32);
+int gui_user_size(int, WindowSize *);
 #endif

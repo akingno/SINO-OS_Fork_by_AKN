@@ -1,3 +1,4 @@
+const {files:filesWindow}=require('./files-test');
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const {VM,sleep}=require('./vm-test'),{waitFor,scene}=require('./calculator-test');
 const {seedPaintDisk,nodes,fileBytes}=require('./paint-fixture'),{volume}=require('./test-volume');
@@ -25,13 +26,13 @@ const legacy=process.argv.includes('--legacy');
    for(const route of ['/home/user/Desktop/Paint.app','/home/user/Desktop/OldPaint.lnk','/home/user/.sino/menu/OldPaint.lnk','/home/user/Desktop/Sketch.snp','/home/user/Documents/CAPS.SNP'])await notice(route);
    await open('/Applications/Paint.app');await noPaint();assert.equal((await vm.state()).windows.length,0);await vm.key('esc');pass('Old app, shortcut, missing built-in and case-insensitive drawing routes cannot launch Paint');
    const sketch=all.find(n=>n.name==='Sketch.snp');await vm.double((await vm.memory(vm.symbols.desk_x+sketch.id*4,4)).readInt32LE()+45,(await vm.memory(vm.symbols.desk_y+sketch.id*4,4)).readInt32LE()+20);assert.equal((await vm.state()).modal,2);await noPaint();await vm.key('esc');pass('Double-clicking a real desktop drawing gives the paused notice');
-   await open('/Applications');let w=(await vm.state()).windows.find(w=>w.app===1),seen=[];
-   for(let i=0;i<20;i++){await vm.key('down');w=(await vm.state()).windows.find(w=>w.app===1);const name=all.find(n=>n.id===w.selected)?.name;if(name)seen.push(name);}
+   await open('/Applications');let w=await filesWindow(vm),seen=[];
+   for(let i=0;i<20;i++){await vm.key('down');w=await filesWindow(vm);const name=all.find(n=>n.id===w.selected)?.name;if(name)seen.push(name);}
    assert(seen.includes('Calculator.app'));assert(seen.includes('Clock.app'));assert(!seen.includes('Paint.app'));assert(!seen.includes('OldPaint.lnk'));await vm.key('ctrl','w');pass('Application library excludes legacy aliases and retains other applications');
    await vm.key('f2');let installed=0;for(const app of ['editor','files']){await vm.type(`install /quiet:/boot/${app}.sxp\n`);await waitFor(async()=>(vm.log().match(/QUIET INSTALL PASS/g)||[]).length>installed,'install '+app);installed++;}
-   await vm.type('run /home/user/Programs/files/files.snx /home/user/Desktop\n');w=await waitFor(async()=>(await vm.state()).windows.find(w=>w.title.includes('原生文件管理器')),'native files');
-   let commands=await scene(vm,w);assert(!commands.some(c=>c.text==='Paint.app'||c.text==='OldPaint.lnk'));const row=commands.find(c=>c.text==='Sketch.snp');assert(row);await vm.click(w.x+200,w.y+row.y+8);await vm.click(w.x+60,w.y+56);
-   await waitFor(async()=>(await scene(vm,w)).some(c=>c.text.includes('画板已暂停')),'native paused status');assert(!(await vm.state()).windows.some(w=>w.title.includes('原生文本编辑器')));await noPaint();await vm.shot('03-native-files-paused');await vm.key('ctrl','w');await vm.key('ctrl','w');pass('Native Files blocks the text-editor fallback even with Editor installed');
+   await vm.type('run /home/user/Programs/files/files.snx /home/user/Desktop\n');w=await filesWindow(vm);
+   let commands=await scene(vm,w);assert(!commands.some(c=>c.text==='Paint.app'||c.text==='OldPaint.lnk'));const row=commands.find(c=>c.text==='Sketch.snp');assert(row);await vm.click(w.x+200,w.y+row.y+8);await vm.key('ret');
+   assert.equal((await vm.state()).modal,2);assert.match((await vm.memory(vm.symbols.message,128)).toString(),/画板已暂停/);await vm.key('esc');assert(!(await vm.state()).windows.some(w=>w.title.includes('原生文本编辑器')));await noPaint();await vm.shot('03-native-files-paused');await vm.key('ctrl','w');await vm.key('ctrl','w');pass('Native Files blocks the text-editor fallback even with Editor installed');
    await vm.key('f7');w=(await vm.state()).windows.find(w=>w.app===7);await vm.click(w.x+50,w.y+196);await vm.click(w.x+515,w.y+160);await vm.click(w.x+w.w-86,w.y+w.h-34);w=(await vm.state()).windows.find(w=>w.app===7);await vm.click(w.x+w.w-86,w.y+w.h-49);await waitFor(async()=>await vm.value('settings_pending')===0,'keep language');assert.equal(await vm.value('settings_language'),1);await vm.key('ctrl','w');await open('/home/user/Desktop/Sketch.snp');assert.equal((await vm.state()).modal,2);assert.match((await vm.memory(vm.symbols.message,128)).toString(),/Paint is unavailable/);await vm.shot('04-english-paused');await vm.key('esc');pass('Paused notice follows Chinese and English UI language');
   }
   await checkFiles();await vm.stop();for(const [name,e] of expected)if(!e.dir)assert(volume(path.join(vm.run,'data.img')).current.records.get(name).data.equals(e.data));

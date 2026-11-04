@@ -59,7 +59,11 @@ enum {
   SYS_DUP,
   SYS_UI_LANGUAGE,
   SYS_WINDOW_TITLE,
-  SYS_TIME
+  SYS_TIME,
+  SYS_OPEN_PATH,
+  SYS_FILE_CLIP,
+  SYS_DROP_ZONES,
+  SYS_WINDOW_SIZE
 };
 enum { CAP_HOME = 1, CAP_NETWORK = 2, CAP_MANAGE = 4 };
 enum {
@@ -72,7 +76,12 @@ enum {
   UI_SELECTION,
   UI_ELLIPSE
 };
-enum { WINDOW_CLOSE_REQUEST = 1, WINDOW_APP_KEYS = 2, WINDOW_NO_IME = 4 };
+enum {
+  WINDOW_CLOSE_REQUEST = 1,
+  WINDOW_APP_KEYS = 2,
+  WINDOW_NO_IME = 4,
+  WINDOW_DESKTOP_COMMANDS = 8
+};
 enum {
   MSG_CLICK = 1,
   MSG_KEY,
@@ -80,7 +89,10 @@ enum {
   MSG_MOUSE_MOVE,
   MSG_MOUSE_UP,
   MSG_TEXT,
-  MSG_CONTEXT
+  MSG_CONTEXT,
+  MSG_COMMAND,
+  MSG_FILES_CHANGED,
+  MSG_SCROLL
 };
 #define UI_COMMANDS 64
 #define UI_CANVAS_COMMANDS 256
@@ -114,6 +126,23 @@ typedef struct {
   char name[32];
   u32 size, dir;
 } FileInfo;
+/* Generic file transfer rectangles. Paths are copied/validated by the kernel;
+   no Node, Window or framebuffer address crosses this interface. */
+#define DROP_ZONES 32
+#define DROP_SOURCE 1u
+#define DROP_TARGET 2u
+typedef struct {
+  i32 x, y, w, h;
+  u32 flags;
+  char path[128];
+} UiDropZone;
+typedef struct {
+  char path[128];
+  u32 cut;
+} FileClipboard;
+typedef struct {
+  u32 width, height;
+} WindowSize;
 #define USER_BASE 0x40000000u
 #define USER_BYTES 0x30000u
 #define USER_ARGUMENTS (USER_BASE + 0x30000u)

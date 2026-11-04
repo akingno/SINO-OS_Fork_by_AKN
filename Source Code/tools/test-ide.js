@@ -1,3 +1,4 @@
+const {files:filesWindow,rowPoint}=require('./files-test');
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {VM,sleep}=require('./vm-test'),{volume}=require('./test-volume');
 (async()=>{const vm=new VM('ide-qa'),results=[];try{
@@ -6,7 +7,7 @@ const {VM,sleep}=require('./vm-test'),{volume}=require('./test-volume');
  async function nodes(){const b=await vm.memory(vm.symbols.nodes,124*128),out=[];for(let i=0;i<128;i++){const r=b.subarray(i*124,(i+1)*124);if(r.readInt32LE(32))out[i]={id:i,name:r.subarray(0,32).toString().split('\0')[0],parent:r.readInt32LE(36),dir:!!r.readInt32LE(40)};}const full=i=>i>0?full(out[i].parent)+'/'+out[i].name:'';for(const n of out)if(n)n.path=full(n.id);return out.filter(Boolean);}
  await vm.start({fresh:true});await vm.key('f2');await vm.type('run /boot/bstest.snx\n');await waitLog('BASIC SELFTEST PASS');await vm.type('install /quiet:/boot/sysbasic.sxp\n');await waitLog('QUIET INSTALL PASS');await vm.key('ctrl','w');
  // Open installed IDE from the ordinary desktop software library, not a binary path.
- await vm.double(958,290);let library=await window('应用程序');const entries=(await nodes()).filter(n=>n.parent===library.folder||n.path.startsWith('/home/user/.sino/menu/')&&n.name.endsWith('.lnk'));const ideRow=entries.findIndex(n=>n.name==='sysbasic.lnk');assert(ideRow>=0,'Installed IDE shortcut missing');await vm.double(library.x+240,library.y+106+ideRow*28+12);let w=await window('SysBASIC 0.3');
+ await vm.double(958,290);let library=await filesWindow(vm);await vm.double(...await rowPoint(vm,library,'sysbasic.lnk'));let w=await window('SysBASIC 0.3');
  const click=(x,y)=>vm.click(w.x+x,w.y+y),toolbar=n=>click(8+n*82+30,71);
  await toolbar(0);await vm.key('ctrl','s');await waitLog('SYSBASIC PROJECT SAVED');const empty=volume(path.join(vm.run,'data.img')).current.records;assert.equal(empty.get('/home/user/Projects/Untitled.bas').data.length,0);assert.equal(empty.get('/home/user/Projects/Untitled.frm').data.toString().trim().split('\n').length,1);await click(490,44);await click(490,94);await vm.shot('01-classic-designer');assert(!vm.log().includes('SCENE REJECTED'));results.push('Installed IDE starts from desktop Applications library with classic docked panels');
  await vm.drag(w.x+210,w.y+249,w.x+290,w.y+289);await sleep(350);

@@ -177,6 +177,9 @@ int process_launch_args(const char* path, u32 caps, const char* arguments) {
       (streq(executable, "/boot/calc.snx") ||
        streq(executable, "/boot/clock.snx")))
     p->caps = 0;
+  if (nodes[n].readonly && nodes[n].boot >= 0 &&
+      streq(executable, "/boot/files.snx"))
+    p->caps &= CAP_HOME;
   u32 j = 0;
   while (nodes[n].name[j] && j < 31) {
     p->name[j] = nodes[n].name[j];
@@ -203,6 +206,14 @@ void process_message(u32 pid, UiEvent e) {
   for (int i = 0; i < NP; i++)
     if (processes[i].state == 1 && processes[i].pid == pid) {
       Process* p = &processes[i];
+      if (e.type == MSG_FILES_CHANGED) {
+        int duplicate = 0;
+        for (u32 j = p->tail; j != p->head; j = (j + 1) & 15)
+          if (p->queue[j].type == e.type && p->queue[j].window == e.window)
+            duplicate = 1;
+        if (duplicate)
+          return;
+      }
       u32 previous = (p->head - 1) & 15;
       if (e.type == MSG_MOUSE_MOVE && p->head != p->tail &&
           p->queue[previous].type == MSG_MOUSE_MOVE) {
@@ -389,6 +400,54 @@ static int syscall(Frame* f) {
           *(TimeOfDay*)a = value;
         return result;
       }
+    case SYS_OPEN_PATH:
+      if (!(current->caps & CAP_HOME))
+        return S_DENIED;
+      r = homepath(a, path, 0);
+      if (r)
+        return r;
+      return gui_open_path(path);
+    case SYS_FILE_CLIP: {
+      if (a > 2)
+        return S_INVALID;
+      if (a && !(current->caps & CAP_HOME))
+        return S_DENIED;
+      if (!user_access_ok(b, sizeof(FileClipboard), a == 0))
+        return S_INVALID;
+      FileClipboard clip;
+      memset(&clip, 0, sizeof(clip));
+      if (a == 1) {
+        if (!copy_user_string(b, clip.path, sizeof(clip.path)))
+          return S_INVALID;
+        clip.cut = ((const FileClipboard*)b)->cut;
+        if (clip.cut > 1)
+          return S_INVALID;
+        r = homepath(b, path, clip.cut != 0);
+        if (r)
+          return r;
+        memcpy(clip.path, path, strlen(path) + 1);
+      }
+      r = gui_file_clip((int)a, &clip);
+      if (!r && !a)
+        memcpy((void*)b, &clip, sizeof(clip));
+      return r;
+    }
+    case SYS_DROP_ZONES:
+      o = handle_get(current->handles, a, OBJ_WINDOW, 2);
+      if (!o)
+        return S_BADHANDLE;
+      if (!(current->caps & CAP_HOME))
+        return S_DENIED;
+      if (c > DROP_ZONES || !user_access_ok(b, c * sizeof(UiDropZone), 0))
+        return S_INVALID;
+      return gui_user_drop_zones(o->value, (const UiDropZone*)b, c);
+    case SYS_WINDOW_SIZE:
+      o = handle_get(current->handles, a, OBJ_WINDOW, 1);
+      if (!o)
+        return S_BADHANDLE;
+      if (c < sizeof(WindowSize) || !user_access_ok(b, sizeof(WindowSize), 1))
+        return S_INVALID;
+      return gui_user_size(o->value, (WindowSize*)b);
     case SYS_UI_LANGUAGE:
       return settings_language;
     case SYS_WINDOW_TITLE:

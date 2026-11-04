@@ -82,6 +82,10 @@ static inline int Event(UiEvent *e) {
 static inline int Close(int h) {
   return api(SYS_CLOSE, (u32)h, 0, 0);
 }
+static inline int OpenPath(const char *p) { return api(SYS_OPEN_PATH,(u32)p,0,0); }
+static inline int FileClip(int set,FileClipboard *p) { return api(SYS_FILE_CLIP,(u32)set,(u32)p,0); }
+static inline int DropZones(int h,const UiDropZone *z,u32 n) { return api(SYS_DROP_ZONES,(u32)h,(u32)z,n); }
+static inline int GetWindowSize(int h,WindowSize *s) { return api(SYS_WINDOW_SIZE,(u32)h,(u32)s,sizeof(*s)); }
 void copy(char *, const char *);
 int text_encode(u32, char *);
 u32 text_previous(const char *, u32);

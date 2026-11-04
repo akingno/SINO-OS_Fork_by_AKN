@@ -1924,5 +1924,26 @@
       "name",
       "count"
     ]
+  },
+  {
+    "key": "GUI_STATUS_FILES_LAUNCH_FAILED",
+    "module": "GUI",
+    "type": "STATUS",
+    "meaning": "Cannot start Files; check /boot/files.snx or close applications.",
+    "parameters": []
+  },
+  {
+    "key": "GUI_STATUS_DROP_HOME_REQUIRED",
+    "module": "GUI",
+    "type": "STATUS",
+    "meaning": "Choose a writable home directory.",
+    "parameters": []
+  },
+  {
+    "key": "GUI_STATUS_DROP_PROTECTED_SOURCE",
+    "module": "GUI",
+    "type": "STATUS",
+    "meaning": "Protected source.",
+    "parameters": []
   }
 ]

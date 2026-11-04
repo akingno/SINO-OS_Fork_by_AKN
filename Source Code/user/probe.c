@@ -45,6 +45,9 @@ int main(void) {
     }
     check(WindowTitle((int)handle, "Hijacked") == S_BADHANDLE,
           "foreign window title denied");
+    UiDropZone z={0,30,10,10,DROP_TARGET,{0}};copy(z.path,"/home/user");
+    check(DropZones((int)handle,&z,1)==S_BADHANDLE,"foreign drag registration denied");
+    WindowSize size;check(GetWindowSize((int)handle,&size)==S_BADHANDLE,"foreign size handle denied");
     Log("FOREIGN WINDOW TITLE DENIED PASS\n");
     return 0;
   }

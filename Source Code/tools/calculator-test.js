@@ -12,7 +12,7 @@ async function scene(vm,w){
  if(!address)return [];
  const count=(await vm.memory(address,4)).readUInt32LE();assert(count<=256);
  const data=await vm.memory(address+4,count*104),commands=[];
- for(let i=0;i<count;i++){const b=data.subarray(i*104,(i+1)*104);commands.push({kind:b.readInt32LE(),x:b.readInt32LE(4),y:b.readInt32LE(8),w:b.readInt32LE(12),h:b.readInt32LE(16),text:b.subarray(24,104).toString().split('\0')[0]});}
+ for(let i=0;i<count;i++){const b=data.subarray(i*104,(i+1)*104);commands.push({kind:b.readInt32LE(),color:b.readUInt32LE(20),x:b.readInt32LE(4),y:b.readInt32LE(8),w:b.readInt32LE(12),h:b.readInt32LE(16),text:b.subarray(24,104).toString().split('\0')[0]});}
  return commands;
 }
 async function calculator(vm,id,legacy=false){

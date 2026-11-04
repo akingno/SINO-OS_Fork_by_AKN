@@ -272,5 +272,8 @@
   "INSTALL_ERROR_GPT_UNSUPPORTED": "此磁盘使用 GPT；当前安装程序只支持 MBR。",
   "INSTALL_ERROR_MBR_BOOT_FILE_MISSING": "光盘缺少 MBR 引导文件。",
   "GUI_TEMPLATE_FILE_PROPERTIES": "{name}  文件  {count} 字节",
-  "GUI_TEMPLATE_FOLDER_PROPERTIES": "{name}  文件夹  {count} 字节"
+  "GUI_TEMPLATE_FOLDER_PROPERTIES": "{name}  文件夹  {count} 字节",
+  "GUI_STATUS_FILES_LAUNCH_FAILED": "无法启动文件管理器，请检查启动文件或关闭部分应用。",
+  "GUI_STATUS_DROP_HOME_REQUIRED": "请选择个人目录中的可写文件夹。",
+  "GUI_STATUS_DROP_PROTECTED_SOURCE": "无法移动受保护的源文件。"
 }

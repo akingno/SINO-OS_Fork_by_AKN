@@ -40,3 +40,7 @@ rtc.c is the single hardware sampler for SYS_TIME, the top bar and Shell date/ti
 ## 2026-11-03: Paint hidden
 
 Paint has no SINO menu or built-in Paint.app registration; global F5 is disabled after application-owned F5 dispatch. gui.c rejects PAINT in both launch and window allocation. Old Paint.app/targeting .lnk entries are filtered from desktop and file views without deleting them; .snp associations show a localized unavailable notice. Native Files also blocks the drawing-to-text-editor fallback. Existing drawings remain stored byte-for-byte. The enum, window layout and legacy drawing code remain in the kernel with the marker `Paint has been hidden 261103`; this change hides execution rather than migrating or removing that code.
+
+## 2026-11-04: Files in Ring 3
+
+The default browser now runs files.snx from protected boot storage. gui.c retains desktop/window/drag infrastructure, but no FILES renderer or directory-list/navigation/selection handler. Generic owned-window drop rectangles, value-only file clipboard, size query and desktop open dispatch bridge native clients to existing mechanisms. File policy, dialogs and bounded whole-file copy live in user/files.c. Desktop icons/context menus, legacy TextEdit, Terminal/Shell, Settings and the OS disk installer still run in Ring 0. Existing Paint code stays hidden. Thus browser process faults are contained, while kernel/desktop implementation defects remain within the trusted boundary.
