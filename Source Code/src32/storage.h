@@ -1,7 +1,7 @@
 #ifndef SINO_STORAGE_H
 #define SINO_STORAGE_H
 #include "kernel.h"
-extern int storage_ready,storage_dirty;
+extern int storage_ready, storage_dirty;
 extern int storage_disk;
 extern u32 storage_partition;
 extern u32 storage_generation;
