@@ -111,7 +111,7 @@ function scenarios(job) {
     ];
 }
 
-async function run(directory) {
+async function run(directory, {execute, seedDisk} = {}) {
     const job = readJSON(path.join(directory, 'shell-job.json'));
     const build = readJSON(path.join(directory, 'build.json'));
     const report = {version:1, build, result:'FAIL', stage:'identity', cases:[],
@@ -125,8 +125,15 @@ async function run(directory) {
     try {
         if (sources().sha256 !== build.sourceSha256 || hash(build.iso) !== build.isoSha256 ||
             path.resolve(build.iso) !== path.join(directory, 'SINO.iso')) throw Error('Build inputs or ISO identity changed.');
-        const disk = fs.openSync(dataFile, 'wx');
-        try {fs.ftruncateSync(disk, 16 * 1024 * 1024);} finally {fs.closeSync(disk);}
+        if (seedDisk) {
+            if (!fs.statSync(seedDisk).isFile() || fs.statSync(seedDisk).size !== 16 * 1024 * 1024)
+                throw Error('Unexpected private seed disk.');
+            fs.copyFileSync(seedDisk, dataFile, fs.constants.COPYFILE_EXCL);
+            report.seedDisk = {path:seedDisk, sha256:hash(seedDisk)};
+        } else {
+            const disk = fs.openSync(dataFile, 'wx');
+            try {fs.ftruncateSync(disk, 16 * 1024 * 1024);} finally {fs.closeSync(disk);}
+        }
         report.privateDisk = dataFile;
         report.stage = 'boot';
         let accept;
@@ -181,8 +188,9 @@ async function run(directory) {
             !blocks.some(b => b.file === dataFile && !b.readonly)) throw Error('Unexpected test disk attachments.');
         report.mounted = blocks;
         report.stage = 'commands';
+        if (execute) await execute({directory, build, job, qmp, channel, report, guestLog});
         let id = 0;
-        for (const scenario of scenarios(job)) {
+        for (const scenario of execute ? [] : scenarios(job)) {
             const item = {id:++id, command:scenario.command,
                 expected:{status:scenario.status, output:scenario.output, contains:scenario.contains, pattern:scenario.pattern, overflow:!!scenario.overflow}, result:'FAIL'};
             report.cases.push(item);
@@ -207,6 +215,9 @@ async function run(directory) {
             if (!job.selfTest) process.stdout.write(actual.output);
         }
         if (guestLog().includes('KERNEL PANIC')) throw Error('Guest kernel panic.');
+        if (!report.cases.length) throw Error('No test cases executed.');
+        if (sources().sha256 !== build.sourceSha256 || hash(build.iso) !== build.isoSha256)
+            throw Error('Build inputs or ISO changed during the test.');
         report.result = report.cases.every(item => item.result === 'PASS') ? 'PASS' : 'FAIL';
         report.stage = 'complete';
     } catch (error) {

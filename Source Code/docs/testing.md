@@ -6,6 +6,12 @@ This entry is separate from the upstream regression gate. The gate's suite count
 
 # Build, execution, and regression testing
 
+## Stage 2 text compatibility baseline
+
+From the repository root, run `powershell -NoProfile -ExecutionPolicy Bypass -File .\stage2-test.ps1` after each Stage 2 implementation step. It builds a new normal kernel with the explicit Shell bridge, holds the build lock through verification, and uses matching symbol snapshots and private headless VMs. It combines the existing infrastructure/RTC/Shell contracts with real Ring 3 pointer/permission/handle/file/resource checks, application logic selftests, loopback networking, and cold-boot persistence/install recovery. A deliberately failing guest separately verifies rejection and VM cleanup.
+
+The baseline excludes Paint, GUI text editor workflows, visual designer interactions, and scaling/dragging/pixel assertions. It does not replace the complete 22-suite gate. Results and raw output are under the printed `Build Output/dev/runs/stage2-.../` directory; any missing, failed or unexecuted group prevents success. See [Stage2-Testing.md](../../Documentation/Stage2-Testing.md) for the command, report layout, exclusions and current exit-status/old-binary coverage limits.
+
 ## src32 infrastructure contracts
 
 Run `node 'Source Code/tools/test-src32-refactor.js'` from the repository root. Set `SINO_TOOLCHAIN` to the GCC/Binutils bin directory; Python is selected through `SINO_PYTHON` or the existing host-tools lookup. Optional `SINO_REFACTOR_REPORT_DIR` selects the output folder; by default a new `Build Output/dev/runs/src32-contract-*` folder is used.
