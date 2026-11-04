@@ -5,6 +5,7 @@
 #include "gui.h"
 #include "storage.h"
 #include "net.h"
+#include "settings.h"
 #define NP 8
 #define NT 4
 typedef struct {Frame frame;u32 useresp,ss;} UserFrame;
@@ -33,7 +34,7 @@ int process_launch_args(const char *path,u32 caps,const char *arguments){int n=v
  for(u32 i=0;i<(h->memory_bytes+4095)/4096;i++){if(!map_page(p,i,i*4096<h->data_offset?5:7)){release(p);return S_NOMEM;}u32 offset=i*4096,length=h->image_bytes>offset?h->image_bytes-offset:0;if(length>4096)length=4096;if(length)memcpy((void *)(p->pt[i]&~4095u),bytes+offset,length);}
  if(!map_page(p,48,5)){release(p);return S_NOMEM;}memcpy((void *)(p->pt[48]&~4095u),arguments,strlen(arguments)+1);char executable[128];vfs_path(n,executable);memcpy((void *)((p->pt[48]&~4095u)+256),executable,strlen(executable)+1);
  for(u32 i=60;i<64;i++)if(!map_page(p,i,7)){release(p);return S_NOMEM;}
- p->pid=next_pid++;if(!next_pid)next_pid=1;p->state=1;p->caps=caps&7;u32 j=0;while(nodes[n].name[j]&&j<31){p->name[j]=nodes[n].name[j];j++;}initial(&p->thread[0],USER_BASE+h->entry,USER_STACK(0));debug("PROCESS start ");debug(p->name);debug(" pid=");debug_hex(p->pid);debug("\n");return (int)p->pid;
+ p->pid=next_pid++;if(!next_pid)next_pid=1;p->state=1;p->caps=caps&7;/* Boot calculator has no write, network or management grant, regardless of launcher. */if(nodes[n].readonly&&nodes[n].boot>=0&&streq(executable,"/boot/calc.snx"))p->caps=0;u32 j=0;while(nodes[n].name[j]&&j<31){p->name[j]=nodes[n].name[j];j++;}initial(&p->thread[0],USER_BASE+h->entry,USER_STACK(0));debug("PROCESS start ");debug(p->name);debug(" pid=");debug_hex(p->pid);debug("\n");return (int)p->pid;
 }
 int process_kill(u32 pid,i32 code){for(int i=0;i<NP;i++)if(processes[i].state&&processes[i].pid==pid){processes[i].state=2;processes[i].code=code;return 0;}return S_NOTFOUND;}
 void process_message(u32 pid,UiEvent e){for(int i=0;i<NP;i++)if(processes[i].state==1&&processes[i].pid==pid){Process *p=&processes[i];u32 previous=(p->head-1)&15;if(e.type==MSG_MOUSE_MOVE&&p->head!=p->tail&&p->queue[previous].type==MSG_MOUSE_MOVE){p->queue[previous]=e;return;}u32 next=(p->head+1)&15;if(next==p->tail)return;p->queue[p->head]=e;p->head=next;}}
@@ -54,6 +55,8 @@ static int syscall(Frame *f){u32 a=f->ebx,b=f->ecx,c=f->edx;char path[VFS_PATH];
  case SYS_NET_READY:o=handle_get(current->handles,a,OBJ_SOCKET,1);return o?net_ready(o->value):S_BADHANDLE;
  case SYS_NET_INFO:if(!range(a,sizeof(NetStats),1))return S_INVALID;*(NetStats *)a=net_loop.stats;return 0;
  case SYS_PING:return net_ping(a,b);
+ case SYS_UI_LANGUAGE:return settings_language;
+ case SYS_WINDOW_TITLE:o=handle_get(current->handles,a,OBJ_WINDOW,2);if(!o)return S_BADHANDLE;{char title[64];if(!string(b,title,sizeof(title)))return S_INVALID;return gui_user_title(o->value,title);}
  case SYS_DUP:return handle_duplicate(current->handles,a,b);
  case SYS_WINDOW_POLICY:o=handle_get(current->handles,a,OBJ_WINDOW,2);return o?gui_user_policy(o->value,b):S_BADHANDLE;
  case SYS_MOVE:r=homepath(a,path,1);if(r)return r;{char dest[VFS_PATH];r=homepath(b,dest,1);if(r)return r;r=vfs_move(path,dest);if(r<0)return S_IO;gui_files_changed();return 0;}

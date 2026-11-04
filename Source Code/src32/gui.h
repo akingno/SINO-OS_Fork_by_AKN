@@ -20,5 +20,6 @@ int gui_clip_write(const u8 *,u32);
 int gui_user_open(u32,const char *,int,int);
 void gui_user_close(int);
 int gui_user_policy(int,u32);
+int gui_user_title(int,const char *);
 int gui_user_scene(int,const UiScene *);
 #endif

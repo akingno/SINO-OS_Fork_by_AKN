@@ -24,3 +24,9 @@ Architecture references: [Intel SDM](https://www.intel.com/content/www/us/en/dev
 The original UiScene structure remains 64 commands. SYS_SCENE now validates a 4-byte count, rejects counts above 256, validates exactly count*sizeof(UiCommand)+4 readable bytes, and copies only that range into a 256-command kernel canvas. Old ABI-1 applications remain valid. Panel, grid, selection and clipped-text drawing primitives support the docked IDE; they carry no project/package policy. Each window canvas is now seven 4-KiB pages and is freed on close. User windows may request up to 1000x714, with desktop bounds still applied. Window policy bit 1 requests close messages; bit 2 delivers F5/F8 to the native window rather than the global launcher shortcuts.
 
 IDE generation constructs ordinary SNX1 or SXP1 data in user mode; installation policy remains in the separate setup executable. A direct BASIC executable contains initialized data resources and retains the same native loader and process permissions.
+
+## 2026-11-03: calculator in user mode
+
+The F4/menu/Calculator.app entry now launches the separately linked boot application calc.snx. Arithmetic, formatting, layout and event handling have been removed from gui.c. CALC remains an entry identifier; it no longer identifies a kernel application window. The legacy Window layout is retained for remaining built-ins and host-test compatibility, with its former calculator fields unused by the native application.
+
+The native loader resolves the protected boot calculator node before reducing its capability mask to zero. New read-only UI-language and write-rights-checked window-title calls extend ABI 1 without renumbering old syscalls. A window policy bit can exclude non-text applications from Pinyin composition. These mechanisms are generic; the kernel does not evaluate calculations or construct calculator scenes. Other legacy applications, including the clock window, remain in Ring 0.

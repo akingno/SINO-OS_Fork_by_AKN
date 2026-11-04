@@ -22,6 +22,8 @@ static inline const char *Arguments(void){return (const char *)USER_ARGUMENTS;}
    device completion failures, never acknowledge until SYS_SYNC confirms. */
 static inline int Sync(void){int r=S_IO;for(int i=0;i<3;i++){r=api(SYS_SYNC,0,0,0);if(r!=S_IO)return r;if(i<2)Yield(1);}return r;}
 static inline int Window(const char *p,int w,int h){return api(SYS_WINDOW,(u32)p,(u32)w,(u32)h);}
+static inline int UiLanguage(void){return api(SYS_UI_LANGUAGE,0,0,0);}
+static inline int WindowTitle(int h,const char *title){return api(SYS_WINDOW_TITLE,(u32)h,(u32)title,0);}
 static inline int Scene(int h,const UiScene *s){return api(SYS_SCENE,(u32)h,(u32)s,0);}
 static inline int Event(UiEvent *e){return api(SYS_EVENT,(u32)e,0,0);}
 static inline int Close(int h){return api(SYS_CLOSE,(u32)h,0,0);}

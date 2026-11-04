@@ -34,7 +34,7 @@ These files and personal `akn_learning/` notes are not tracked. Extracted upstre
 
 ## What the checks establish
 
-The launcher checks unchanged build inputs, the current boot image inside the ISO, a matching guest build ID, desktop readiness and the actual QEMU disk attachments. `-VerifyOnly` additionally sends keyboard input to run `/boot/probe.snx` and checks its result. This is a smoke check, not the complete upstream 18-suite regression gate. See [testing.md](<../Source Code/docs/testing.md>) for subsystem tests and use private test disks.
+The launcher checks unchanged build inputs, the current boot image inside the ISO, a matching guest build ID, desktop readiness and the actual QEMU disk attachments. `-VerifyOnly` additionally sends keyboard input to run `/boot/probe.snx` and checks its result. This is a smoke check, not the complete current 19-suite regression gate. See [testing.md](<../Source Code/docs/testing.md>) for subsystem tests and use private test disks.
 
 Changes to an ISO do not replace already-installed programs under `/home/user/Programs`. For early application checks, run the intended `/boot` version; use the installer when testing package updates. A fresh development disk does not contain the upstream release's preinstalled IDE.
 

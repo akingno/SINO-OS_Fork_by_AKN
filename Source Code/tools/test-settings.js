@@ -1,3 +1,4 @@
+const {calculator,expectDisplay}=require('./calculator-test');
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {VM,sleep}=require('./vm-test');
 const vm=new VM('settings-qa',4566),checks=[];
@@ -15,6 +16,6 @@ function pass(s){checks.push(s);console.log('PASS '+s);}
  await vm.stop();await vm.start();assert.equal(await vm.value('display_width'),1280);assert.equal(await vm.value('display_scale'),125);assert.equal(await vm.value('display_contrast'),120);assert.equal(await vm.value('settings_language'),1);await vm.key('f7');pass('Language, resolution, scale and contrast survive a real reboot');
  await at(50,152);await at(258,141);await at(230,257);await at(360,343);await apply(false);assert.equal(await vm.value('display_width'),800);assert.equal(await vm.value('gui_width'),800);await vm.shot('04-revert-prompt');/* Guest virtual time can lag wall time while other QA VMs share the host. */for(let i=0;i<90&&await vm.value('settings_pending');i++)await sleep(500);assert.equal(await vm.value('settings_pending'),0);assert.equal(await vm.value('display_width'),1280);assert.equal(await vm.value('display_scale'),125);assert.equal(await vm.value('display_contrast'),120);pass('Unconfirmed display mode automatically reverts after 15 seconds');
  await at(590,179);await at(450,257);await apply();assert.equal(await vm.value('display_width'),1920);assert.equal(await vm.value('display_height'),1080);assert.equal(await vm.value('gui_width'),1280);assert.equal(await vm.value('gui_height'),720);await vm.shot('05-full-hd');pass('Actual 1920x1080 output with 150% logical UI scaling');
- await vm.key('ctrl','w');await vm.key('f4');await vm.type('6*7=');let s=await vm.state();assert.equal(s.windows.find(w=>w.app===3).value,4200);pass('Native applications remain usable after video mode changes');
+ await vm.key('ctrl','w');await vm.key('f4');await calculator(vm);await vm.type('6*7=');let s=await vm.state();await expectDisplay(vm,await calculator(vm),'42.00');pass('Native applications remain usable after video mode changes');
  fs.writeFileSync(path.join(vm.run,'report.json'),JSON.stringify({checks},null,2));
  }catch(e){console.error(e);try{console.error(await vm.state());console.error(vm.log().slice(-1200));await vm.shot('failure');}catch{}process.exitCode=1;}finally{await vm.stop();}})();
