@@ -28,6 +28,16 @@ static inline int QuerySystemInfo(SystemInfo *out) {
 static inline int QueryStartInfo(StartInfo *out) {
   return api(SYS_START_INFO, (u32)out, sizeof(*out), 0);
 }
+/* The child is strict; this call returns an owned observation/cancel handle. */
+static inline int SpawnTracked(const char *path, const char *args) {
+  return api(SYS_SPAWN_TRACKED, (u32)path, (u32)args, 0);
+}
+static inline int GetProcessResult(int handle, ProcessCompletion *out) {
+  return api(SYS_PROCESS_RESULT, (u32)handle, (u32)out, sizeof(*out));
+}
+static inline int CancelProcess(int handle) {
+  return api(SYS_PROCESS_CANCEL, (u32)handle, 0, 0);
+}
 static inline int Read(const char *p, void *b, u32 n) {
   return api(SYS_READ, (u32)p, (u32)b, n);
 }

@@ -1,7 +1,8 @@
-# OS interface: Stage A
+# OS interface: Stages A and B
 
-Stage A adds discovery and an opt-in strict process policy. It does not yet add
-standard streams, argv, file objects, delegation or waitable completion records.
+Stage A adds discovery and an opt-in strict process policy. Stage B adds bounded,
+nonblocking completion objects. Standard streams, argv, file objects, delegation
+and blocking wait are still future work.
 Existing SNX1 headers, startup strings and all 47 old syscall numbers remain
 unchanged. Existing negative errors and whole-file Write's success value 0 are
 unchanged. The policy test pins old syscall numbers with compile-time assertions.
@@ -33,7 +34,8 @@ input request. It does not change the launch page or expose kernel pointers.
 Arguments()/Executable() still use the original immutable startup strings.
 Structured arguments belong to a later stage.
 
-Feature bits: SYSTEM_INFO=1, STRICT_POLICY=2, START_INFO=4; currently features=7.
+Feature bits: SYSTEM_INFO=1, STRICT_POLICY=2, START_INFO=4, COMPLETION=8;
+currently features=15. Old clients must mask known bits, not require equality.
 These indicate implemented mechanisms, not grants to use every mechanism.
 Unknown feature bits must not be interpreted as authority. Unknown syscalls
 return S_INVALID. Add future syscall IDs before SYS_CALL_END; the sentinel is not
@@ -56,20 +58,88 @@ executable fallback. A launch response still reports creation, not final exit.
 
 Strict policy allows only EXIT, YIELD, LOG, TICKS, CLOSE, DUP, THREAD,
 THREAD_EXIT, EVENT_CREATE, EVENT_SET, EVENT_WAIT, TIME, UI_LANGUAGE, SYSTEM_INFO
-and START_INFO. Existing pointer, object-type, rights and resource checks still
+and START_INFO, plus Stage B PROCESS_RESULT and PROCESS_CANCEL for owned handles.
+Existing pointer, object-type, rights and resource checks still
 apply. LOG remains diagnostics, not stdout; time and language are public data.
 
 All other known calls return S_DENIED before any operation-specific side effect
 or user-buffer access: path reads/listing/writes, Sync, Spawn, Kill, process
 enumeration, named Lease, networking, clipboard, OpenPath, windows and desktop
 drag/drop integration. Even a strict process cannot use legacy Spawn to start a
-compatibility child, including through aliases or writable copies. Stage A
-rejects spawning entirely; later delegated spawn must preserve strict authority.
+compatibility child, including through aliases or writable copies. Strict policy
+rejects both old Spawn and Stage B SpawnTracked; later delegation must preserve authority.
 
 This confines explicitly strict processes, not every legacy application or the
 remaining Ring 0 desktop. No file selection grants, stream bindings or general
 revocation system are claimed. New CLI launch mechanisms should default to
 strict policy when introduced, without silently changing old launch semantics.
+
+## Stage B: completion objects
+
+New IDs: SYS_SPAWN_TRACKED=0x131, SYS_PROCESS_RESULT=0x132,
+SYS_PROCESS_CANCEL=0x133. All prior IDs and v1 query sizes remain unchanged.
+The global completion pool is PROCESS_COMPLETIONS=16; it shares the existing
+64-object and 24-local-handle budgets. S_LIMIT reports full records, objects,
+handles or execution slots; S_NOMEM reports page allocation failure.
+
+`SpawnTracked(path, arguments)` is a narrow compatibility-launcher API, not
+SpawnEx. EBX is an absolute path, ECX a NUL-terminated string of at most 255 bytes
+(or null for empty), EDX must be zero. Success returns an owned OBJ_PROCESS
+handle with WAIT=1 and CANCEL=2. It always launches a strict caps=0 child, with
+no inherited handles, streams or file grants. Strict callers receive S_DENIED.
+The legacy Spawn and Shell run results are unchanged. A manifest or argv cannot
+select compatibility policy for the child.
+
+Inputs are copied before side effects; completion/object/observer slots are
+reserved before image allocation. A failed launch rolls back both ownership
+references and all partially allocated execution resources. No child is
+published before all fallible setup has succeeded. The execution reference is
+attached before making the process runnable; fault/exit needs no new allocation.
+
+`GetProcessResult(handle, ProcessCompletion*)`: EBX=handle, ECX=output,
+EDX=capacity (at least 32). WAIT rights and correct object type are required,
+otherwise S_BADHANDLE. An invalid output or short capacity returns S_INVALID.
+While running or awaiting cleanup, S_AGAIN leaves output unchanged. Success
+copies exactly 32 bytes and leaves any tail untouched. Results are repeatable,
+not consumed by one reader; duplicated WAIT handles observe the same result.
+
+ProcessCompletion contains eight 32-bit fields, in order: size=32, version=1,
+pid, reason, signed code, vector, reserved[0]=0, reserved[1]=0. Reasons:
+
+| Reason | Value | code | vector |
+| --- | --- | --- | --- |
+| PROCESS_EXITED | 1 | signed program return/Exit value | 0 |
+| PROCESS_FAULTED | 2 | 0 | CPU exception vector |
+| PROCESS_CANCELED | 3 | 0 | 0 |
+| PROCESS_KILLED | 4 | 0 | 0 |
+
+Thus Exit(-14) and page fault 14 are different. Last-thread THREAD_EXIT records
+normal exit 0. Old ProcessInfo retains its legacy code representation.
+
+`CancelProcess(handle)` requires CANCEL rights; EBX=handle, ECX=EDX=0.
+Reserved flags return S_INVALID. Cancellation marks only the bound running
+child for termination; cleanup happens in process_step. Repeated cancellation
+and cancellation after completion return 0. The first terminal event wins:
+neither late cancellation nor old Kill overwrites a prior exit/fault/kill.
+No CAP_MANAGE or arbitrary PID control is granted by this API.
+
+Publication of completion occurs after owned handles, image pages, page tables
+and kernel/thread stacks are reclaimed. The small immutable record survives
+execution-slot reuse, until its last observer closes. Handles retain the
+existing generation/cookie checks; PID is diagnostic, not observation authority.
+
+Closing an observer, normal observer exit or observer fault does not cancel a
+running child. The child owns one execution reference, released after cleanup;
+if no observers remain the record then disappears automatically. A running
+orphan still consumes a slot/record until it terminates. Completed records with
+observers cannot be silently evicted: a full pool rejects new tracked launches.
+Untracked old launches do not consume completion records. Job supervision and
+disconnect cancellation belong to Stage C, not this close behavior.
+
+The API is nonblocking: use S_AGAIN and bounded Yield polling. Kernel C stacks
+and user pointers are not suspended. The Shell bridge has not yet adopted the
+new structured completion protocol; tests exercise the result through actual
+Ring 3 clients instead of treating a Shell creation response as final status.
 
 ## Verification
 

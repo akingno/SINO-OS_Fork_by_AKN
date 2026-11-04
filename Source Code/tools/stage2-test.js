@@ -119,7 +119,7 @@ async function run(directory) {
         await phase('shell-commands', async () => passed(await shellSuite('commands', {suite:'commands'}), 112));
         await phase('native-contracts', async () => {
             const run = await shellSuite('native', {suite:'stage2'}, c => guest.run(c));
-            const result = passed(run, 20);
+            const result = passed(run, 29);
             const disk = path.join(run.folder, 'shell-data.img');
             const records = volume(disk).current.records;
             const binary = Buffer.from(Array.from({length:257}, (_, i) => (i * 37 + 11) & 255));

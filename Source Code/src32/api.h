@@ -66,12 +66,24 @@ enum {
   SYS_WINDOW_SIZE,
   SYS_SYSTEM_INFO,
   SYS_START_INFO,
+  SYS_SPAWN_TRACKED,
+  SYS_PROCESS_RESULT,
+  SYS_PROCESS_CANCEL,
   SYS_CALL_END /* Append future calls before this sentinel. */
 };
 
 enum { PROCESS_COMPAT = 0, PROCESS_STRICT = 1 };
 enum { FEATURE_SYSTEM_INFO = 1, FEATURE_STRICT_POLICY = 2, FEATURE_START_INFO = 4 };
-#define SYSTEM_FEATURES (FEATURE_SYSTEM_INFO | FEATURE_STRICT_POLICY | FEATURE_START_INFO)
+#define FEATURE_COMPLETION 8u
+#define SYSTEM_FEATURES (FEATURE_SYSTEM_INFO | FEATURE_STRICT_POLICY | FEATURE_START_INFO | FEATURE_COMPLETION)
+#define PROCESS_COMPLETIONS 16
+enum { PROCESS_EXITED = 1, PROCESS_FAULTED, PROCESS_CANCELED, PROCESS_KILLED };
+enum { PROCESS_WAIT = 1, PROCESS_CANCEL = 2 };
+typedef struct {
+  u32 size, version, pid, reason;
+  i32 code;
+  u32 vector, reserved[2];
+} ProcessCompletion;
 typedef struct {
   u32 size, version, features, ticks_hz;
   u32 max_processes, max_threads, max_handles, max_objects;

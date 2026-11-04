@@ -3,6 +3,7 @@
 #include "object.h"
 #include "gui.h"
 #include "net.h"
+#include "process.h"
 Object objects[OBJECTS];
 static u32 generation, cookie;
 int object_new(u32 type, int value) {
@@ -40,6 +41,16 @@ Object* handle_get(Handle* table, u32 h, u32 type, u32 rights) {
   Object* o = &objects[r->object];
   return o->refs && o->generation == r->generation && o->type == type ? o : 0;
 }
+/* Drop either a handle reference or a kernel execution reference. */
+void object_unref(int index) {
+  if (index < 0 || index >= OBJECTS || !objects[index].refs) return;
+  Object* o = &objects[index];
+  if (!--o->refs) {
+    if (o->type == OBJ_WINDOW) gui_user_close(o->value);
+    else if (o->type == OBJ_SOCKET) net_close(o->value);
+    else if (o->type == OBJ_PROCESS) process_completion_release(o->value);
+  }
+}
 int handle_close(Handle* table, u32 h) {
   u32 slot = (h & 255) - 1;
   if (slot >= HANDLES)
@@ -51,12 +62,7 @@ int handle_close(Handle* table, u32 h) {
   if (o->generation != r->generation || !o->refs)
     return S_BADHANDLE;
   memset(r, 0, sizeof(*r));
-  if (!--o->refs) {
-    if (o->type == OBJ_WINDOW)
-      gui_user_close(o->value);
-    else if (o->type == OBJ_SOCKET)
-      net_close(o->value);
-  }
+  object_unref((int)(o - objects));
   return 0;
 }
 int handle_duplicate(Handle* t, u32 h, u32 rights) {

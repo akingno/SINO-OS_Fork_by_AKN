@@ -30,7 +30,17 @@ typedef struct {
   u32 head, tail;
   char name[32];
   u32 policy;
+  u32 completion_object; /* Object index + 1; zero for old launch paths. */
+  u32 reason, fault_vector;
 } Process;
+static struct {
+  int used, complete;
+  ProcessCompletion result;
+} completions[PROCESS_COMPLETIONS];
+void process_completion_release(int index) {
+  if (index >= 0 && index < PROCESS_COMPLETIONS)
+    memset(&completions[index], 0, sizeof(completions[index]));
+}
 static Process processes[NP];
 static Process* current;
 static int current_thread;
@@ -85,6 +95,16 @@ static void release(Process* p) {
     page_free(p->pd);
   if (p->kernel_stack)
     page_free(p->kernel_stack);
+  /* Publish only after execution resources and owned handles are gone. */
+  if (p->completion_object) {
+    int object = (int)p->completion_object - 1;
+    int slot = objects[object].value;
+    completions[slot].result = (ProcessCompletion){sizeof(ProcessCompletion), 1,
+        p->pid, p->reason, p->reason == PROCESS_EXITED ? p->code : 0,
+        p->fault_vector, {0, 0}};
+    completions[slot].complete = 1;
+    object_unref(object);
+  }
   memset(p, 0, sizeof(*p));
 }
 static int map_page(Process* p, u32 index, u32 flags) {
@@ -107,15 +127,15 @@ static void initial(Thread* t, u32 entry, u32 stack) {
 int process_launch(const char* path, u32 caps) {
   return process_launch_args(path, caps, "");
 }
-static int launch_policy(const char*, u32, const char*, u32);
+static int launch_policy(const char*, u32, const char*, u32, int);
 int process_launch_args(const char* path, u32 caps, const char* arguments) {
-  return launch_policy(path, caps, arguments, PROCESS_COMPAT);
+  return launch_policy(path, caps, arguments, PROCESS_COMPAT, -1);
 }
 int process_launch_strict(const char* path, const char* arguments) {
-  return launch_policy(path, 0, arguments, PROCESS_STRICT);
+  return launch_policy(path, 0, arguments, PROCESS_STRICT, -1);
 }
 static int launch_policy(const char* path, u32 caps, const char* arguments,
-                         u32 policy) {
+                         u32 policy, int completion) {
   int n = vfs_lookup(path);
   if (n < 0)
     return S_NOTFOUND;
@@ -177,6 +197,9 @@ static int launch_policy(const char* path, u32 caps, const char* arguments,
       return S_NOMEM;
     }
   p->pid = next_pid++;
+  p->completion_object = (u32)(completion + 1);
+  if (completion >= 0)
+    completions[objects[completion].value].result.pid = p->pid;
   p->policy = policy;
   if (!next_pid)
     next_pid = 1;
@@ -206,8 +229,10 @@ static int launch_policy(const char* path, u32 caps, const char* arguments,
 int process_kill(u32 pid, i32 code) {
   for (int i = 0; i < NP; i++)
     if (processes[i].state && processes[i].pid == pid) {
+      if (processes[i].state == 2) return 0; /* First terminal event wins. */
       processes[i].state = 2;
       processes[i].code = code;
+      processes[i].reason = PROCESS_KILLED;
       return 0;
     }
   return S_NOTFOUND;
@@ -293,6 +318,7 @@ static int strict_call(u32 call) {
     case SYS_EVENT_CREATE: case SYS_EVENT_SET: case SYS_EVENT_WAIT:
     case SYS_TIME: case SYS_UI_LANGUAGE:
     case SYS_SYSTEM_INFO: case SYS_START_INFO:
+    case SYS_PROCESS_RESULT: case SYS_PROCESS_CANCEL:
       return 1;
     default: return 0;
   }
@@ -308,6 +334,57 @@ static int syscall(Frame* f) {
       !(current->caps & CAP_NETWORK))
     return S_DENIED;
   switch (f->eax) {
+    case SYS_SPAWN_TRACKED: {
+      char args[256];
+      if (c) return S_INVALID;
+      r = homepath(a, path, 0);
+      if (r) return r;
+      if (b) {
+        if (!copy_user_string(b, args, sizeof(args))) return S_INVALID;
+      } else args[0] = 0;
+      int slot;
+      for (slot = 0; slot < PROCESS_COMPLETIONS && completions[slot].used; slot++);
+      if (slot == PROCESS_COMPLETIONS) return S_LIMIT;
+      completions[slot].used = 1;
+      n = object_new(OBJ_PROCESS, slot); /* Initial reference belongs to execution. */
+      if (n < 0) { process_completion_release(slot); return n; }
+      r = handle_open(current->handles, n, PROCESS_WAIT | PROCESS_CANCEL);
+      if (r < 0) { object_unref(n); return r; }
+      objects[n].refs++; /* The observer is separate from the execution owner. */
+      int pid = launch_policy(path, 0, args, PROCESS_STRICT, n);
+      if (pid < 0) {
+        handle_close(current->handles, (u32)r);
+        object_unref(n);
+        return pid;
+      }
+      return r;
+    }
+    case SYS_PROCESS_RESULT:
+      o = handle_get(current->handles, a, OBJ_PROCESS, PROCESS_WAIT);
+      if (!o) return S_BADHANDLE;
+      if (c < sizeof(ProcessCompletion) || !user_access_ok(b, sizeof(ProcessCompletion), 1))
+        return S_INVALID;
+      if (!completions[o->value].complete) return S_AGAIN;
+      memcpy((void*)b, &completions[o->value].result, sizeof(ProcessCompletion));
+      return 0;
+    case SYS_PROCESS_CANCEL:
+      o = handle_get(current->handles, a, OBJ_PROCESS, PROCESS_CANCEL);
+      if (!o) return S_BADHANDLE;
+      if (b || c) return S_INVALID;
+      if (completions[o->value].complete) return 0;
+      for (int i = 0; i < NP; i++) {
+        Process* p = &processes[i];
+        if (p->state && p->pid == completions[o->value].result.pid &&
+            p->completion_object == (u32)(o - objects) + 1) {
+          if (p->state == 1) {
+            p->state = 2;
+            p->reason = PROCESS_CANCELED;
+            p->code = 0;
+          }
+          return 0;
+        }
+      }
+      return S_NOTFOUND;
     case SYS_SYSTEM_INFO: {
       if (c || b < sizeof(SystemInfo) || !user_access_ok(a, sizeof(SystemInfo), 1))
         return S_INVALID;
@@ -531,6 +608,7 @@ static int syscall(Frame* f) {
       return gui_clip_write((const u8*)a, b);
     case SYS_EXIT:
       current->state = 2;
+      current->reason = PROCESS_EXITED;
       current->code = (int)a;
       process_exits++;
       leave(f);
@@ -731,8 +809,11 @@ static int syscall(Frame* f) {
       for (int i = 0; i < NT; i++)
         if (current->thread[i].state)
           live = 1;
-      if (!live)
+      if (!live) {
         current->state = 2;
+        current->reason = PROCESS_EXITED;
+        current->code = 0;
+      }
       for (u32 j = 60 + current_thread * 8; j < 64 + (u32)current_thread * 8;
            j++) {
         page_free((void*)(current->pt[j] & ~4095u));
@@ -771,6 +852,8 @@ int process_interrupt(Frame* f) {
   if (f->vector < 32) {
     process_faults++;
     current->code = -(int)f->vector;
+    current->reason = PROCESS_FAULTED;
+    current->fault_vector = f->vector;
     current->state = 2;
     pr_debug("USER fault contained pid=");
     pr_debug_hex(current->pid);

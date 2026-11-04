@@ -3,7 +3,7 @@
 #include "api.h"
 #define OBJECTS 64
 #define HANDLES 24
-enum { OBJ_EVENT = 1, OBJ_WINDOW, OBJ_SOCKET };
+enum { OBJ_EVENT = 1, OBJ_WINDOW, OBJ_SOCKET, OBJ_PROCESS };
 typedef struct {
   u32 object, generation, rights, cookie;
 } Handle;
@@ -13,6 +13,7 @@ typedef struct {
 } Object;
 extern Object objects[OBJECTS];
 int object_new(u32, int);
+void object_unref(int);
 int handle_open(Handle *, int, u32);
 Object *handle_get(Handle *, u32, u32, u32);
 int handle_duplicate(Handle *, u32, u32);

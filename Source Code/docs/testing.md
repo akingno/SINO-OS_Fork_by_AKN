@@ -8,6 +8,14 @@ This entry is separate from the upstream regression gate. The gate's suite count
 
 ## Stage 2 text compatibility baseline
 
+Stage B additionally runs comptest.snx for delayed/repeated typed results,
+signed exit vs fault, observer rights/stale/foreign handles, cancellation and
+external kill, record/process/handle limits, rejected-image rollback, and observer
+exit/close/fault recovery. The host verifies page/object baselines. These are
+actual Ring 3 API checks, not the old Shell launch response. No deterministic
+per-page allocation failure injector is claimed; partial allocation cleanup uses
+the existing loader rollback, with exhaustion and rejected-launch paths covered.
+
 Stage A coverage additionally runs poltest.snx in compatibility and strict
 policies; its fixed-wire queries, denied ambient calls, local object operations,
 normal completion and reclamation are checked by stage2-guest.js. See

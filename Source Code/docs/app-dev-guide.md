@@ -4,6 +4,12 @@ Stage A adds versioned SystemInfo/StartInfo queries and trusted strict launches
 through Shell `run -s`; old launches remain compatible. See
 [os-interface.md](os-interface.md) for exact layouts, permissions and limitations.
 
+Stage B adds SpawnTracked/GetProcessResult/CancelProcess and bounded completion
+objects. A compatibility launcher gets an owned handle for a strict child; normal
+exit codes and faults remain readable after cleanup. This does not change old
+Spawn/run or add standard streams. Query FEATURE_COMPLETION and handle S_AGAIN;
+closing an observer does not terminate the child. Details are in the same contract.
+
 Use the existing w64devkit GCC/Binutils and bundled NASM; no host CRT is linked. `user/sdk.h` and `user/runtime.c` define ABI 1, bounded UI commands and file/process/message wrappers. Application entry is `int main(void)`. Static data and code are private; use Yield to wait for events. The PIT also preempts noncooperative user loops. Exit or return terminates the application and releases its handles/address space.
 
 Example: `user/hello.c`. Add its build tuple to `tools/build-user.js`, describe files in a JSON manifest like `packages/hello.json`, and call `tools/package.js`. `build.ps1 -TestImage` builds both kernel variants, user applications and example package with the same toolchain. Build checks every required linker symbol and rejects files over 64 KiB or memory over 192 KiB. SNX1 stores magic/ABI/image size/entry/data offset/memory size in a 32-byte header. The host link uses PE/COFF as an intermediate only; the guest never loads a PE image.

@@ -64,7 +64,7 @@ static void query_tests(int strict) {
   StartInfo launch;
   require(sizeof(system)==48 && sizeof(launch)==24 &&
           QuerySystemInfo(&system)==0 && QueryStartInfo(&launch)==0 &&
-          system.features==7 && launch.policy==(u32)strict,"SDK query wrappers");
+          (system.features&7)==7 && launch.policy==(u32)strict,"SDK query wrappers");
   for (u32 i=0;i<16;i++) buffer[i]=0xccccccccu;
   require(api(QUERY_SYSTEM,(u32)buffer,47,0)==S_INVALID && buffer[0]==0xccccccccu,
           "short query preserves output");
@@ -74,7 +74,7 @@ static void query_tests(int strict) {
           api(QUERY_SYSTEM,USER_STACK(0)-4,48,0)==S_INVALID &&
           api(QUERY_START,0xffffffffu,24,0)==S_INVALID,"query output rights");
   require(api(QUERY_SYSTEM,(u32)buffer,64,0)==0,"system query available");
-  require(buffer[0]==48 && buffer[1]==1 && buffer[2]==7 && buffer[3]==100 &&
+  require(buffer[0]==48 && buffer[1]==1 && (buffer[2]&7)==7 && buffer[3]==100 &&
           buffer[4]==8 && buffer[5]==4 && buffer[6]==24 && buffer[7]==64 &&
           buffer[8]==65536 && buffer[9]==196608 && buffer[10]==16384 &&
           buffer[11]==0 && buffer[12]==0xccccccccu,"system wire layout and tail");
@@ -83,7 +83,7 @@ static void query_tests(int strict) {
           "short start query");
   require(api(QUERY_START,(u32)buffer,64,0)==0 && buffer[0]==24 && buffer[1]==1 &&
           buffer[2]==(u32)strict && buffer[3]==(strict?0:CAP_HOME) &&
-          buffer[4]==7 && buffer[5]==0 && buffer[6]==0xccccccccu,"start policy immutable");
+          (buffer[4]&7)==7 && buffer[5]==0 && buffer[6]==0xccccccccu,"start policy immutable");
   require(api(0xffffffffu,0,0,0)==S_INVALID,"unknown syscall");
 }
 int main(void) {
@@ -99,7 +99,7 @@ int main(void) {
     SYS_LEASE,SYS_SOCKET,SYS_BIND,SYS_LISTEN,SYS_CONNECT,SYS_ACCEPT,SYS_SEND,
     SYS_RECV,SYS_NET_READY,SYS_NET_INFO,SYS_PING,SYS_SENDTO,SYS_RECVFROM,
     SYS_MOVE,SYS_CLIP_GET,SYS_CLIP_SET,SYS_WINDOW_POLICY,SYS_WINDOW_TITLE,
-    SYS_OPEN_PATH,SYS_FILE_CLIP,SYS_DROP_ZONES,SYS_WINDOW_SIZE};
+    SYS_OPEN_PATH,SYS_FILE_CLIP,SYS_DROP_ZONES,SYS_WINDOW_SIZE,SYS_SPAWN_TRACKED};
   for(u32 i=0;i<sizeof(denied)/sizeof(denied[0]);i++)
     require(api(denied[i],0,0,0)==S_DENIED,"old entry is denied before effects");
   require(Read("/home/user/stage2-persist.bin",buffer,sizeof(buffer))==S_DENIED &&
