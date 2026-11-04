@@ -63,8 +63,23 @@ enum {
   SYS_OPEN_PATH,
   SYS_FILE_CLIP,
   SYS_DROP_ZONES,
-  SYS_WINDOW_SIZE
+  SYS_WINDOW_SIZE,
+  SYS_SYSTEM_INFO,
+  SYS_START_INFO,
+  SYS_CALL_END /* Append future calls before this sentinel. */
 };
+
+enum { PROCESS_COMPAT = 0, PROCESS_STRICT = 1 };
+enum { FEATURE_SYSTEM_INFO = 1, FEATURE_STRICT_POLICY = 2, FEATURE_START_INFO = 4 };
+#define SYSTEM_FEATURES (FEATURE_SYSTEM_INFO | FEATURE_STRICT_POLICY | FEATURE_START_INFO)
+typedef struct {
+  u32 size, version, features, ticks_hz;
+  u32 max_processes, max_threads, max_handles, max_objects;
+  u32 max_file, image_bytes, stack_bytes, reserved;
+} SystemInfo;
+typedef struct {
+  u32 size, version, policy, caps, features, reserved;
+} StartInfo;
 enum { CAP_HOME = 1, CAP_NETWORK = 2, CAP_MANAGE = 4 };
 enum {
   UI_FILL = 1,

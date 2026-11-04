@@ -419,6 +419,7 @@ static int command(Context* c, int argc, char** argv) {
         "dest\n"
         "  write file text   append file text   echo [-e|-n] text\n"
         "  run file.snx [argument]   run /boot/hello.f32   source file.sh\n"
+        "  run -s file.snx [argument]  strict: no file or spawn authority\n"
         "  uname [-a]  ver  mem/free  df  uptime  date  time  ps\n"
         "  history  whoami  hostname [name]  env  which command\n"
         "  sync   kill PID   sleep seconds   nettest (127.0.0.1 loopback)\n"
@@ -928,6 +929,13 @@ static int command(Context* c, int argc, char** argv) {
     return pid < 0 ? error(out, cmd, "cannot start installer") : 0;
   }
   if (streq(cmd, "run")) {
+    if (argc >= 2 && streq(argv[1], "-s")) {
+      if (argc < 3 || argc > 4) return error(out, cmd, "run -s native.snx [argument]");
+      int pid = process_launch_strict(argv[2], argc == 4 ? argv[3] : "");
+      if (pid < 0) return error(out, cmd, "native launch failed");
+      put(out, "Started user process "); num(out, (u32)pid); put(out, "\n");
+      return 0;
+    }
     if (argc < 2 || argc > 3)
       return error(out, cmd, "run native.snx [argument]");
     return run_program(c, argv[1], argc == 3 ? argv[2] : "");

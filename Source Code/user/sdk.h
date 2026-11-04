@@ -21,6 +21,13 @@ static inline void Exit(int n) {
 static inline void Yield(u32 ticks) {
   api(SYS_YIELD, ticks, 0, 0);
 }
+/* Query output is unchanged on failure; older kernels return S_INVALID. */
+static inline int QuerySystemInfo(SystemInfo *out) {
+  return api(SYS_SYSTEM_INFO, (u32)out, sizeof(*out), 0);
+}
+static inline int QueryStartInfo(StartInfo *out) {
+  return api(SYS_START_INFO, (u32)out, sizeof(*out), 0);
+}
 static inline int Read(const char *p, void *b, u32 n) {
   return api(SYS_READ, (u32)p, (u32)b, n);
 }

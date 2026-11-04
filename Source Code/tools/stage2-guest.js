@@ -158,6 +158,37 @@ async function run(context, mode = 'native') {
             'only the 257-byte persistent binary retains one page');
         report.resourceBaseline = baseline;
     });
+    await check('stage A legacy versioned queries preserve compatibility', async () => {
+        assert.match(await command('help'), /run -s file.snx/);
+        assert.match(await command('run -s', 1), /run -s native.snx/);
+        await native('poltest', 'legacy', 'POLICY LEGACY PASS');
+        assert.deepEqual(await resources(), baseline);
+    });
+    await check('stage A strict policy denies every ambient entry and downgrade', async () => {
+        await command('cp /boot/poltest.snx /home/user/poltest.snx');
+        const offset = guestLog().length;
+        const faults = await value('process_faults');
+        const exits = await value('process_exits');
+        const output = await command('run -s /BOOT/../boot/POLTEST.SNX strict');
+        const pid = Number(output.match(/^Started user process (\d+)\n$/)?.[1]);
+        assert(pid > 0);
+        await until(() => guestLog().slice(offset).includes('POLICY STRICT PASS'), 'strict policy');
+        await gone(pid);
+        assert.equal(await value('process_faults'), faults);
+        assert.equal(await value('process_exits'), exits + 1);
+        const copyOffset = guestLog().length;
+        const copied = await command('run -s /home/user/poltest.snx strict');
+        const copyPid = Number(copied.match(/^Started user process (\d+)\n$/)?.[1]);
+        assert(copyPid > 0);
+        await until(() => guestLog().slice(copyOffset).includes('POLICY STRICT PASS'), 'strict writable copy');
+        await gone(copyPid);
+        assert.equal(await value('process_faults'), faults);
+        assert.equal(await value('process_exits'), exits + 2);
+        await native('poltest', 'legacy', 'POLICY LEGACY PASS');
+        await command('rm /home/user/poltest.snx');
+        assert.deepEqual(await resources(), baseline);
+        await command('cat /home/user/policy-escape', 1);
+    });
     for (let i = 1; i <= 8; i++) {
         await check(`normal exit resource recovery ${i}/8`, async () => {
             await native('probe', '/stage2', 'STAGE2 PROBE PASS checks=');

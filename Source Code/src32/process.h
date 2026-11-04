@@ -7,6 +7,8 @@ extern u32 process_faults, process_switches, process_exits;
 void process_init(void);
 int process_launch(const char *, u32);
 int process_launch_args(const char *, u32, const char *);
+/* Trusted kernel launch only. No user syscall can select compatibility mode. */
+int process_launch_strict(const char *, const char *);
 int process_list(ProcessInfo *, u32);
 int process_alive(u32);
 int process_kill(u32, i32);

@@ -29,6 +29,7 @@ typedef struct {
   UiEvent queue[16];
   u32 head, tail;
   char name[32];
+  u32 policy;
 } Process;
 static Process processes[NP];
 static Process* current;
@@ -106,7 +107,15 @@ static void initial(Thread* t, u32 entry, u32 stack) {
 int process_launch(const char* path, u32 caps) {
   return process_launch_args(path, caps, "");
 }
+static int launch_policy(const char*, u32, const char*, u32);
 int process_launch_args(const char* path, u32 caps, const char* arguments) {
+  return launch_policy(path, caps, arguments, PROCESS_COMPAT);
+}
+int process_launch_strict(const char* path, const char* arguments) {
+  return launch_policy(path, 0, arguments, PROCESS_STRICT);
+}
+static int launch_policy(const char* path, u32 caps, const char* arguments,
+                         u32 policy) {
   int n = vfs_lookup(path);
   if (n < 0)
     return S_NOTFOUND;
@@ -168,6 +177,7 @@ int process_launch_args(const char* path, u32 caps, const char* arguments) {
       return S_NOMEM;
     }
   p->pid = next_pid++;
+  p->policy = policy;
   if (!next_pid)
     next_pid = 1;
   p->state = 1;
@@ -274,15 +284,46 @@ static void leave(Frame* f) {
   user_switch_out = 1;
   cr3(0x90000);
 }
+/* Allow only process-local mechanisms and explicitly public read-only data.
+ * New calls are denied until reviewed; old ambient paths cannot bypass this. */
+static int strict_call(u32 call) {
+  switch (call) {
+    case SYS_EXIT: case SYS_YIELD: case SYS_LOG: case SYS_TICKS:
+    case SYS_CLOSE: case SYS_DUP: case SYS_THREAD: case SYS_THREAD_EXIT:
+    case SYS_EVENT_CREATE: case SYS_EVENT_SET: case SYS_EVENT_WAIT:
+    case SYS_TIME: case SYS_UI_LANGUAGE:
+    case SYS_SYSTEM_INFO: case SYS_START_INFO:
+      return 1;
+    default: return 0;
+  }
+}
 static int syscall(Frame* f) {
   u32 a = f->ebx, b = f->ecx, c = f->edx;
   char path[VFS_PATH];
   int n, r;
   Object* o;
+  if (current->policy == PROCESS_STRICT && !strict_call(f->eax))
+    return f->eax >= SYS_EXIT && f->eax < SYS_CALL_END ? S_DENIED : S_INVALID;
   if (f->eax >= SYS_SOCKET && f->eax <= SYS_RECVFROM &&
       !(current->caps & CAP_NETWORK))
     return S_DENIED;
   switch (f->eax) {
+    case SYS_SYSTEM_INFO: {
+      if (c || b < sizeof(SystemInfo) || !user_access_ok(a, sizeof(SystemInfo), 1))
+        return S_INVALID;
+      SystemInfo info = {sizeof(SystemInfo), 1, SYSTEM_FEATURES, 100,
+                         NP, NT, HANDLES, OBJECTS, MAX_FILE, USER_BYTES, 16384, 0};
+      memcpy((void*)a, &info, sizeof(info));
+      return 0;
+    }
+    case SYS_START_INFO: {
+      if (c || b < sizeof(StartInfo) || !user_access_ok(a, sizeof(StartInfo), 1))
+        return S_INVALID;
+      StartInfo info = {sizeof(StartInfo), 1, current->policy, current->caps,
+                        SYSTEM_FEATURES, 0};
+      memcpy((void*)a, &info, sizeof(info));
+      return 0;
+    }
     case SYS_LEASE: {
       char name[64];
       if (!copy_user_string(a, name, sizeof(name)) || !name[0])
