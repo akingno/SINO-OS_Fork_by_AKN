@@ -254,6 +254,18 @@ async function run(context, mode = 'native') {
         report.resourceBaseline = baseline;
         await command('cat /home/user/stage2-files/private', 1);
     });
+    await check('stage E bounded pipes, concurrent streaming, close and deadline recovery', async item => {
+        const offset = guestLog().length, faults = await value('process_faults');
+        const pid = await launch('pipetest', 'suite');
+        await until(() => guestLog().slice(offset).includes('PIPE SUITE PASS checks='), 'pipe suite', 30000);
+        await gone(pid);
+        const count = Number(guestLog().slice(offset).match(/PIPE SUITE PASS checks=(\d+)/)?.[1]);
+        assert(count >= 100, 'incomplete pipe assertions');
+        item.guestAssertions = count;
+        assert.equal(await value('process_faults'), faults + 1);
+        assert.equal((await processes()).length, 0);
+        assert.deepEqual(await resources(), baseline);
+    });
     for (let i = 1; i <= 8; i++) {
         await check(`normal exit resource recovery ${i}/8`, async () => {
             await native('probe', '/stage2', 'STAGE2 PROBE PASS checks=');

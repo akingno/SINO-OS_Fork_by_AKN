@@ -8,6 +8,13 @@ This entry is separate from the upstream regression gate. The gate's suite count
 
 ## Stage 2 text compatibility baseline
 
+Stage E adds pipetest.snx to the native group: bounded pipe backpressure/EOF,
+explicit v3 bindings, real concurrent binary transport, early close and
+fault/cancel/timeout cleanup, plus deadline helpers. See
+[stream-pipes.md](stream-pipes.md). The current minimum A-E gate has eight groups;
+use the exact run's stage2-summary.ps1 output for counts rather than expanding
+every successful report. D's file-save and cold-boot checks remain enabled.
+
 Stage C adds a real CPL3 CLI suite and a dedicated managed-cli protocol group.
 It checks bounded binary/UTF-8 argv and stdio, exact limits, overflow/fault output,
 quotas, guest deadlines, cancellation, session/replay/frame boundaries and lease

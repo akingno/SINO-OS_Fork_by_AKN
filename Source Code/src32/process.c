@@ -9,6 +9,7 @@
 #include "settings.h"
 #include "rtc.h"
 #include "filesys.h"
+#include "pipe.h"
 #define NP 8
 #define NT 4
 typedef struct {
@@ -41,12 +42,15 @@ typedef struct {
   u8 *buffer[3];
   u32 input_bytes, input_position, length[2], deadline, timed, incomplete;
   u32 pending_directory, directory_rights;
+  u32 pending_pipe[3]; /* Object index + 1, owned until transferred to child. */
 } RunData;
 _Static_assert(sizeof(RunData) <= 4096, "run metadata fits one page");
 static u32 run_count;
 static void run_free(RunData* run) {
   if (!run) return;
   if (run->pending_directory) object_unref((int)run->pending_directory - 1);
+  for (int i = 0; i < 3; i++)
+    if (run->pending_pipe[i]) object_unref((int)run->pending_pipe[i] - 1);
   for (int i = 0; i < 3; i++) if (run->buffer[i]) page_free(run->buffer[i]);
   page_free(run);
   run_count--;
@@ -232,11 +236,17 @@ static int launch_policy(const char* path, u32 caps, const char* arguments,
     }
     u32* handles[3] = {&run->cli.in, &run->cli.out, &run->cli.err};
     for (int i = 0; i < 3; i++) {
-      int stream = object_new(OBJ_STREAM, completion * 3 + i);
+      int bound = run->pending_pipe[i] != 0;
+      int stream = bound ? (int)run->pending_pipe[i] - 1
+                          : object_new(OBJ_STREAM, completion * 3 + i);
       if (stream < 0) { release(p); return stream; }
-      objects[completion].refs++; /* Each stream pins its backing run. */
+      if (!bound) objects[completion].refs++; /* Finite streams pin the run. */
       int handle = handle_open(p->handles, stream, i == 0 ? 1 : 2);
-      if (handle < 0) { object_unref(stream); release(p); return handle; }
+      if (handle < 0) {
+        if (!bound) object_unref(stream);
+        release(p); return handle;
+      }
+      if (bound) run->pending_pipe[i] = 0; /* Reference now belongs to child. */
       *handles[i] = (u32)handle;
     }
   }
@@ -298,11 +308,16 @@ int process_run_start(Handle* owner, const RunSpec* spec) {
   return process_run_start_directory(owner, spec, 0, 0);
 }
 int process_run_start_directory(Handle* owner, const RunSpec* spec, u32 directory, u32 rights) {
+  return process_run_start_bound(owner, spec, directory, rights, 0);
+}
+int process_run_start_bound(Handle* owner, const RunSpec* spec, u32 directory, u32 rights,
+                            const u32* streams) {
   if (spec->size != sizeof(RunSpec) || spec->version != 1 || spec->flags ||
       spec->reserved || spec->argc > RUN_ARGC || spec->argv_bytes > RUN_ARGS ||
       spec->input_bytes > RUN_BYTES || spec->timeout_ticks > RUN_TIMEOUT_MAX ||
       (!spec->argc && spec->argv_bytes)) return S_INVALID;
   if ((!directory && rights) || (directory && !rights)) return S_INVALID;
+  if (streams && streams[0] && spec->input_bytes) return S_INVALID;
   if (run_count >= RUN_COUNT) return S_LIMIT;
   RunData* run = page_alloc();
   if (!run) return S_NOMEM;
@@ -338,6 +353,11 @@ int process_run_start_directory(Handle* owner, const RunSpec* spec, u32 director
     if (object < 0) { run_free(run); return object; }
     run->pending_directory = (u32)object + 1;
     run->directory_rights = rights;
+  }
+  if (streams) for (int i = 0; i < 3; i++) if (streams[i]) {
+    int object = pipe_acquire(owner, streams[i], i != 0);
+    if (object < 0) { run_free(run); return object; }
+    run->pending_pipe[i] = (u32)object + 1;
   }
   return tracked_launch(owner, run->path, "", run);
 }
@@ -478,6 +498,7 @@ static int strict_call(u32 call) {
     case SYS_FILE_READ_AT: case SYS_FILE_WRITE_AT: case SYS_FILE_STAT:
     case SYS_DIR_READ: case SYS_REMOVE_AT: case SYS_RENAME_AT:
     case SYS_FILE_STAGE: case SYS_FILE_PUBLISH: case SYS_FILE_COMMIT:
+    case SYS_PIPE_CREATE: case SYS_STREAM_READY: case SYS_PIPE_LIMITS:
       return 1;
     default: return 0;
   }
@@ -497,22 +518,50 @@ static int syscall(Frame* f) {
     return filesys_call(current->handles, current->caps, f->eax, a, b, c,
                         user_access_ok, copy_user_string);
   switch (f->eax) {
+    case SYS_PIPE_CREATE: {
+      if (c < sizeof(PipePair) || !user_access_ok(b, sizeof(PipePair), 1)) return S_INVALID;
+      PipePair pair; r = pipe_create(current->handles, a, &pair);
+      if (!r) memcpy((void*)b, &pair, sizeof(pair));
+      return r;
+    }
+    case SYS_PIPE_LIMITS: {
+      if (c || b < sizeof(PipeLimits) || !user_access_ok(a, sizeof(PipeLimits), 1)) return S_INVALID;
+      PipeLimits limits; pipe_limits(&limits); memcpy((void*)a, &limits, sizeof(limits)); return 0;
+    }
+    case SYS_STREAM_READY: {
+      if (b || c) return S_INVALID;
+      o = handle_get(current->handles, a, OBJ_PIPE_READ, 1);
+      if (!o) o = handle_get(current->handles, a, OBJ_PIPE_WRITE, 2);
+      if (o) return pipe_ready(o);
+      o = handle_get(current->handles, a, OBJ_STREAM, 0);
+      if (!o || current->completion_object != (u32)(o->value / 3) + 1) return S_BADHANDLE;
+      u32 role = (u32)o->value % 3;
+      if (!handle_get(current->handles, a, OBJ_STREAM, role ? 2 : 1)) return S_BADHANDLE;
+      RunData* run = completions[objects[o->value / 3].value].run;
+      if (!role) return STREAM_READABLE | (run->input_position == run->input_bytes ? STREAM_EOF : 0);
+      return run->length[role - 1] < RUN_BYTES ? STREAM_WRITABLE : STREAM_LIMIT;
+    }
     case SYS_START_DIRECTORY:
       if (a || b || c) return S_INVALID;
       if (!current->directory) return S_NOTFOUND;
       return handle_get(current->handles, current->directory, OBJ_DIRECTORY, 0)
                  ? (int)current->directory : S_BADHANDLE;
     case SYS_RUN_START: {
-      if (c || (b != sizeof(RunSpec) && b != sizeof(RunSpecV2)) ||
+      if (c || (b != sizeof(RunSpec) && b != sizeof(RunSpecV2) && b != sizeof(RunSpecV3)) ||
           !user_access_ok(a, b, 0)) return S_INVALID;
       RunSpec spec; memcpy(&spec, (void*)a, sizeof(spec));
-      u32 directory = 0, rights = 0;
-      if (b == sizeof(RunSpecV2)) {
+      u32 directory = 0, rights = 0, streams[3] = {0, 0, 0};
+      if (b >= sizeof(RunSpecV2)) {
         RunSpecV2 extended; memcpy(&extended, (void*)a, sizeof(extended));
-        if (spec.size != sizeof(extended) || spec.version != 2 ||
+        if (spec.size != b || spec.version != (b == sizeof(RunSpecV2) ? 2u : 3u) ||
             extended.reserved[0] || extended.reserved[1]) return S_INVALID;
         directory = extended.directory; rights = extended.directory_rights;
         spec.size = sizeof(spec); spec.version = 1;
+      }
+      if (b == sizeof(RunSpecV3)) {
+        RunSpecV3 extended; memcpy(&extended, (void*)a, sizeof(extended));
+        if (extended.reserved) return S_INVALID;
+        streams[0] = extended.in; streams[1] = extended.out; streams[2] = extended.err;
       }
       if (spec.argc > RUN_ARGC || spec.argv_bytes > RUN_ARGS || spec.input_bytes > RUN_BYTES ||
           !copy_user_string(spec.path, path, sizeof(path)) ||
@@ -520,7 +569,7 @@ static int syscall(Frame* f) {
           (spec.argv_bytes && !user_access_ok(spec.argv, spec.argv_bytes, 0)) ||
           (spec.input_bytes && !user_access_ok(spec.input, spec.input_bytes, 0))) return S_INVALID;
       spec.path = (u32)path;
-      return process_run_start_directory(current->handles, &spec, directory, rights);
+      return process_run_start_bound(current->handles, &spec, directory, rights, streams);
     }
     case SYS_RUN_LIMITS: {
       if (c || b < sizeof(RunLimits) || !user_access_ok(a, sizeof(RunLimits), 1)) return S_INVALID;
@@ -536,6 +585,11 @@ static int syscall(Frame* f) {
     case SYS_STREAM_READ:
     case SYS_STREAM_WRITE: {
       int reading = f->eax == SYS_STREAM_READ;
+      o = handle_get(current->handles, a, reading ? OBJ_PIPE_READ : OBJ_PIPE_WRITE, reading ? 1 : 2);
+      if (o) {
+        if (c > RUN_IO_MAX || (c && !user_access_ok(b, c, reading))) return S_INVALID;
+        return pipe_transfer(o, reading, (void*)b, c);
+      }
       o = handle_get(current->handles, a, OBJ_STREAM, reading ? 1 : 2);
       if (!o || current->completion_object != (u32)(o->value / 3) + 1) return S_BADHANDLE;
       u32 role = (u32)o->value % 3;

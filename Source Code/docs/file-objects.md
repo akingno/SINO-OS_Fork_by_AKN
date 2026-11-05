@@ -9,7 +9,7 @@ apply; this is not the complete 22-suite GUI/system gate.
 This extends the existing VFS without replacing legacy application APIs. Strict
 processes still cannot use ambient Read/Write/List/Sync, Spawn, the clipboard or
 desktop proxies. FEATURE_FILE_OBJECTS=32 advertises these mechanisms; features
-now total 63. A feature bit never grants access. New IDs are appended after
+totaled 63 at Stage D (A-E now total 127). A feature bit never grants access. New IDs are appended after
 Stage C's 0x13a; old syscall numbers, query sizes and RunSpec v1 remain stable.
 S_CHANGED=-11 is appended to the existing errors.
 

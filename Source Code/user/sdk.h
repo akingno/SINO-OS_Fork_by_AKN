@@ -44,6 +44,18 @@ static inline int StartRun(const RunSpec *spec) {
 static inline int StartRunWithDirectory(const RunSpecV2 *spec) {
   return api(SYS_RUN_START, (u32)spec, sizeof(*spec), 0);
 }
+static inline int StartRunWithStreams(const RunSpecV3 *spec) {
+  return api(SYS_RUN_START, (u32)spec, sizeof(*spec), 0);
+}
+static inline int PipeCreate(u32 capacity, PipePair *out) {
+  return api(SYS_PIPE_CREATE, capacity, (u32)out, sizeof(*out));
+}
+static inline int StreamReady(int handle) {
+  return api(SYS_STREAM_READY, (u32)handle, 0, 0);
+}
+static inline int QueryPipeLimits(PipeLimits *out) {
+  return api(SYS_PIPE_LIMITS, (u32)out, sizeof(*out), 0);
+}
 /* Compatibility launchers acquire grants; strict children use only handed-in
    directory handles. Close/Dup retain their existing ownership rules. */
 static inline int GrantDirectory(const char *path, u32 rights) {

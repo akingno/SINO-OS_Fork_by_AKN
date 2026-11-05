@@ -5,6 +5,7 @@
 #include "net.h"
 #include "process.h"
 #include "filesys.h"
+#include "pipe.h"
 Object objects[OBJECTS];
 static u32 generation, cookie;
 int object_new(u32 type, int value) {
@@ -53,6 +54,8 @@ void object_unref(int index) {
     else if (o->type == OBJ_STREAM) process_stream_release(o->value);
     else if (o->type == OBJ_DIRECTORY || o->type == OBJ_FILE || o->type == OBJ_STAGING)
       filesys_release(o->value);
+    else if (o->type == OBJ_PIPE_READ || o->type == OBJ_PIPE_WRITE)
+      pipe_release(o->value, o->type == OBJ_PIPE_WRITE);
   }
 }
 int handle_close(Handle* table, u32 h) {

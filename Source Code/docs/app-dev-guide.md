@@ -81,3 +81,16 @@ compatibility APIs. Full layouts, rights, failure semantics and limits are in
 client passed compilation and the Stage 2 text gate, including cold-boot byte
 checks. Remaining fault-injection coverage is documented there. Publication
 alone does not confirm durability.
+
+## Stage E byte pipes and bounded runtime waits
+
+PipeCreate and StreamReady add bounded streams; StreamRead/StreamWrite accept
+owned pipe endpoints. StartRunWithStreams (RunSpecV3) explicitly binds those
+endpoints to strict child stdio; unused parent copies must be closed. Include
+`user/stream.h` for StreamReadFor/WriteFor, StreamWriteAllFor, StreamWaitFor and
+RunWaitFor/ProcessWaitFor. These helpers use monotonic deadlines and Yield, not
+blocking kernel stacks. The Stage 2 text gate exercises real concurrent binary
+transport, reference-controlled EOF, early close, faults, cancellation and timeout.
+See [stream-pipes.md](stream-pipes.md) for rights, ABI, quotas, partial progress
+and remaining coverage limits. Existing Shell pipes and host finite capture are
+unchanged; interactive terminal sessions belong to Stage F.

@@ -15,6 +15,7 @@ void process_stream_release(int);
 /* Trusted kernel entry points; the user syscall validates all pointers first. */
 int process_run_start(Handle *, const RunSpec *);
 int process_run_start_directory(Handle *, const RunSpec *, u32, u32);
+int process_run_start_bound(Handle *, const RunSpec *, u32, u32, const u32 *);
 int process_run_result(Handle *, u32, RunResult *);
 int process_run_read(Handle *, u32, u32, u32, void *, u32);
 int process_cancel_owned(Handle *, u32);

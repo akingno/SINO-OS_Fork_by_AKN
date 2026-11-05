@@ -15,7 +15,9 @@ enum {
   S_LIMIT = -8,
   S_BADHANDLE = -9,
   S_EXISTS = -10,
-  S_CHANGED = -11
+  S_CHANGED = -11,
+  S_CLOSED = -12,
+  S_TIMEOUT = -13
 };
 enum {
   SYS_EXIT = 0x100,
@@ -89,6 +91,9 @@ enum {
   SYS_FILE_STAGE,
   SYS_FILE_PUBLISH,
   SYS_FILE_COMMIT,
+  SYS_PIPE_CREATE,
+  SYS_STREAM_READY,
+  SYS_PIPE_LIMITS,
   SYS_CALL_END /* Append future calls before this sentinel. */
 };
 
@@ -97,7 +102,8 @@ enum { FEATURE_SYSTEM_INFO = 1, FEATURE_STRICT_POLICY = 2, FEATURE_START_INFO = 
 #define FEATURE_COMPLETION 8u
 #define FEATURE_BOUNDED_RUN 16u
 #define FEATURE_FILE_OBJECTS 32u
-#define SYSTEM_FEATURES (FEATURE_SYSTEM_INFO | FEATURE_STRICT_POLICY | FEATURE_START_INFO | FEATURE_COMPLETION | FEATURE_BOUNDED_RUN | FEATURE_FILE_OBJECTS)
+#define FEATURE_PIPES 64u
+#define SYSTEM_FEATURES (FEATURE_SYSTEM_INFO | FEATURE_STRICT_POLICY | FEATURE_START_INFO | FEATURE_COMPLETION | FEATURE_BOUNDED_RUN | FEATURE_FILE_OBJECTS | FEATURE_PIPES)
 #define RUN_COUNT 2u
 #define RUN_ARGC 16u
 #define RUN_ARGS 1024u
@@ -113,6 +119,20 @@ typedef struct {
   RunSpec run;
   u32 directory, directory_rights, reserved[2];
 } RunSpecV2;
+/* v3 preserves v1/v2 and binds only explicitly named pipe endpoints to stdio. */
+typedef struct {
+  RunSpecV2 context;
+  u32 in, out, err, reserved;
+} RunSpecV3;
+#define PIPE_COUNT 8u
+#define PIPE_BYTES 4096u
+#define STREAM_WAIT_MAX 60000u
+enum { STREAM_READABLE = 1, STREAM_WRITABLE = 2, STREAM_EOF = 4,
+       STREAM_HANGUP = 8, STREAM_LIMIT = 16 };
+typedef struct { u32 read, write; } PipePair;
+typedef struct {
+  u32 size, version, pipes, capacity, io_bytes, timeout_ticks, ready_flags, reserved;
+} PipeLimits;
 
 enum {
   FS_READ = 1, FS_WRITE = 2, FS_LOOKUP = 4, FS_ENUM = 8,

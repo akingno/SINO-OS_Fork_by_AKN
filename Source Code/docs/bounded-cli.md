@@ -1,13 +1,14 @@
 # Stage C: bounded CLI execution
 
 This is a finite-input, finite-capture runtime for real SNX1 Ring 3 programs.
-It preserves old run/Spawn and ABI-1 startup strings. It does not implement
-streaming pipes, interactive terminals, arbitrary handle inheritance, cwd/env,
-file authorization, or blocking syscalls.
+It preserves old run/Spawn and ABI-1 startup strings. This document describes the
+finite backend; Stage D adds [file authority](file-objects.md), and Stage E adds
+[pipe-backed streams](stream-pipes.md). Interactive terminals, arbitrary handle
+inheritance, cwd/env and blocking syscalls remain outside these deliveries.
 
 ## Public ABI
 
-New feature: FEATURE_BOUNDED_RUN=16; SystemInfo/StartInfo now advertise 31.
+Stage C feature: FEATURE_BOUNDED_RUN=16 (mask 31 at that stage; A-E now use 127).
 Old feature bits and v1 layouts remain unchanged; clients mask known bits.
 All structures use little-endian u32 fields, four-byte alignment, except the
 signed completion code. User pointers below are 32-bit virtual addresses.
@@ -69,8 +70,9 @@ launches use an empty legacy argument string. No kernel pointers are exposed.
 
 in/out/err are opaque local handles, not the numbers 0/1/2. stdin has READ=1;
 stdout/stderr have WRITE=2. Existing Close/Dup rules apply. Duplicates share the
-input cursor or output capture. Stream operations also check the current run
-binding. Closing a stream then using its stale handle is an error, not EOF.
+input cursor or output capture. Finite stream operations check the current run
+binding; pipes instead check owned endpoint type/rights, as specified in Stage E.
+Closing a stream then using its stale handle is an error, not EOF.
 
 StreamRead returns up to the requested bytes, and 0 after finite input is
 consumed. Repeated EOF stays EOF. StreamWrite appends bytes independently to the

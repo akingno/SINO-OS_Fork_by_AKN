@@ -1,0 +1,10 @@
+#ifndef SINO_PIPE_H
+#define SINO_PIPE_H
+#include "object.h"
+int pipe_create(Handle*, u32, PipePair*);
+void pipe_release(int, int);
+int pipe_acquire(Handle*, u32, int);
+int pipe_transfer(Object*, int, void*, u32);
+int pipe_ready(Object*);
+void pipe_limits(PipeLimits*);
+#endif

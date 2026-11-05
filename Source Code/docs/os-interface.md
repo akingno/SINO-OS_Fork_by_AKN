@@ -1,4 +1,4 @@
-# OS interface: Stages A through D
+# OS interface: Stages A through E
 
 Stage A adds discovery and an opt-in strict process policy. Stage B adds bounded,
 nonblocking completion objects. Stage C adds finite argv/input/output and a
@@ -6,7 +6,9 @@ supervised host protocol; see [bounded-cli.md](bounded-cli.md). Stage D adds
 directory grants, range I/O and private publication/commit; see
 [file-objects.md](file-objects.md). Stage D's minimum version passed compilation
 and the 8-group Stage 2 text gate; remaining failure-injection limits are listed
-there. General delegation, streaming pipes and blocking wait remain future work.
+there. Stage E adds bounded streaming and user runtime waiting; see
+[stream-pipes.md](stream-pipes.md). General delegation and event-driven blocking
+wait remain future work.
 Existing SNX1 headers, startup strings and all 47 old syscall numbers remain
 unchanged. Existing negative errors and whole-file Write's success value 0 are
 unchanged. The policy test pins old syscall numbers with compile-time assertions.
@@ -39,7 +41,7 @@ Arguments()/Executable() still use the original immutable startup strings.
 Stage C provides structured arguments through a separate CliInfo query.
 
 Feature bits: SYSTEM_INFO=1, STRICT_POLICY=2, START_INFO=4, COMPLETION=8,
-BOUNDED_RUN=16, FILE_OBJECTS=32; currently features=63. Old clients mask known bits, not equality.
+BOUNDED_RUN=16, FILE_OBJECTS=32, PIPES=64; currently features=127. Old clients mask known bits, not equality.
 These indicate implemented mechanisms, not grants to use every mechanism.
 Unknown feature bits must not be interpreted as authority. Unknown syscalls
 return S_INVALID. Add future syscall IDs before SYS_CALL_END; the sentinel is not
@@ -69,6 +71,10 @@ Stage D also allows START_DIRECTORY, OPEN_AT, FILE_READ_AT/WRITE_AT/STAT,
 DIR_READ, REMOVE_AT, RENAME_AT, FILE_STAGE/PUBLISH/COMMIT. They require explicit
 owned directory/file/staging handles; DIR_GRANT remains denied. RunSpecV2 lets a
 compatibility launcher explicitly attenuate one directory grant to a strict child.
+Stage E adds local PIPE_CREATE, STREAM_READY and PIPE_LIMITS; StreamRead/Write
+accept owned pipe endpoints as well as run-bound finite streams. RunSpecV3 lets
+a compatibility launcher bind explicit pipe endpoints to strict child stdio.
+Strict RUN_START/Spawn remain denied, and other handles are not inherited.
 Existing pointer, object-type, rights and resource checks still
 apply. LOG remains diagnostics, not stdout; time and language are public data.
 
