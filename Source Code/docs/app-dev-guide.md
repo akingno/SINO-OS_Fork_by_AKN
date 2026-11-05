@@ -1,5 +1,9 @@
 # Native application development
 
+Stage C finite CLI runtime: see [bounded-cli.md](bounded-cli.md) for CliArguments,
+opaque standard stream handles, binary I/O, retained results and the root run.ps1
+host entry. It keeps main(void)/SNX1 and all older launch semantics intact.
+
 Stage A adds versioned SystemInfo/StartInfo queries and trusted strict launches
 through Shell `run -s`; old launches remain compatible. See
 [os-interface.md](os-interface.md) for exact layouts, permissions and limitations.

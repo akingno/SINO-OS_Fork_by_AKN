@@ -276,6 +276,7 @@ void irq_dispatch(Frame* f) {
       ticks++;
       process_interrupt(f);
     }
+    if (irq == 4) shell_bridge_irq();
     if (irq == 1 || irq == 12) {
       u8 s = inb(0x64);
       if (s & 1) {

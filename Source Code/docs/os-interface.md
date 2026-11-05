@@ -1,8 +1,9 @@
-# OS interface: Stages A and B
+# OS interface: Stages A, B and C
 
 Stage A adds discovery and an opt-in strict process policy. Stage B adds bounded,
-nonblocking completion objects. Standard streams, argv, file objects, delegation
-and blocking wait are still future work.
+nonblocking completion objects. Stage C adds finite argv/input/output and a
+supervised host protocol; see [bounded-cli.md](bounded-cli.md). File objects,
+general delegation, streaming pipes and blocking wait remain future work.
 Existing SNX1 headers, startup strings and all 47 old syscall numbers remain
 unchanged. Existing negative errors and whole-file Write's success value 0 are
 unchanged. The policy test pins old syscall numbers with compile-time assertions.
@@ -32,10 +33,10 @@ StartInfo (24 bytes): size, version, policy, caps, features, reserved. This is a
 query of immutable launch policy and current granted capability bits, not an
 input request. It does not change the launch page or expose kernel pointers.
 Arguments()/Executable() still use the original immutable startup strings.
-Structured arguments belong to a later stage.
+Stage C provides structured arguments through a separate CliInfo query.
 
-Feature bits: SYSTEM_INFO=1, STRICT_POLICY=2, START_INFO=4, COMPLETION=8;
-currently features=15. Old clients must mask known bits, not require equality.
+Feature bits: SYSTEM_INFO=1, STRICT_POLICY=2, START_INFO=4, COMPLETION=8,
+BOUNDED_RUN=16; currently features=31. Old clients mask known bits, not equality.
 These indicate implemented mechanisms, not grants to use every mechanism.
 Unknown feature bits must not be interpreted as authority. Unknown syscalls
 return S_INVALID. Add future syscall IDs before SYS_CALL_END; the sentinel is not
@@ -59,6 +60,8 @@ executable fallback. A launch response still reports creation, not final exit.
 Strict policy allows only EXIT, YIELD, LOG, TICKS, CLOSE, DUP, THREAD,
 THREAD_EXIT, EVENT_CREATE, EVENT_SET, EVENT_WAIT, TIME, UI_LANGUAGE, SYSTEM_INFO
 and START_INFO, plus Stage B PROCESS_RESULT and PROCESS_CANCEL for owned handles.
+Stage C also allows CLI_INFO, STREAM_READ/WRITE, RUN_RESULT/READ/LIMITS; RUN_START
+is still denied to strict callers. Streams and captures require owned handles.
 Existing pointer, object-type, rights and resource checks still
 apply. LOG remains diagnostics, not stdout; time and language are public data.
 
@@ -70,7 +73,7 @@ compatibility child, including through aliases or writable copies. Strict policy
 rejects both old Spawn and Stage B SpawnTracked; later delegation must preserve authority.
 
 This confines explicitly strict processes, not every legacy application or the
-remaining Ring 0 desktop. No file selection grants, stream bindings or general
+remaining Ring 0 desktop. No file selection grants, arbitrary delegation or general
 revocation system are claimed. New CLI launch mechanisms should default to
 strict policy when introduced, without silently changing old launch semantics.
 
@@ -137,9 +140,8 @@ Untracked old launches do not consume completion records. Job supervision and
 disconnect cancellation belong to Stage C, not this close behavior.
 
 The API is nonblocking: use S_AGAIN and bounded Yield polling. Kernel C stacks
-and user pointers are not suspended. The Shell bridge has not yet adopted the
-new structured completion protocol; tests exercise the result through actual
-Ring 3 clients instead of treating a Shell creation response as final status.
+and user pointers are not suspended. Old Shell run still reports creation;
+Stage C's separate v2 managed protocol reports the final result and captures.
 
 ## Verification
 

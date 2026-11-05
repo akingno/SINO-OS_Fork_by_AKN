@@ -1,4 +1,5 @@
 #include "klog.h"
+#include "run_bridge.h"
 #include "rtc.h"
 /* SINO SH: project-specific shell, separate from the SINO32 kernel. */
 #include "console.h"
@@ -1157,33 +1158,64 @@ static void add_history(void) {
 }
 
 /* Development-only COM1 command transport. The normal shell parser and Sink
-   produce the result. UART work is bounded and runs outside interrupt context.
+   produce the result. IRQ4 only stages bytes; framing, commands and replies
+   run with bounded work in the main loop. SCS2 is specified in bounded-cli.md.
    Request: "SCS1", id:u32, length:u32, UTF-8 command (all fields
    little-endian). Reply: "SCR1", id:u32, status:i32, flags:u32, length:u32,
    captured bytes. flags bit 0 means output overflow. One request is outstanding
    at a time. */
 #ifdef SINO_SHELL_BRIDGE
 #define BRIDGE_UART 0x3f8
-static u8 bridge_request[12 + LINE_SIZE], bridge_output[PIPE_SIZE + 1];
+static u8* bridge_request; /* Two pages, only in explicit command-channel builds. */
+static u8* bridge_rx;
+static volatile u32 bridge_rx_head, bridge_rx_tail, bridge_rx_overflow;
+static u8 bridge_output[PIPE_SIZE + 1];
 static u32 bridge_reply[5];
 static u32 bridge_received, bridge_needed, bridge_sent, bridge_size,
     bridge_updated;
 
 void shell_bridge_init(void) {
-  outb(BRIDGE_UART + 1, 0); /* Polling, no UART IRQ. */
+  bridge_request = page_alloc_run(2);
+  bridge_rx = page_alloc_run(2);
+  if (!bridge_request || !bridge_rx) {
+    if (bridge_request) page_free_run(bridge_request, 2);
+    if (bridge_rx) page_free_run(bridge_rx, 2);
+    bridge_request = bridge_rx = 0;
+    pr_debug("SINO SHELL BRIDGE allocation failed\n"); return;
+  }
+  bridge_rx_head = bridge_rx_tail = bridge_rx_overflow = 0;
+  run_bridge_init();
+  outb(BRIDGE_UART + 1, 0);
   outb(BRIDGE_UART + 3, 0x80);
   outb(BRIDGE_UART, 1); /* 115200 baud, 8N1. */
   outb(BRIDGE_UART + 1, 0);
   outb(BRIDGE_UART + 3, 3);
   outb(BRIDGE_UART + 2, 7);
-  outb(BRIDGE_UART + 4, 3);
+  outb(BRIDGE_UART + 4, 11); /* DTR/RTS/OUT2 routes the UART IRQ. */
   bridge_received = bridge_sent = bridge_size = 0;
   bridge_needed = 12;
+  outb(0x21, inb(0x21) & (u8)~16u);
+  outb(BRIDGE_UART + 1, 1); /* Receive only; no parsing or allocation in IRQ. */
   pr_debug("SINO SHELL BRIDGE v1 ready\n");
 }
 
+void shell_bridge_irq(void) {
+  if (!bridge_rx) return;
+  for (u32 budget = 0; budget < 16; budget++) {
+    u8 status = inb(BRIDGE_UART + 5);
+    if (status & 0x1e) bridge_rx_overflow = 1;
+    if (!(status & 1)) break;
+    u8 byte = inb(BRIDGE_UART);
+    u32 next = (bridge_rx_head + 1) & 8191u;
+    if (next == bridge_rx_tail) { bridge_rx_overflow = 1; continue; }
+    bridge_rx[bridge_rx_head] = byte;
+    __asm__ volatile("" ::: "memory");
+    bridge_rx_head = next;
+  }
+}
+
 static void bridge_complete(int status, u32 flags, u32 size) {
-  bridge_reply[0] = 0x31524353u; /* SCR1 */
+  bridge_reply[0] = *(u32*)bridge_request == 0x32534353u ? 0x32524353u : 0x31524353u;
   bridge_reply[1] = *(u32*)(bridge_request + 4);
   bridge_reply[2] = (u32)status;
   bridge_reply[3] = flags;
@@ -1195,16 +1227,36 @@ static void bridge_complete(int status, u32 flags, u32 size) {
 }
 
 void shell_bridge_poll(void) {
+  if (!bridge_request) return;
+  /* Also drain a bounded burst in case an edge was coalesced while the FIFO
+     remained nonempty. Mask IRQs so the ring still has a single producer. */
+  u32 receive_flags;
+  __asm__ volatile("pushfl; popl %0; cli":"=r"(receive_flags)::"memory");
+  shell_bridge_irq();
+  if (receive_flags & 0x200) sti();
+  if (bridge_rx_overflow) {
+    u32 flags; __asm__ volatile("pushfl; popl %0; cli":"=r"(flags)::"memory");
+    bridge_rx_tail = bridge_rx_head; bridge_rx_overflow = 0;
+    if (flags & 0x200) sti();
+    bridge_received = bridge_size = bridge_sent = 0; bridge_needed = 12;
+    run_bridge_abort(); pr_debug("SHELL BRIDGE RX overflow; session aborted\n");
+    return;
+  }
+  run_bridge_tick();
   /* Never wait for the peer to receive output. */
   if (bridge_size) {
-    for (u32 budget = 0; budget < 128 && bridge_sent < bridge_size; budget++) {
+    for (u32 budget = 0; budget < 128 && bridge_sent < bridge_size;) {
       if (!(inb(BRIDGE_UART + 5) & 0x20))
         return;
-      u32 offset = bridge_sent++;
-      u8 byte = offset < sizeof(bridge_reply)
-                    ? ((u8*)bridge_reply)[offset]
-                    : bridge_output[offset - sizeof(bridge_reply)];
-      outb(BRIDGE_UART, byte);
+      /* FCR enables the 16550's 16-byte TX FIFO. THRE means it is empty;
+         fill one bounded burst instead of waiting one timer tick per byte. */
+      for (u32 burst = 0; burst < 16 && bridge_sent < bridge_size && budget < 128; burst++, budget++) {
+        u32 offset = bridge_sent++;
+        u8 byte = offset < sizeof(bridge_reply)
+                      ? ((u8*)bridge_reply)[offset]
+                      : bridge_output[offset - sizeof(bridge_reply)];
+        outb(BRIDGE_UART, byte);
+      }
     }
     if (bridge_sent == bridge_size)
       bridge_size = 0;
@@ -1216,17 +1268,23 @@ void shell_bridge_poll(void) {
     bridge_received = 0;
     bridge_needed = 12;
   }
-  for (u32 budget = 0; budget < 128 && (inb(BRIDGE_UART + 5) & 1); budget++) {
-    bridge_request[bridge_received++] = inb(BRIDGE_UART);
+  for (u32 budget = 0; budget < 128 && bridge_rx_tail != bridge_rx_head; budget++) {
+    __asm__ volatile("" ::: "memory");
+    u8 byte = bridge_rx[bridge_rx_tail];
+    __asm__ volatile("" ::: "memory");
+    bridge_rx_tail = (bridge_rx_tail + 1) & 8191u;
+    bridge_request[bridge_received++] = byte;
     bridge_updated = ticks;
-    if (bridge_received == 4 && *(u32*)bridge_request != 0x31534353u) {
+    if (bridge_received == 4 && *(u32*)bridge_request != 0x31534353u &&
+        *(u32*)bridge_request != 0x32534353u) {
       /* Find a frame boundary after a corrupt prefix. */
       memcpy(bridge_request, bridge_request + 1, 3);
       bridge_received = 3;
     }
     if (bridge_received == 12) {
       u32 size = *(u32*)(bridge_request + 8);
-      if (size >= LINE_SIZE) {
+      if ((*(u32*)bridge_request == 0x31534353u && size >= LINE_SIZE) ||
+          size > RUN_BRIDGE_PAYLOAD) {
         bridge_complete(S_INVALID, 0, 0);
         return;
       }
@@ -1234,6 +1292,13 @@ void shell_bridge_poll(void) {
     }
     if (bridge_received == bridge_needed) {
       u32 size = bridge_needed - 12;
+      if (*(u32*)bridge_request == 0x32534353u) {
+        int status;
+        u32 output = run_bridge_request(bridge_request + 12, size,
+            *(u32*)(bridge_request + 4), bridge_output, &status);
+        bridge_complete(status, 0, output);
+        return;
+      }
       for (u32 i = 0; i < size; i++) {
         u8 byte = bridge_request[12 + i];
         if (!byte || byte == '\n' || byte == '\r') {
@@ -1253,6 +1318,8 @@ void shell_bridge_poll(void) {
 void shell_bridge_init(void) {
 }
 void shell_bridge_poll(void) {
+}
+void shell_bridge_irq(void) {
 }
 #endif
 

@@ -69,21 +69,54 @@ enum {
   SYS_SPAWN_TRACKED,
   SYS_PROCESS_RESULT,
   SYS_PROCESS_CANCEL,
+  SYS_RUN_START,
+  SYS_CLI_INFO,
+  SYS_STREAM_READ,
+  SYS_STREAM_WRITE,
+  SYS_RUN_RESULT,
+  SYS_RUN_READ,
+  SYS_RUN_LIMITS,
   SYS_CALL_END /* Append future calls before this sentinel. */
 };
 
 enum { PROCESS_COMPAT = 0, PROCESS_STRICT = 1 };
 enum { FEATURE_SYSTEM_INFO = 1, FEATURE_STRICT_POLICY = 2, FEATURE_START_INFO = 4 };
 #define FEATURE_COMPLETION 8u
-#define SYSTEM_FEATURES (FEATURE_SYSTEM_INFO | FEATURE_STRICT_POLICY | FEATURE_START_INFO | FEATURE_COMPLETION)
+#define FEATURE_BOUNDED_RUN 16u
+#define SYSTEM_FEATURES (FEATURE_SYSTEM_INFO | FEATURE_STRICT_POLICY | FEATURE_START_INFO | FEATURE_COMPLETION | FEATURE_BOUNDED_RUN)
+#define RUN_COUNT 2u
+#define RUN_ARGC 16u
+#define RUN_ARGS 1024u
+#define RUN_BYTES 4096u
+#define RUN_IO_MAX 65536u
+#define RUN_TIMEOUT_MAX 60000u
+typedef struct {
+  u32 size, version, flags, path, argc, argv_bytes, argv, offsets;
+  u32 input_bytes, input, timeout_ticks, reserved;
+} RunSpec;
+typedef struct {
+  u32 size, version, argc, in, out, err, argv_bytes, reserved;
+  u32 offsets[RUN_ARGC];
+  char bytes[RUN_ARGS];
+} CliInfo;
+typedef struct { u32 role, offset, buffer, capacity; } RunRead;
+typedef struct {
+  u32 size, version, runs, argc, argv_bytes, input_bytes, out_bytes, err_bytes;
+  u32 io_bytes, timeout_ticks;
+} RunLimits;
 #define PROCESS_COMPLETIONS 16
-enum { PROCESS_EXITED = 1, PROCESS_FAULTED, PROCESS_CANCELED, PROCESS_KILLED };
+enum { PROCESS_EXITED = 1, PROCESS_FAULTED, PROCESS_CANCELED, PROCESS_KILLED,
+       PROCESS_OUTPUT_LIMIT, PROCESS_TIMEOUT };
 enum { PROCESS_WAIT = 1, PROCESS_CANCEL = 2 };
 typedef struct {
   u32 size, version, pid, reason;
   i32 code;
   u32 vector, reserved[2];
 } ProcessCompletion;
+typedef struct {
+  ProcessCompletion completion;
+  u32 input_bytes, out_bytes, err_bytes, incomplete;
+} RunResult;
 typedef struct {
   u32 size, version, features, ticks_hz;
   u32 max_processes, max_threads, max_handles, max_objects;

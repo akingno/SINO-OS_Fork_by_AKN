@@ -82,6 +82,7 @@ void shell_text(const char*);
 void shell_key(int);
 void shell_bridge_init(void);
 void shell_bridge_poll(void);
+void shell_bridge_irq(void);
 void console_panic(const char*, u32, u32);
 void kernel_tests(void);
 void shell_tests(void);

@@ -38,6 +38,52 @@ static inline int GetProcessResult(int handle, ProcessCompletion *out) {
 static inline int CancelProcess(int handle) {
   return api(SYS_PROCESS_CANCEL, (u32)handle, 0, 0);
 }
+static inline int StartRun(const RunSpec *spec) {
+  return api(SYS_RUN_START, (u32)spec, sizeof(*spec), 0);
+}
+static inline int QueryCliInfo(CliInfo *out) {
+  return api(SYS_CLI_INFO, (u32)out, sizeof(*out), 0);
+}
+static inline int StreamRead(int handle, void *out, u32 capacity) {
+  return api(SYS_STREAM_READ, (u32)handle, (u32)out, capacity);
+}
+static inline int StreamWrite(int handle, const void *data, u32 bytes) {
+  return api(SYS_STREAM_WRITE, (u32)handle, (u32)data, bytes);
+}
+static inline int GetRunResult(int handle, RunResult *out) {
+  return api(SYS_RUN_RESULT, (u32)handle, (u32)out, sizeof(*out));
+}
+static inline int ReadRunOutput(int handle, const RunRead *request) {
+  return api(SYS_RUN_READ, (u32)handle, (u32)request, sizeof(*request));
+}
+static inline int QueryRunLimits(RunLimits *out) {
+  return api(SYS_RUN_LIMITS, (u32)out, sizeof(*out), 0);
+}
+/* The caller owns info/argv storage; pointers remain valid while info does. */
+static inline int CliArguments(CliInfo *info, char **argv, u32 capacity) {
+  if (!info || !argv) return S_INVALID;
+  int result = QueryCliInfo(info);
+  if (result < 0) return result;
+  if (info->size != sizeof(*info) || info->version != 1 || info->argc > RUN_ARGC ||
+      info->argv_bytes > RUN_ARGS) return S_INVALID;
+  if (capacity <= info->argc) return S_LIMIT;
+  for (u32 i = 0; i < info->argc; i++) {
+    if (info->offsets[i] >= info->argv_bytes) return S_INVALID;
+    argv[i] = info->bytes + info->offsets[i];
+  }
+  argv[info->argc] = 0;
+  return (int)info->argc;
+}
+static inline int CliWriteAll(int handle, const void *data, u32 bytes) {
+  if (!bytes) return StreamWrite(handle, data, 0);
+  const u8 *p = data; u32 written = 0;
+  while (written < bytes) {
+    int count = StreamWrite(handle, p + written, bytes - written);
+    if (count <= 0) return count ? count : S_IO;
+    written += (u32)count;
+  }
+  return (int)written;
+}
 static inline int Read(const char *p, void *b, u32 n) {
   return api(SYS_READ, (u32)p, (u32)b, n);
 }

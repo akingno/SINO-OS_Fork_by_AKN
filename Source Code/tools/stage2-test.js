@@ -39,7 +39,7 @@ async function run(directory) {
         /^stage2-[^/\\]+$/.test(relative), 'Use the repository stage2-test.ps1 entry.');
     const reportFile = path.join(directory, 'stage2-report.json');
     const names = ['infrastructure', 'rtc-driver', 'shell-transport', 'shell-commands',
-        'native-contracts', 'cold-reboot', 'runner-rejects-failure'];
+        'native-contracts', 'managed-cli', 'cold-reboot', 'runner-rejects-failure'];
     const report = {version:1, result:'FAIL', startedAt:new Date().toISOString(),
         scope:'text compatibility baseline; not the complete GUI/system regression',
         excluded:['Paint', 'GUI text editor workflows', 'GUI scaling/dragging/pixel checks',
@@ -91,7 +91,7 @@ async function run(directory) {
         assert.equal(hash(extracted), build.kernelSha256, 'symbol snapshot matches built flat kernel');
         build.symbolsSha256 = hash(symbols);
         report.build = build;
-        for (const file of ['stage2-test.ps1', 'test.ps1', 'Source Code/tools/stage2-test.js',
+        for (const file of ['stage2-test.ps1', 'test.ps1', 'run.ps1', 'Source Code/tools/stage2-test.js',
             'Source Code/tools/stage2-guest.js', 'Source Code/tools/shell-test.js']) {
             report.testHashes[file] = hash(path.join(repoRoot, file));
         }
@@ -119,7 +119,7 @@ async function run(directory) {
         await phase('shell-commands', async () => passed(await shellSuite('commands', {suite:'commands'}), 112));
         await phase('native-contracts', async () => {
             const run = await shellSuite('native', {suite:'stage2'}, c => guest.run(c));
-            const result = passed(run, 29);
+            const result = passed(run, 30);
             const disk = path.join(run.folder, 'shell-data.img');
             const records = volume(disk).current.records;
             const binary = Buffer.from(Array.from({length:257}, (_, i) => (i * 37 + 11) & 255));
@@ -130,6 +130,8 @@ async function run(directory) {
             return {...result, snapshotChecks:3, guestAssertions:run.result.cases
                 .reduce((sum, c) => sum + (c.guestAssertions || 0), 0)};
         });
+        await phase('managed-cli', async () => passed(await shellSuite('managed-cli',
+            {suite:'stage2'}, c => guest.run(c,'cli')),12));
         await phase('cold-reboot', async () => {
             const seed = report.privateSeed;
             assert.equal(hash(seed.path), seed.sha256, 'private disk unchanged before clone');

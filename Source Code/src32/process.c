@@ -33,13 +33,33 @@ typedef struct {
   u32 completion_object; /* Object index + 1; zero for old launch paths. */
   u32 reason, fault_vector;
 } Process;
+typedef struct {
+  CliInfo cli;
+  char path[128];
+  u8 *buffer[3];
+  u32 input_bytes, input_position, length[2], deadline, timed, incomplete;
+} RunData;
+_Static_assert(sizeof(RunData) <= 4096, "run metadata fits one page");
+static u32 run_count;
+static void run_free(RunData* run) {
+  if (!run) return;
+  for (int i = 0; i < 3; i++) if (run->buffer[i]) page_free(run->buffer[i]);
+  page_free(run);
+  run_count--;
+}
 static struct {
   int used, complete;
   ProcessCompletion result;
+  RunData* run;
 } completions[PROCESS_COMPLETIONS];
 void process_completion_release(int index) {
-  if (index >= 0 && index < PROCESS_COMPLETIONS)
+  if (index >= 0 && index < PROCESS_COMPLETIONS) {
+    run_free(completions[index].run);
     memset(&completions[index], 0, sizeof(completions[index]));
+  }
+}
+void process_stream_release(int value) {
+  object_unref(value / 3);
 }
 static Process processes[NP];
 static Process* current;
@@ -103,6 +123,8 @@ static void release(Process* p) {
         p->pid, p->reason, p->reason == PROCESS_EXITED ? p->code : 0,
         p->fault_vector, {0, 0}};
     completions[slot].complete = 1;
+    if (completions[slot].run && p->reason != PROCESS_EXITED)
+      completions[slot].run->incomplete = 1;
     object_unref(object);
   }
   memset(p, 0, sizeof(*p));
@@ -196,6 +218,18 @@ static int launch_policy(const char* path, u32 caps, const char* arguments,
       release(p);
       return S_NOMEM;
     }
+  RunData* run = completion >= 0 ? completions[objects[completion].value].run : 0;
+  if (run) {
+    u32* handles[3] = {&run->cli.in, &run->cli.out, &run->cli.err};
+    for (int i = 0; i < 3; i++) {
+      int stream = object_new(OBJ_STREAM, completion * 3 + i);
+      if (stream < 0) { release(p); return stream; }
+      objects[completion].refs++; /* Each stream pins its backing run. */
+      int handle = handle_open(p->handles, stream, i == 0 ? 1 : 2);
+      if (handle < 0) { object_unref(stream); release(p); return handle; }
+      *handles[i] = (u32)handle;
+    }
+  }
   p->pid = next_pid++;
   p->completion_object = (u32)(completion + 1);
   if (completion >= 0)
@@ -225,6 +259,105 @@ static int launch_policy(const char* path, u32 caps, const char* arguments,
   pr_debug_hex(p->pid);
   pr_debug("\n");
   return (int)p->pid;
+}
+/* Both old tracked launches and bounded runs use the same startup transaction. */
+static int tracked_launch(Handle* owner, const char* path, const char* args, RunData* run) {
+  int slot;
+  for (slot = 0; slot < PROCESS_COMPLETIONS && completions[slot].used; slot++);
+  if (slot == PROCESS_COMPLETIONS) { run_free(run); return S_LIMIT; }
+  completions[slot].used = 1;
+  completions[slot].run = run;
+  int object = object_new(OBJ_PROCESS, slot);
+  if (object < 0) { process_completion_release(slot); return object; }
+  int handle = handle_open(owner, object, PROCESS_WAIT | PROCESS_CANCEL);
+  if (handle < 0) { object_unref(object); return handle; }
+  objects[object].refs++;
+  int pid = launch_policy(path, 0, args, PROCESS_STRICT, object);
+  if (pid < 0) {
+    handle_close(owner, (u32)handle);
+    object_unref(object);
+    return pid;
+  }
+  return handle;
+}
+void process_run_limits(RunLimits* out) {
+  *out = (RunLimits){sizeof(RunLimits), 1, RUN_COUNT, RUN_ARGC, RUN_ARGS,
+                     RUN_BYTES, RUN_BYTES, RUN_BYTES, RUN_IO_MAX, RUN_TIMEOUT_MAX};
+}
+int process_run_start(Handle* owner, const RunSpec* spec) {
+  if (spec->size != sizeof(RunSpec) || spec->version != 1 || spec->flags ||
+      spec->reserved || spec->argc > RUN_ARGC || spec->argv_bytes > RUN_ARGS ||
+      spec->input_bytes > RUN_BYTES || spec->timeout_ticks > RUN_TIMEOUT_MAX ||
+      (!spec->argc && spec->argv_bytes)) return S_INVALID;
+  if (run_count >= RUN_COUNT) return S_LIMIT;
+  RunData* run = page_alloc();
+  if (!run) return S_NOMEM;
+  run_count++;
+  for (int i = 0; i < 3; i++) {
+    run->buffer[i] = page_alloc();
+    if (!run->buffer[i]) { run_free(run); return S_NOMEM; }
+  }
+  /* Caller has bounded and validated these kernel/user input ranges. */
+  const char* path = (const char*)spec->path;
+  u32 path_size = 0;
+  while (path_size < sizeof(run->path) && path[path_size]) path_size++;
+  if (path_size == sizeof(run->path) || path[0] != '/' ||
+      vfs_canonical(path, run->path) < 0) { run_free(run); return S_INVALID; }
+  run->cli.size = sizeof(CliInfo); run->cli.version = 1;
+  run->cli.argc = spec->argc; run->cli.argv_bytes = spec->argv_bytes;
+  if (spec->argc) memcpy(run->cli.offsets, (void*)spec->offsets, spec->argc * 4);
+  if (spec->argv_bytes) memcpy(run->cli.bytes, (void*)spec->argv, spec->argv_bytes);
+  u32 next = 0;
+  for (u32 i = 0; i < spec->argc; i++) {
+    if (run->cli.offsets[i] != next || next >= spec->argv_bytes) { run_free(run); return S_INVALID; }
+    while (next < spec->argv_bytes && run->cli.bytes[next]) next++;
+    if (next == spec->argv_bytes) { run_free(run); return S_INVALID; }
+    next++;
+  }
+  if (next != spec->argv_bytes) { run_free(run); return S_INVALID; }
+  run->input_bytes = spec->input_bytes;
+  if (spec->input_bytes) memcpy(run->buffer[0], (void*)spec->input, spec->input_bytes);
+  run->timed = spec->timeout_ticks != 0;
+  run->deadline = ticks + spec->timeout_ticks;
+  return tracked_launch(owner, run->path, "", run);
+}
+int process_run_result(Handle* owner, u32 handle, RunResult* out) {
+  Object* object = handle_get(owner, handle, OBJ_PROCESS, PROCESS_WAIT);
+  if (!object) return S_BADHANDLE;
+  int slot = object->value;
+  RunData* run = completions[slot].run;
+  if (!run) return S_INVALID;
+  if (!completions[slot].complete) return S_AGAIN;
+  *out = (RunResult){completions[slot].result, run->input_position,
+                     run->length[0], run->length[1], run->incomplete};
+  return 0;
+}
+int process_run_read(Handle* owner, u32 handle, u32 role, u32 offset, void* out, u32 cap) {
+  RunResult result;
+  int status = process_run_result(owner, handle, &result);
+  if (status) return status;
+  if (role < 1 || role > 2 || cap > RUN_IO_MAX) return S_INVALID;
+  Object* object = handle_get(owner, handle, OBJ_PROCESS, PROCESS_WAIT);
+  RunData* run = completions[object->value].run;
+  if (offset > run->length[role - 1]) return S_INVALID;
+  u32 bytes = run->length[role - 1] - offset;
+  if (bytes > cap) bytes = cap;
+  if (bytes) memcpy(out, run->buffer[role] + offset, bytes);
+  return (int)bytes;
+}
+int process_cancel_owned(Handle* owner, u32 handle) {
+  Object* object = handle_get(owner, handle, OBJ_PROCESS, PROCESS_CANCEL);
+  if (!object) return S_BADHANDLE;
+  if (completions[object->value].complete) return 0;
+  for (int i = 0; i < NP; i++) {
+    Process* p = &processes[i];
+    if (p->state && p->pid == completions[object->value].result.pid &&
+        p->completion_object == (u32)(object - objects) + 1) {
+      if (p->state == 1) { p->state = 2; p->reason = PROCESS_CANCELED; p->code = 0; }
+      return 0;
+    }
+  }
+  return S_NOTFOUND;
 }
 int process_kill(u32 pid, i32 code) {
   for (int i = 0; i < NP; i++)
@@ -319,6 +452,8 @@ static int strict_call(u32 call) {
     case SYS_TIME: case SYS_UI_LANGUAGE:
     case SYS_SYSTEM_INFO: case SYS_START_INFO:
     case SYS_PROCESS_RESULT: case SYS_PROCESS_CANCEL:
+    case SYS_CLI_INFO: case SYS_STREAM_READ: case SYS_STREAM_WRITE:
+    case SYS_RUN_RESULT: case SYS_RUN_READ: case SYS_RUN_LIMITS:
       return 1;
     default: return 0;
   }
@@ -334,6 +469,69 @@ static int syscall(Frame* f) {
       !(current->caps & CAP_NETWORK))
     return S_DENIED;
   switch (f->eax) {
+    case SYS_RUN_START: {
+      if (c || b != sizeof(RunSpec) || !user_access_ok(a, sizeof(RunSpec), 0)) return S_INVALID;
+      RunSpec spec; memcpy(&spec, (void*)a, sizeof(spec));
+      if (spec.argc > RUN_ARGC || spec.argv_bytes > RUN_ARGS || spec.input_bytes > RUN_BYTES ||
+          !copy_user_string(spec.path, path, sizeof(path)) ||
+          (spec.argc && !user_access_ok(spec.offsets, spec.argc * 4, 0)) ||
+          (spec.argv_bytes && !user_access_ok(spec.argv, spec.argv_bytes, 0)) ||
+          (spec.input_bytes && !user_access_ok(spec.input, spec.input_bytes, 0))) return S_INVALID;
+      spec.path = (u32)path;
+      return process_run_start(current->handles, &spec);
+    }
+    case SYS_RUN_LIMITS: {
+      if (c || b < sizeof(RunLimits) || !user_access_ok(a, sizeof(RunLimits), 1)) return S_INVALID;
+      RunLimits limits; process_run_limits(&limits); memcpy((void*)a, &limits, sizeof(limits)); return 0;
+    }
+    case SYS_CLI_INFO: {
+      if (c || b < sizeof(CliInfo) || !user_access_ok(a, sizeof(CliInfo), 1)) return S_INVALID;
+      if (!current->completion_object) return S_NOTFOUND;
+      RunData* run = completions[objects[current->completion_object - 1].value].run;
+      if (!run) return S_NOTFOUND;
+      memcpy((void*)a, &run->cli, sizeof(CliInfo)); return 0;
+    }
+    case SYS_STREAM_READ:
+    case SYS_STREAM_WRITE: {
+      int reading = f->eax == SYS_STREAM_READ;
+      o = handle_get(current->handles, a, OBJ_STREAM, reading ? 1 : 2);
+      if (!o || current->completion_object != (u32)(o->value / 3) + 1) return S_BADHANDLE;
+      u32 role = (u32)o->value % 3;
+      if ((reading && role != 0) || (!reading && role == 0)) return S_BADHANDLE;
+      if (!c) return 0;
+      if (c > RUN_IO_MAX || !user_access_ok(b, c, reading)) return S_INVALID;
+      RunData* run = completions[objects[o->value / 3].value].run;
+      u32 bytes;
+      if (reading) {
+        bytes = run->input_bytes - run->input_position;
+        if (bytes > c) bytes = c;
+        if (bytes) memcpy((void*)b, run->buffer[0] + run->input_position, bytes);
+        run->input_position += bytes;
+      } else {
+        bytes = RUN_BYTES - run->length[role - 1];
+        if (bytes > c) bytes = c;
+        if (bytes) memcpy(run->buffer[role] + run->length[role - 1], (void*)b, bytes);
+        run->length[role - 1] += bytes;
+        if (bytes < c) {
+          run->incomplete = 1; current->state = 2;
+          current->reason = PROCESS_OUTPUT_LIMIT; current->code = 0; leave(f);
+          return bytes ? (int)bytes : S_LIMIT;
+        }
+      }
+      return (int)bytes;
+    }
+    case SYS_RUN_RESULT: {
+      if (c < sizeof(RunResult) || !user_access_ok(b, sizeof(RunResult), 1)) return S_INVALID;
+      RunResult result; r = process_run_result(current->handles, a, &result);
+      if (!r) memcpy((void*)b, &result, sizeof(result)); return r;
+    }
+    case SYS_RUN_READ: {
+      if (c != sizeof(RunRead) || !user_access_ok(b, sizeof(RunRead), 0)) return S_INVALID;
+      RunRead read; memcpy(&read, (void*)b, sizeof(read));
+      if (read.capacity > RUN_IO_MAX ||
+          (read.capacity && !user_access_ok(read.buffer, read.capacity, 1))) return S_INVALID;
+      return process_run_read(current->handles, a, read.role, read.offset, (void*)read.buffer, read.capacity);
+    }
     case SYS_SPAWN_TRACKED: {
       char args[256];
       if (c) return S_INVALID;
@@ -342,22 +540,7 @@ static int syscall(Frame* f) {
       if (b) {
         if (!copy_user_string(b, args, sizeof(args))) return S_INVALID;
       } else args[0] = 0;
-      int slot;
-      for (slot = 0; slot < PROCESS_COMPLETIONS && completions[slot].used; slot++);
-      if (slot == PROCESS_COMPLETIONS) return S_LIMIT;
-      completions[slot].used = 1;
-      n = object_new(OBJ_PROCESS, slot); /* Initial reference belongs to execution. */
-      if (n < 0) { process_completion_release(slot); return n; }
-      r = handle_open(current->handles, n, PROCESS_WAIT | PROCESS_CANCEL);
-      if (r < 0) { object_unref(n); return r; }
-      objects[n].refs++; /* The observer is separate from the execution owner. */
-      int pid = launch_policy(path, 0, args, PROCESS_STRICT, n);
-      if (pid < 0) {
-        handle_close(current->handles, (u32)r);
-        object_unref(n);
-        return pid;
-      }
-      return r;
+      return tracked_launch(current->handles, path, args, 0);
     }
     case SYS_PROCESS_RESULT:
       o = handle_get(current->handles, a, OBJ_PROCESS, PROCESS_WAIT);
@@ -371,20 +554,7 @@ static int syscall(Frame* f) {
       o = handle_get(current->handles, a, OBJ_PROCESS, PROCESS_CANCEL);
       if (!o) return S_BADHANDLE;
       if (b || c) return S_INVALID;
-      if (completions[o->value].complete) return 0;
-      for (int i = 0; i < NP; i++) {
-        Process* p = &processes[i];
-        if (p->state && p->pid == completions[o->value].result.pid &&
-            p->completion_object == (u32)(o - objects) + 1) {
-          if (p->state == 1) {
-            p->state = 2;
-            p->reason = PROCESS_CANCELED;
-            p->code = 0;
-          }
-          return 0;
-        }
-      }
-      return S_NOTFOUND;
+      return process_cancel_owned(current->handles, a);
     case SYS_SYSTEM_INFO: {
       if (c || b < sizeof(SystemInfo) || !user_access_ok(a, sizeof(SystemInfo), 1))
         return S_INVALID;
@@ -877,6 +1047,15 @@ int process_interrupt(Frame* f) {
   return 0;
 }
 void process_step(void) {
+  for (int i = 0; i < NP; i++) {
+    Process* p = &processes[i];
+    if (p->state == 1 && p->completion_object) {
+      RunData* run = completions[objects[p->completion_object - 1].value].run;
+      if (run && run->timed && (i32)(ticks - run->deadline) >= 0) {
+        p->state = 2; p->reason = PROCESS_TIMEOUT; p->code = 0;
+      }
+    }
+  }
   for (int i = 0; i < NP; i++)
     if (processes[i].state == 2)
       release(&processes[i]);

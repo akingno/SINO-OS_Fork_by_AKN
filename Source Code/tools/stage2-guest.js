@@ -109,6 +109,10 @@ async function run(context, mode = 'native') {
         return guestLog().slice(offset);
     }
 
+    if (mode === 'cli') {
+        await require('./run-protocol-cases').run(context,{check,command,resources,value,until});
+        return;
+    }
     if (mode === 'reject') {
         await check('intentional guest failure must reject the gate', async () => {
             await launch('probe', '/stage2-fail');
@@ -221,6 +225,14 @@ async function run(context, mode = 'native') {
             assert.deepEqual(await resources(), baseline);
         });
     }
+    await check('stage C bounded CLI inputs, streams, capture, quota and rollback', async () => {
+        const offset = guestLog().length, faults = await value('process_faults');
+        const pid = await launch('clitest', 'unit');
+        await until(() => guestLog().slice(offset).includes('CLI SUITE PASS'), 'CLI suite', 30000);
+        await gone(pid);
+        assert.equal(await value('process_faults'), faults + 1);
+        assert.deepEqual(await resources(), baseline);
+    });
     for (let i = 1; i <= 8; i++) {
         await check(`normal exit resource recovery ${i}/8`, async () => {
             await native('probe', '/stage2', 'STAGE2 PROBE PASS checks=');

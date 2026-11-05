@@ -37,6 +37,7 @@ function sources() {
     for (const name of fs.readdirSync(sourceRoot)) if (/^build.*\.(js|ps1)$/.test(name)) files.push(path.join(sourceRoot, name));
     files.push(path.join(sourceRoot, 'LICENSE'));
     files.push(path.join(repoRoot, 'dev.ps1'));
+    files.push(path.join(repoRoot, 'run.ps1'));
     const inputs = files.sort().map(file => ({path:path.relative(repoRoot,file).replaceAll('\\','/'),sha256:sha(fs.readFileSync(file))}));
     return {sha256:sha(Buffer.from(JSON.stringify(inputs))),inputs};
 }

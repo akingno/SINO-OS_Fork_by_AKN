@@ -44,7 +44,7 @@ class ShellChannel {
         if (this.buffer.length < 20) return;
         const header = this.buffer;
         const size = header.readUInt32LE(16);
-        if (header.toString('ascii', 0, 4) !== 'SCR1' || size > 8192 || !this.pending ||
+        if (!this.pending || header.toString('ascii', 0, 4) !== this.pending.replyMagic || size > 8192 ||
             header.readUInt32LE(4) !== this.pending.id || header.readUInt32LE(12) > 1) {
             return this.fail(Error('Invalid Shell response frame or request identity.'));
         }
@@ -62,11 +62,15 @@ class ShellChannel {
         if (this.pending) throw Error('Only one Shell request may be outstanding.');
         const bytes = Buffer.from(command, 'utf8');
         const frame = Buffer.alloc(12 + bytes.length);
-        frame.write('SCS1');
+        const magic = options.magic || 'SCS1';
+        if (!['SCS1', 'SCS2'].includes(magic)) throw Error('Unknown transport version.');
+        frame.write(magic);
         frame.writeUInt32LE(id, 4);
         frame.writeUInt32LE(options.declaredSize ?? bytes.length, 8);
         bytes.copy(frame, 12);
-        const response = new Promise((resolve, reject) => {this.pending = {id, resolve, reject};});
+        const response = new Promise((resolve, reject) => {
+            this.pending = {id, resolve, reject, replyMagic:magic === 'SCS1' ? 'SCR1' : 'SCR2'};
+        });
         const sent = options.prefix ? Buffer.concat([Buffer.from(options.prefix), frame]) : frame;
         if (options.fragment) {
             this.socket.write(sent.subarray(0, 7));

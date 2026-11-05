@@ -8,6 +8,13 @@ This entry is separate from the upstream regression gate. The gate's suite count
 
 ## Stage 2 text compatibility baseline
 
+Stage C adds a real CPL3 CLI suite and a dedicated managed-cli protocol group.
+It checks bounded binary/UTF-8 argv and stdio, exact limits, overflow/fault output,
+quotas, guest deadlines, cancellation, session/replay/frame boundaries and lease
+cleanup without killing an unrelated process. The development UART uses bounded
+IRQ4 RX buffering; normal builds do not enable it. See [bounded-cli.md](bounded-cli.md)
+and repository-root run.ps1 for running one program with actual final status.
+
 Stage B additionally runs comptest.snx for delayed/repeated typed results,
 signed exit vs fault, observer rights/stale/foreign handles, cancellation and
 external kill, record/process/handle limits, rejected-image rollback, and observer
