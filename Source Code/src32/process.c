@@ -10,6 +10,7 @@
 #include "rtc.h"
 #include "filesys.h"
 #include "pipe.h"
+#include "terminal.h"
 #define NP 8
 #define NT 4
 typedef struct {
@@ -399,6 +400,19 @@ int process_cancel_owned(Handle* owner, u32 handle) {
   }
   return S_NOTFOUND;
 }
+Handle* process_terminal_target(Handle* owner,u32 h,u32* pid) {
+  Object* o=handle_get(owner,h,OBJ_PROCESS,PROCESS_WAIT|PROCESS_CANCEL);
+  if(!o||completions[o->value].complete)return 0;
+  for(int i=0;i<NP;i++)if(processes[i].state==1 && processes[i].policy==PROCESS_STRICT &&
+      processes[i].completion_object==(u32)(o-objects)+1){*pid=processes[i].pid;return processes[i].handles;}
+  return 0;
+}
+int process_terminal_cancel(u32 pid) {
+  for(int i=0;i<NP;i++)if(pid&&processes[i].pid==pid&&processes[i].state){
+    if(processes[i].state==1){processes[i].state=2;processes[i].reason=PROCESS_CANCELED;processes[i].code=0;}return 0;
+  }
+  return S_NOTFOUND;
+}
 int process_kill(u32 pid, i32 code) {
   for (int i = 0; i < NP; i++)
     if (processes[i].state && processes[i].pid == pid) {
@@ -499,6 +513,7 @@ static int strict_call(u32 call) {
     case SYS_DIR_READ: case SYS_REMOVE_AT: case SYS_RENAME_AT:
     case SYS_FILE_STAGE: case SYS_FILE_PUBLISH: case SYS_FILE_COMMIT:
     case SYS_PIPE_CREATE: case SYS_STREAM_READY: case SYS_PIPE_LIMITS:
+    case SYS_TERMINAL:
       return 1;
     default: return 0;
   }
@@ -518,6 +533,11 @@ static int syscall(Frame* f) {
     return filesys_call(current->handles, current->caps, f->eax, a, b, c,
                         user_access_ok, copy_user_string);
   switch (f->eax) {
+    case SYS_TERMINAL: {
+      if(b!=sizeof(TerminalRequest)||c||!user_access_ok(a,sizeof(TerminalRequest),0))return S_INVALID;
+      TerminalRequest request;memcpy(&request,(void*)a,sizeof(request));
+      return terminal_call(current->handles,current->pid,current->policy,&request,user_access_ok);
+    }
     case SYS_PIPE_CREATE: {
       if (c < sizeof(PipePair) || !user_access_ok(b, sizeof(PipePair), 1)) return S_INVALID;
       PipePair pair; r = pipe_create(current->handles, a, &pair);
@@ -530,6 +550,10 @@ static int syscall(Frame* f) {
     }
     case SYS_STREAM_READY: {
       if (b || c) return S_INVALID;
+      if(handle_get(current->handles,a,OBJ_TERM_CLIENT,1)){
+        TerminalRequest q={TERM_READY,a,0,0,0,0};
+        return terminal_call(current->handles,current->pid,current->policy,&q,user_access_ok);
+      }
       o = handle_get(current->handles, a, OBJ_PIPE_READ, 1);
       if (!o) o = handle_get(current->handles, a, OBJ_PIPE_WRITE, 2);
       if (o) return pipe_ready(o);
@@ -585,6 +609,10 @@ static int syscall(Frame* f) {
     case SYS_STREAM_READ:
     case SYS_STREAM_WRITE: {
       int reading = f->eax == SYS_STREAM_READ;
+      if(handle_get(current->handles,a,OBJ_TERM_CLIENT,1)){
+        TerminalRequest q={reading?TERM_READ:TERM_WRITE,a,b,c,0,0};
+        return terminal_call(current->handles,current->pid,current->policy,&q,user_access_ok);
+      }
       o = handle_get(current->handles, a, reading ? OBJ_PIPE_READ : OBJ_PIPE_WRITE, reading ? 1 : 2);
       if (o) {
         if (c > RUN_IO_MAX || (c && !user_access_ok(b, c, reading))) return S_INVALID;

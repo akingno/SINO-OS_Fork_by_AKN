@@ -8,7 +8,7 @@ inheritance, cwd/env and blocking syscalls remain outside these deliveries.
 
 ## Public ABI
 
-Stage C feature: FEATURE_BOUNDED_RUN=16 (mask 31 at that stage; A-E now use 127).
+Stage C feature: FEATURE_BOUNDED_RUN=16 (mask 31 at that stage; A-F now use 255).
 Old feature bits and v1 layouts remain unchanged; clients mask known bits.
 All structures use little-endian u32 fields, four-byte alignment, except the
 signed completion code. User pointers below are 32-bit virtual addresses.

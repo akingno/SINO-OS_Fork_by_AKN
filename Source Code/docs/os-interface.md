@@ -1,4 +1,4 @@
-# OS interface: Stages A through E
+# OS interface: Stages A through F backend
 
 Stage A adds discovery and an opt-in strict process policy. Stage B adds bounded,
 nonblocking completion objects. Stage C adds finite argv/input/output and a
@@ -9,6 +9,9 @@ and the 8-group Stage 2 text gate; remaining failure-injection limits are listed
 there. Stage E adds bounded streaming and user runtime waiting; see
 [stream-pipes.md](stream-pipes.md). General delegation and event-driven blocking
 wait remain future work.
+Stage F adds the [text session backend](terminal-sessions.md), with frontend
+integration still pending. SYS_TERMINAL=0x14a is allowed by strict policy; its
+control/client authority checks still apply, including denial of strict CREATE.
 Existing SNX1 headers, startup strings and all 47 old syscall numbers remain
 unchanged. Existing negative errors and whole-file Write's success value 0 are
 unchanged. The policy test pins old syscall numbers with compile-time assertions.
@@ -41,7 +44,7 @@ Arguments()/Executable() still use the original immutable startup strings.
 Stage C provides structured arguments through a separate CliInfo query.
 
 Feature bits: SYSTEM_INFO=1, STRICT_POLICY=2, START_INFO=4, COMPLETION=8,
-BOUNDED_RUN=16, FILE_OBJECTS=32, PIPES=64; currently features=127. Old clients mask known bits, not equality.
+BOUNDED_RUN=16, FILE_OBJECTS=32, PIPES=64, TERMINALS=128; currently features=255. Old clients mask known bits, not equality.
 These indicate implemented mechanisms, not grants to use every mechanism.
 Unknown feature bits must not be interpreted as authority. Unknown syscalls
 return S_INVALID. Add future syscall IDs before SYS_CALL_END; the sentinel is not

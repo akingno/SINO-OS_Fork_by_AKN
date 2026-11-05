@@ -56,6 +56,20 @@ static inline int StreamReady(int handle) {
 static inline int QueryPipeLimits(PipeLimits *out) {
   return api(SYS_PIPE_LIMITS, (u32)out, sizeof(*out), 0);
 }
+static inline int TerminalCall(u32 op,int handle,void* buffer,u32 bytes,u32 value,u32 extra) {
+  TerminalRequest r={op,(u32)handle,(u32)buffer,bytes,value,extra};
+  return api(SYS_TERMINAL,(u32)&r,sizeof(r),0);
+}
+static inline int TerminalCreate(u32 w,u32 h){return TerminalCall(TERM_CREATE,0,0,0,w,h);}
+static inline int TerminalCurrent(void){return TerminalCall(TERM_CURRENT,0,0,0,0,0);}
+static inline int TerminalForeground(int t,int task){return TerminalCall(TERM_FOREGROUND,t,0,0,(u32)task,0);}
+static inline int TerminalGetInfo(int t,TerminalInfo* out){return TerminalCall(TERM_INFO,t,out,sizeof(*out),0,0);}
+static inline int TerminalMode(int t,u32 flags){return TerminalCall(TERM_MODE,t,0,0,flags,0);}
+static inline int TerminalRead(int t,void* b,u32 n){return TerminalCall(TERM_READ,t,b,n,0,0);}
+static inline int TerminalWrite(int t,const void* b,u32 n){return TerminalCall(TERM_WRITE,t,(void*)b,n,0,0);}
+static inline int TerminalDrain(int t,void* b,u32 n){return TerminalCall(TERM_DRAIN,t,b,n,0,0);}
+static inline int TerminalNextEvent(int t,TerminalEvent* e){return TerminalCall(TERM_EVENT,t,e,sizeof(*e),0,0);}
+static inline int TerminalFeed(int t,u32 type,const void* b,u32 n,u32 value){return TerminalCall(TERM_FEED,t,(void*)b,n,type,value);}
 /* Compatibility launchers acquire grants; strict children use only handed-in
    directory handles. Close/Dup retain their existing ownership rules. */
 static inline int GrantDirectory(const char *path, u32 rights) {

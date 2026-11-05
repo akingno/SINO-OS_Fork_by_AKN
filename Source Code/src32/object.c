@@ -6,6 +6,7 @@
 #include "process.h"
 #include "filesys.h"
 #include "pipe.h"
+#include "terminal.h"
 Object objects[OBJECTS];
 static u32 generation, cookie;
 int object_new(u32 type, int value) {
@@ -56,6 +57,8 @@ void object_unref(int index) {
       filesys_release(o->value);
     else if (o->type == OBJ_PIPE_READ || o->type == OBJ_PIPE_WRITE)
       pipe_release(o->value, o->type == OBJ_PIPE_WRITE);
+    else if(o->type==OBJ_TERM_CONTROL||o->type==OBJ_TERM_CLIENT)
+      terminal_release(o->value,o->type==OBJ_TERM_CLIENT);
   }
 }
 int handle_close(Handle* table, u32 h) {

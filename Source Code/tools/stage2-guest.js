@@ -266,6 +266,15 @@ async function run(context, mode = 'native') {
         assert.equal((await processes()).length, 0);
         assert.deepEqual(await resources(), baseline);
     });
+    await check('stage F terminal isolation, foreground input and recovery', async () => {
+        const offset = guestLog().length, faults = await value('process_faults');
+        const pid = await launch('termtest', 'suite');
+        await until(() => guestLog().slice(offset).includes('TERMINAL SUITE PASS'), 'terminal suite', 30000);
+        await gone(pid);
+        assert.equal(await value('process_faults'), faults + 1);
+        assert.equal((await processes()).length, 0);
+        assert.deepEqual(await resources(), baseline);
+    });
     for (let i = 1; i <= 8; i++) {
         await check(`normal exit resource recovery ${i}/8`, async () => {
             await native('probe', '/stage2', 'STAGE2 PROBE PASS checks=');

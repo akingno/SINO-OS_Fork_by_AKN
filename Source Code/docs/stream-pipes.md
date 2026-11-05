@@ -12,7 +12,7 @@ dev-20261105-034107-6acf965e (kernel 144416 bytes, BSS end 1884768).
 
 ## ABI and quotas
 
-FEATURE_PIPES=64 raises the current feature mask to 127. Existing IDs/layouts and
+FEATURE_PIPES=64 raised the Stage E mask to 127 (A-F now use 255). Existing IDs/layouts and
 errors remain unchanged. Append S_CLOSED=-12 for a pipe's missing reader, and
 S_TIMEOUT=-13 for user runtime deadlines. No Unix SIGPIPE is delivered.
 

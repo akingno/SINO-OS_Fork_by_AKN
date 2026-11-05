@@ -8,6 +8,11 @@ This entry is separate from the upstream regression gate. The gate's suite count
 
 ## Stage 2 text compatibility baseline
 
+Stage F adds headless text-session tests in termtest.snx: foreground authority,
+background denial, canonical/raw input, typed events, saturation, hangup and
+mode/resource restoration. See [terminal-sessions.md](terminal-sessions.md).
+This does not test a desktop keyboard/display adapter or interactive Shell.
+
 Stage E adds pipetest.snx to the native group: bounded pipe backpressure/EOF,
 explicit v3 bindings, real concurrent binary transport, early close and
 fault/cancel/timeout cleanup, plus deadline helpers. See

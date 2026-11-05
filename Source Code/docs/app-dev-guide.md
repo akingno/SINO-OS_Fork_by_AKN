@@ -94,3 +94,10 @@ transport, reference-controlled EOF, early close, faults, cancellation and timeo
 See [stream-pipes.md](stream-pipes.md) for rights, ABI, quotas, partial progress
 and remaining coverage limits. Existing Shell pipes and host finite capture are
 unchanged; interactive terminal sessions belong to Stage F.
+
+Stage F now provides a headless text-session backend with controller/client
+handles, foreground input, line/raw mode, bounded echo/output and typed
+resize/key/EOF/hangup events. Client handles support StreamRead/Write/Ready and
+the existing bounded runtime helpers. See [terminal-sessions.md](terminal-sessions.md).
+Desktop keyboard/display adapters and an interactive Shell are still pending;
+this does not change the existing desktop's input routing.

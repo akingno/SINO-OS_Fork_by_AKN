@@ -19,6 +19,8 @@ int process_run_start_bound(Handle *, const RunSpec *, u32, u32, const u32 *);
 int process_run_result(Handle *, u32, RunResult *);
 int process_run_read(Handle *, u32, u32, u32, void *, u32);
 int process_cancel_owned(Handle *, u32);
+Handle* process_terminal_target(Handle*,u32,u32*);
+int process_terminal_cancel(u32);
 void process_run_limits(RunLimits *);
 int process_list(ProcessInfo *, u32);
 int process_alive(u32);
