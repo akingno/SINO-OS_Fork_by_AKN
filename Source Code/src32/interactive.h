@@ -2,7 +2,7 @@
 #define SINO_INTERACTIVE_ABI_H
 #include "api.h"
 #define TERM_INTERRUPT 7u
-enum { IX_SHELL = 3, IX_COMMAND = 4, IX_READTOOLS = 5 };
+enum { IX_SHELL = 3, IX_COMMAND = 4, IX_READTOOLS = 5, IX_WRITETOOLS = 6 };
 enum { IX_START = 12, IX_REQUEST, IX_SUBMIT, IX_RESULT, IX_FINISH };
 typedef struct {
   u32 size, version, program, id, argc, bytes, rights;

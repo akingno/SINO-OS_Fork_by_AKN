@@ -12,6 +12,12 @@ static void require(int yes) {
   }
 }
 int main(void) {
+  if (streq(Arguments(), "clip") || streq(Arguments(), "clip-bad")) {
+    const char *text =
+        streq(Arguments(), "clip") ? "echo pasted" : "echo one\necho two";
+    require(api(SYS_CLIP_SET, (u32)text, strlen(text), 0) == 0);
+    return 0;
+  }
   int cleanup = streq(Arguments(), "cleanup");
   if (!cleanup)
     require(Mkdir("/home/user/Documents/g4") == 0);

@@ -11,6 +11,7 @@
 #include "filesys.h"
 #include "pipe.h"
 #include "terminal.h"
+#include "ui_queue.h"
 #define NP 8
 #define NT 4
 typedef struct {
@@ -29,10 +30,10 @@ typedef struct {
   void* kernel_stack;
   Thread thread[NT];
   Handle handles[HANDLES];
-  UiEvent queue[16];
-  u32 head, tail;
+  UiQueue input_queue;
   char name[32];
-  u32 policy;
+  u32 policy, workspace_frontend, input_frontend;
+
   u32 completion_object; /* Object index + 1; zero for old launch paths. */
   u32 reason, fault_vector;
   CliInfo* interactive;
@@ -258,6 +259,8 @@ static int launch_policy(const char* path, u32 caps, const char* arguments,
   if (completion >= 0)
     completions[objects[completion].value].result.pid = p->pid;
   p->policy = policy;
+  p->input_frontend=policy==PROCESS_COMPAT && nodes[n].readonly && nodes[n].boot>=0 && (streq(executable,"/boot/term.snx")||streq(executable,"/boot/termqa.snx"));
+  p->workspace_frontend=policy==PROCESS_COMPAT && nodes[n].readonly && nodes[n].boot>=0 && streq(executable,"/boot/term.snx");
   if (!next_pid)
     next_pid = 1;
   p->state = 1;
@@ -266,7 +269,7 @@ static int launch_policy(const char* path, u32 caps, const char* arguments,
   if (nodes[n].readonly && nodes[n].boot >= 0 &&
       (streq(executable, "/boot/calc.snx") ||
        streq(executable, "/boot/clock.snx") ||
-       streq(executable, "/boot/term.snx")))
+       streq(executable, "/boot/term.snx")||streq(executable,"/boot/termqa.snx")))
     p->caps = 0;
   if (nodes[n].readonly && nodes[n].boot >= 0 &&
       streq(executable, "/boot/files.snx"))
@@ -318,7 +321,7 @@ int process_interactive_start(Handle* owner, const InteractiveSpec* spec,
                               int directory, void* session, u32* pid) {
   if (spec->size != sizeof(*spec) || spec->version != 1 ||
       spec->argc > RUN_ARGC || spec->bytes > RUN_ARGS ||
-      (spec->rights & ~(FS_READ | FS_LOOKUP | FS_ENUM)) ||
+      (spec->rights & ~(FS_RIGHTS & ~FS_DELEGATE)) ||
       (!directory && spec->rights))
     return S_INVALID;
   u32 next = 0;
@@ -333,9 +336,10 @@ int process_interactive_start(Handle* owner, const InteractiveSpec* spec,
   }
   if (next != spec->bytes)
     return S_INVALID;
-  const char* path = spec->program==IX_SHELL ? "/boot/gsh.snx" : spec->program==IX_COMMAND ? "/boot/gcmd.snx" : spec->program==IX_READTOOLS ? "/boot/tview.snx" : "/boot/g2test.snx";
-  if (spec->program != 1 && spec->program != 2 && spec->program!=IX_SHELL && spec->program!=IX_COMMAND && spec->program!=IX_READTOOLS)
+  const char* path = spec->program==IX_SHELL ? "/boot/gsh.snx" : spec->program==IX_COMMAND ? "/boot/gcmd.snx" : spec->program==IX_WRITETOOLS ? "/boot/writer.snx" : spec->program==IX_READTOOLS ? "/boot/tview.snx" : "/boot/brokerqa.snx";
+  if (spec->program != 1 && spec->program != 2 && spec->program!=IX_SHELL && spec->program!=IX_COMMAND && spec->program!=IX_READTOOLS && spec->program!=IX_WRITETOOLS)
     return S_DENIED;
+  if (spec->program != IX_SHELL && spec->program != IX_WRITETOOLS && (spec->rights & ~(FS_READ|FS_LOOKUP|FS_ENUM))) return S_DENIED;
   if (spec->program == IX_COMMAND && spec->rights)
     return S_DENIED;
   int n = vfs_lookup(path);
@@ -530,25 +534,7 @@ void process_message(u32 pid, UiEvent e) {
   for (int i = 0; i < NP; i++)
     if (processes[i].state == 1 && processes[i].pid == pid) {
       Process* p = &processes[i];
-      if (e.type == MSG_FILES_CHANGED) {
-        int duplicate = 0;
-        for (u32 j = p->tail; j != p->head; j = (j + 1) & 15)
-          if (p->queue[j].type == e.type && p->queue[j].window == e.window)
-            duplicate = 1;
-        if (duplicate)
-          return;
-      }
-      u32 previous = (p->head - 1) & 15;
-      if (e.type == MSG_MOUSE_MOVE && p->head != p->tail &&
-          p->queue[previous].type == MSG_MOUSE_MOVE) {
-        p->queue[previous] = e;
-        return;
-      }
-      u32 next = (p->head + 1) & 15;
-      if (next == p->tail)
-        return;
-      p->queue[p->head] = e;
-      p->head = next;
+      ui_queue_push(&p->input_queue,e,p->input_frontend);
     }
 }
 /* Checks current user pages only; capability checks remain separate. */
@@ -605,7 +591,7 @@ static int strict_call(u32 call) {
     case SYS_EXIT: case SYS_YIELD: case SYS_LOG: case SYS_TICKS:
     case SYS_CLOSE: case SYS_DUP: case SYS_THREAD: case SYS_THREAD_EXIT:
     case SYS_EVENT_CREATE: case SYS_EVENT_SET: case SYS_EVENT_WAIT:
-    case SYS_TIME: case SYS_CALENDAR: case SYS_UI_LANGUAGE:
+    case SYS_DIRECTORY_COMMIT: case SYS_TIME: case SYS_CALENDAR: case SYS_UI_LANGUAGE:
     case SYS_SYSTEM_INFO: case SYS_START_INFO:
     case SYS_PROCESS_RESULT: case SYS_PROCESS_CANCEL:
     case SYS_CLI_INFO: case SYS_STREAM_READ: case SYS_STREAM_WRITE:
@@ -630,11 +616,13 @@ static int syscall(Frame* f) {
   if (f->eax >= SYS_SOCKET && f->eax <= SYS_RECVFROM &&
       !(current->caps & CAP_NETWORK))
     return S_DENIED;
-  if (f->eax >= SYS_DIR_GRANT && f->eax <= SYS_FILE_COMMIT &&
-      f->eax != SYS_START_DIRECTORY)
+  if ((f->eax >= SYS_DIR_GRANT && f->eax <= SYS_FILE_COMMIT && f->eax != SYS_START_DIRECTORY) || f->eax==SYS_DIRECTORY_COMMIT)
     return filesys_call(current->handles, current->caps, f->eax, a, b, c,
                         user_access_ok, copy_user_string);
   switch (f->eax) {
+    case SYS_WORKSPACE:
+      if(!current->workspace_frontend || a || b || c)return S_DENIED;
+      return filesys_workspace(current->handles);
     case SYS_TERMINAL: {
       if(b!=sizeof(TerminalRequest)||c||!user_access_ok(a,sizeof(TerminalRequest),0))return S_INVALID;
       TerminalRequest request;memcpy(&request,(void*)a,sizeof(request));
@@ -1067,11 +1055,7 @@ static int syscall(Frame* f) {
     case SYS_EVENT:
       if (!user_access_ok(a, sizeof(UiEvent), 1))
         return S_INVALID;
-      if (current->head == current->tail)
-        return S_AGAIN;
-      *(UiEvent*)a = current->queue[current->tail];
-      current->tail = (current->tail + 1) & 15;
-      return 0;
+      return ui_queue_pop(&current->input_queue,(UiEvent*)a);
     case SYS_CLOSE:
       return handle_close(current->handles, a);
     case SYS_READ:

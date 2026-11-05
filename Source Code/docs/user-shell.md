@@ -1,9 +1,8 @@
 # G3 strict user Shell
 
-Open the legacy Shell and enter `run /boot/term.snx /g3`. This opens the existing
-Ring 3 frontend in G3 mode and atomically starts `/boot/gsh.snx` through the
-[interactive broker](interactive-runs.md). F2 and the default F12 probe keep their
-existing routes; default entry switching belongs to G6.
+Press F12 or run `run /boot/term.snx` from the legacy Shell. The Ring 3 frontend
+atomically starts strict `/boot/gsh.snx` through the [interactive broker](interactive-runs.md).
+F2, Terminal.app and the legacy menu route stay on the old Shell until G6.
 
 ## Authority and paths
 
@@ -18,7 +17,7 @@ reference. There is no kernel-global chdir or environment inheritance.
 root is rejected. Absolute paths restart at the grant root. Normalized paths
 fit 127 bytes. A failed open preserves the old cwd; successful navigation opens
 the new directory before closing the old reference. Existing VFS open-reference
-Busy rules apply while a directory is held. No write rights are delegated.
+Busy rules apply while a directory is held. No write rights are delegated in the default session; /write is explicit.
 
 Catalog ID3 is the Shell root. ID4 is `/boot/gcmd.snx`, a small external tool
 selected by argv[0]. Both executable nodes must resolve to read-only boot files.
@@ -35,6 +34,7 @@ See [file-tools.md](file-tools.md) for text safety, paging and consistency.
 | `help` | List builtins and tools |
 | `pwd` | Print logical cwd |
 | `cd [path]` | Change cwd; omitted path selects grant root |
+| `clear` | Clear this window’s scrollback and redraw the prompt |
 | `history` | Print the last 16 submitted nonempty lines, including itself |
 | `status` | Print retained signed code, completion reason and startup status |
 | `exit [0..255]` | Exit with explicit code or retained last code |
@@ -98,3 +98,7 @@ cwd navigation and empty/quoted argv; screenshot inspected and VM stopped.
 The full 22-suite GUI gate remains a separate scope.
 
 G5a extends this entry with a 120-column default, user-owned SINO SH welcome, help/which/aliases, date/time/information tools and head/tail/wc/grep/hexdump/tree/find. Current behavior and intentional old-command differences are in [shell-tools.md](shell-tools.md). The existing strict policies and grant root are retained.
+
+G5b adds explicit `run /boot/term.snx /write` for touch/mkdir/rm/rmdir/write/append/cp/mv/sync using a granted home workspace. Read-only sessions and catalogs 4 and 5 keep their previous access scope. Writable-mode authority, publication versus persistence and intentional compatibility differences are in [workspace-shell.md](workspace-shell.md).
+
+For editable prompts, history recall, Tab completion and paste, see [shell-editing.md](shell-editing.md).

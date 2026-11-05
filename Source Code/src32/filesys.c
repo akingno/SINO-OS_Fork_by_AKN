@@ -267,10 +267,23 @@ static int finish(Handle* owner, u32 h, int commit, CommitInfo* out) {
   return status;
 }
 
+int filesys_workspace(Handle* owner) {
+  return grant(owner,CAP_HOME,"/home/user",FS_RIGHTS);
+}
 int filesys_call(Handle* owner, u32 caps, u32 call, u32 a, u32 b, u32 c,
                  FileAccess access, FileString string) {
   char path[VFS_PATH];
   switch (call) {
+    case SYS_DIRECTORY_COMMIT: {
+      if(c < sizeof(CommitInfo) || !access(b,sizeof(CommitInfo),1))return S_INVALID;
+      FileObject* f=get(owner,a,OBJ_DIRECTORY,FS_COMMIT);
+      if(!f)return S_BADHANDLE;
+      int home=vfs_lookup("/home/user");
+      if(f->node!=home && !storage_tracks_node(f->node))return S_DENIED;
+      int status=storage_sync()?0:S_IO;
+      CommitInfo report={sizeof(report),1,0,0,status==0,status==0?storage_generation:0,status,0};
+      memcpy((void*)b,&report,sizeof(report));return status;
+    }
     case SYS_DIR_GRANT:
       if (c || !string(a, path, sizeof(path))) return S_INVALID;
       return grant(owner, caps, path, b);

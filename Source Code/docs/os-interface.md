@@ -44,7 +44,7 @@ Arguments()/Executable() still use the original immutable startup strings.
 Stage C provides structured arguments through a separate CliInfo query.
 
 Feature bits: SYSTEM_INFO=1, STRICT_POLICY=2, START_INFO=4, COMPLETION=8,
-BOUNDED_RUN=16, FILE_OBJECTS=32, PIPES=64, TERMINALS=128, CALENDAR=256; currently features=511. Old clients mask known bits, not equality.
+BOUNDED_RUN=16, FILE_OBJECTS=32, PIPES=64, TERMINALS=128, CALENDAR=256, WORKSPACE=512, LINE_EDIT=1024; currently features=2047. Old clients mask known bits, not equality.
 These indicate implemented mechanisms, not grants to use every mechanism.
 Unknown feature bits must not be interpreted as authority. Unknown syscalls
 return S_INVALID. Add future syscall IDs before SYS_CALL_END; the sentinel is not
@@ -175,3 +175,5 @@ feature changes require corresponding contract review, not just relaxed tests.
 This does not replace historical-binary fixtures or excluded GUI regressions.
 
 G5a appends SYS_CALENDAR=0x14b for a versioned 32-byte read-only RTC calendar query in both policies, preserving SYS_TIME. ABI, failure-output rules and tests are documented in [shell-tools.md](shell-tools.md). G1-G5a frontend/Shell integration is now available through the opt-in user Shell entry.
+
+G5b appends SYS_WORKSPACE=0x14c (trusted read-only boot frontend only) and SYS_DIRECTORY_COMMIT=0x14d (owned COMMIT directory required). Strict ambient Sync remains denied. See [workspace-shell.md](workspace-shell.md).

@@ -11,6 +11,8 @@ typedef struct {
   u32 shell, task, root, rights, request_id, phase;
   InteractiveSpec request;
   InteractiveResult result;
+  TerminalEdit edit;
+  u32 edit_pending, editing;
 } Terminal;
 typedef struct {
   Terminal* terminal;
@@ -19,6 +21,7 @@ typedef struct {
 _Static_assert(sizeof(Terminal) <= 4096, "terminal metadata fits page");
 static u32 count;
 static void reset(Terminal* t) {
+  t->edit_pending=t->editing=0;
   t->mode = TERM_LINE | TERM_ECHO;
   t->foreground = 0;
   t->input_size = t->line_size = t->events = t->eof = 0;
@@ -142,6 +145,7 @@ static int feed(Terminal* t, const TerminalRequest* r) {
     return S_CLOSED;
   if (r->value == TERM_CANCEL) {
     if (t->shell && t->foreground == t->shell) {
+      if(t->editing)t->events=0;
       int status = event(t, TERM_INTERRUPT, 0, 0, 0);
       if (!status) {
         t->input_size = t->line_size = t->eof = 0;
@@ -188,6 +192,10 @@ static int feed(Terminal* t, const TerminalRequest* r) {
     return S_INVALID;
   if (t->eof)
     return S_CLOSED;
+  if(t->editing && t->foreground==t->shell && !t->mode){
+    if(r->bytes>8-t->events)return S_AGAIN;
+    const u8* text=(void*)r->buffer;for(u32 i=0;i<r->bytes;i++)event(t,TERM_TEXT,text[i],0,0);return 0;
+  }
   u8 line[256], committed[512], echo[256];
   u32 echo_size = 0;
   u32 ln = t->line_size, n = 0;
@@ -286,7 +294,7 @@ static int interactive_call(Terminal* t, Client* c, Object* control,
     const InteractiveSpec* q = (void*)r->buffer;
     if (q->size != sizeof(*q) || q->version != 1 || !q->id ||
         t->request_id == 0xffffffffu || q->id != t->request_id + 1 ||
-        (q->program != 2 && q->program != IX_COMMAND && q->program != IX_READTOOLS) || q->argc > RUN_ARGC ||
+        (q->program != 2 && q->program != IX_COMMAND && q->program != IX_READTOOLS && q->program != IX_WRITETOOLS) || q->argc > RUN_ARGC ||
         q->bytes > RUN_ARGS || (q->rights & ~t->rights))
       return S_INVALID;
     u32 n = 0;
@@ -425,7 +433,7 @@ static int interactive_call(Terminal* t, Client* c, Object* control,
 
 int terminal_call(Handle* owner, u32 pid, u32 policy, const TerminalRequest* r,
                   FileAccess access) {
-  if (r->op < TERM_CREATE || r->op > IX_FINISH)
+  if (r->op < TERM_CREATE || r->op > TERM_EDIT_ACK)
     return S_INVALID;
   if (r->op == TERM_CREATE) {
     if (policy == PROCESS_STRICT)
@@ -454,6 +462,26 @@ int terminal_call(Handle* owner, u32 pid, u32 policy, const TerminalRequest* r,
       r->op != TERM_INFO && r->op != TERM_READ && r->op != TERM_WRITE &&
       r->op != TERM_READY)
     return S_DENIED;
+  if(r->op>=TERM_EDIT && r->op<=TERM_EDIT_ACK){
+    if(r->op==TERM_EDIT_VIEW){
+      if(!control)return S_DENIED;
+      if(r->value||r->extra||r->bytes!=sizeof(TerminalEdit)||!access(r->buffer,sizeof(TerminalEdit),1))return S_INVALID;
+      if(!t->edit_pending||t->output_size)return S_AGAIN;memcpy((void*)r->buffer,&t->edit,sizeof(t->edit));return 0;
+    }
+    if(r->op==TERM_EDIT_ACK){
+      if(!control)return S_DENIED;if(r->buffer||r->bytes||r->extra)return S_INVALID;
+      if(!t->edit_pending||r->value!=t->edit.serial)return S_NOTFOUND;t->edit_pending=0;return 0;
+    }
+    if(!c||pid!=t->shell||pid!=t->foreground)return S_DENIED;
+    if(r->op==TERM_EDIT_STATUS){if(r->buffer||r->bytes||r->value||r->extra)return S_INVALID;return t->edit_pending?S_AGAIN:0;}
+    if(r->value||r->extra||r->bytes!=sizeof(TerminalEdit)||!access(r->buffer,sizeof(TerminalEdit),0))return S_INVALID;
+    if(t->edit_pending)return S_AGAIN;
+    const TerminalEdit *e=(void*)r->buffer;
+    if(e->bytes>sizeof(e->text)||e->cursor>e->bytes||e->action>2||e->serial)return S_INVALID;
+    for(u32 i=0;i<e->bytes;i++)if((u8)e->text[i]<32||e->text[i]==127)return S_INVALID;
+    if(e->cursor<e->bytes&&((u8)e->text[e->cursor]&0xc0)==0x80)return S_INVALID;
+    u32 serial=t->edit.serial+1;if(!serial)serial=1;memcpy(&t->edit,e,sizeof(t->edit));t->edit.serial=serial;t->edit_pending=t->editing=1;return 0;
+  }
   if (r->op >= IX_START)
     return interactive_call(t, c, control, owner, pid, policy, r, access);
   if (r->op == TERM_FOREGROUND) {

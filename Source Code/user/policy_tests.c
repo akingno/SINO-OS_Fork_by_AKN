@@ -92,6 +92,9 @@ static void query_tests(int strict) {
   require(api(SYS_CALENDAR,USER_BASE,32,0)==S_INVALID,"calendar output rights");
   require((system.features&FEATURE_CALENDAR) && calendar==0 && date.size==32 && date.version==1 && date.year>=2000 && date.month>=1 && date.month<=12 && date.day>=1 && date.day<=31 && date.hour<24 && date.minute<60 && date.second<60,"calendar strict read-only query");
   require(api(SYS_CALENDAR,(u32)buffer,64,0)==0 && buffer[8]==0xccccccccu,"calendar query preserves tail");
+  require(WorkspaceDirectory()==S_DENIED,"workspace denied to untrusted compat and strict programs");
+  for(u32 i=0;i<16;i++)buffer[i]=0xccccccccu;
+  require(api(SYS_DIRECTORY_COMMIT,0,(u32)buffer,sizeof(CommitInfo))==S_BADHANDLE && buffer[0]==0xccccccccu,"directory commit requires owned authorization and preserves output");
   require(api(0xffffffffu,0,0,0)==S_INVALID,"unknown syscall");
 }
 int main(void) {

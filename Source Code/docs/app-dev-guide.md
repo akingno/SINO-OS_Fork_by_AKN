@@ -23,8 +23,8 @@ Window/Scene/Event provide original UI presentation. The kernel copies a validat
 G1 adds `UI_CELL_TEXT=9` for fixed-grid UTF-8 rows in the existing Scene ABI.
 Font 2 advances seven pixels for ASCII and 21 for non-ASCII, with a 79-byte string
 limit per command. `user/terminal_frontend.c` splits rows between codepoints and
-owns its decoder/history. F12 opens this caps=0 compatibility frontend with a
-strict session probe. Current G1 authority, bounds, lifecycle and testing are
+owns its decoder/history. F12 opens this caps=0 compatibility frontend with the
+strict user Shell. Frontend authority, bounds, lifecycle and testing are
 documented in [terminal-sessions.md](terminal-sessions.md).
 
 ABI restrictions: integer C only (no FPU/SIMD, libc, exceptions or dynamic linking), 8 processes, 4 threads each, 24 local handles, 15 pending input events per process, 8 desktop windows, 16 KiB stack per thread. Read/write returns unified negative errors from `src32/api.h`. Home write capability does not authorize writes to `/boot`, `/etc` or kernel memory. Untrusted writable legacy F32 programs are refused.
@@ -106,8 +106,8 @@ Stage F now provides a headless text-session backend with controller/client
 handles, foreground input, line/raw mode, bounded echo/output and typed
 resize/key/EOF/hangup events. Client handles support StreamRead/Write/Ready and
 the existing bounded runtime helpers. See [terminal-sessions.md](terminal-sessions.md).
-G1 supplies the opt-in desktop frontend. G3 supplies a strict user Shell via
-`run /boot/term.snx /g3`; existing default desktop routes remain until G6.
+F12 and `run /boot/term.snx` open the strict user Shell; F2, Terminal.app
+and the legacy menu route stay on the old Shell until G6.
 See [user-shell.md](user-shell.md) for commands, read-only home paths and results.
 
 G2 interactive startup and the narrow session broker use the existing terminal syscall. See [interactive-runs.md](interactive-runs.md) and user/interactive.h for atomic argv/directory/stdio binding, result and cleanup contracts.
@@ -119,3 +119,7 @@ Application welcome text belongs in user programs, while src32/shell.c still
 contains the legacy rescue/development Shell and its original banner.
 
 G5a command metadata, user welcome and checked text scans live in user/shell_commands.h, shell_banner.h and text_scan.h. The default frontend is120 columns; the new read-only Calendar query leaves SYS_TIME unchanged. See [shell-tools.md](shell-tools.md).
+
+G5b adds explicit `run /boot/term.snx /write` for touch/mkdir/rm/rmdir/write/append/cp/mv/sync using a granted home workspace. Read-only sessions and catalogs 4 and 5 keep their previous access scope. Writable-mode authority, publication versus persistence and intentional compatibility differences are in [workspace-shell.md](workspace-shell.md).
+
+Line editing, completion, paste and the test-only terminal entry points are documented in [shell-editing.md](shell-editing.md).

@@ -124,7 +124,14 @@ async function run(directory) {
             await command(host.tool('gcc'),[path.join(__dirname,'test-text-scan.c'),'-std=c11','-O2','-Wall','-Wextra','-Werror','-o',scan],path.join(folder,'text-scan-build.txt'));
             const scanOutput=path.join(folder,'text-scan-output.txt');await command(scan,[],scanOutput);
             assert.equal(fs.readFileSync(scanOutput,'utf8').trim(),'TEXT SCAN PASS');
-            return {checks:result.checks.length + 4, modelOutput, parserOutput, fileTextOutput, scanOutput,
+            const editor=path.join(folder,'line-edit.exe');
+            await command(host.tool('gcc'),[path.join(__dirname,'test-line-edit.c'),'-std=c11','-O2','-Wall','-Wextra','-Werror','-o',editor],path.join(folder,'line-edit-build.txt'));
+            const editOutput=path.join(folder,'line-edit-output.txt');await command(editor,[],editOutput);assert.equal(fs.readFileSync(editOutput,'utf8').trim(),'LINE EDIT PASS');
+            for(const [name,marker] of [['line-model','LINE MODEL PASS'],['ui-queue','UI QUEUE PASS']]){
+              const exe=path.join(folder,name+'.exe');await command(host.tool('gcc'),[path.join(__dirname,'test-'+name+'.c'),'-std=c11','-O2','-Wall','-Wextra','-Werror','-Wno-unused-function','-o',exe],path.join(folder,name+'-build.txt'));
+              const output=path.join(folder,name+'-output.txt');await command(exe,[],output);assert.equal(fs.readFileSync(output,'utf8').trim(),marker);
+            }
+            return {checks:result.checks.length + 7, modelOutput, parserOutput, fileTextOutput, scanOutput,
                 report:path.join(folder, 'src32-refactor-report.json')};
         });
         await phase('rtc-driver', async () => {
@@ -145,6 +152,7 @@ async function run(directory) {
             const disk = path.join(run.folder, 'shell-data.img');
             const records = volume(disk).current.records;
             const binary = Buffer.from(Array.from({length:257}, (_, i) => (i * 37 + 11) & 255));
+            assert.equal(records.get('/home/user/g5b-durable.txt')?.data.toString(),'g5b durable\n');
             assert(records.get('/home/user/stage2-persist.bin')?.data.equals(binary), 'CRC-valid binary snapshot');
             const saved = Buffer.from(Array.from({length:257}, (_, i) => (i * 19 + 7) & 255));
             assert(records.get('/home/user/stage2-file-save.bin')?.data.equals(saved), 'Stage D CRC-valid published snapshot');

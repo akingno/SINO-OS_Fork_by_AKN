@@ -207,3 +207,5 @@ failure injection, node/counter exhaustion, forged headers/pointers and output
 canaries, cancellation/timeout while holding file objects, all commit failure
 points and private-stage invisibility across a forced reboot. The normal Stage 2
 gate alone does not prove every such failure case or unchanged old binaries.
+
+G5b adds explicit `run /boot/term.snx /write` for touch/mkdir/rm/rmdir/write/append/cp/mv/sync using a granted home workspace. Read-only sessions and catalogs 4 and 5 keep their previous access scope. Writable-mode authority, publication versus persistence and intentional compatibility differences are in [workspace-shell.md](workspace-shell.md).

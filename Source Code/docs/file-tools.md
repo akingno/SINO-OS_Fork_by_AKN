@@ -1,6 +1,6 @@
 # G4 read-only terminal file tools
 
-The G3 Shell entry `run /boot/term.snx /g3` now recognizes `ls`, `stat`, `cat`
+The G3 Shell entry `run /boot/term.snx` now recognizes `ls`, `stat`, `cat`
 and `view`. These commands are dispatched to the strict `/boot/tview.snx`
 program, catalog ID5. Listing, metadata formatting, text decoding and paging
 are user-space policy, implemented in user/tview.c and user/file_text.h.

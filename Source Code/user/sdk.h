@@ -60,6 +60,7 @@ static inline int TerminalCall(u32 op,int handle,void* buffer,u32 bytes,u32 valu
   TerminalRequest r={op,(u32)handle,(u32)buffer,bytes,value,extra};
   return api(SYS_TERMINAL,(u32)&r,sizeof(r),0);
 }
+static inline int TerminalEditSend(int t,const TerminalEdit *e){return TerminalCall(TERM_EDIT,t,(void*)e,sizeof(*e),0,0);}
 static inline int TerminalCreate(u32 w,u32 h){return TerminalCall(TERM_CREATE,0,0,0,w,h);}
 static inline int TerminalCurrent(void){return TerminalCall(TERM_CURRENT,0,0,0,0,0);}
 static inline int TerminalForeground(int t,int task){return TerminalCall(TERM_FOREGROUND,t,0,0,(u32)task,0);}
@@ -75,6 +76,8 @@ static inline int TerminalFeed(int t,u32 type,const void* b,u32 n,u32 value){ret
 static inline int GrantDirectory(const char *path, u32 rights) {
   return api(SYS_DIR_GRANT, (u32)path, rights, 0);
 }
+static inline int WorkspaceDirectory(void){return api(SYS_WORKSPACE,0,0,0);}
+static inline int DirectoryCommit(int directory,CommitInfo *out){return api(SYS_DIRECTORY_COMMIT,directory,(u32)out,sizeof(*out));}
 static inline int StartDirectory(void) {
   return api(SYS_START_DIRECTORY, 0, 0, 0);
 }

@@ -3,15 +3,21 @@
 #include "gsh_parse.h"
 #include "shell_commands.h"
 #include "shell_banner.h"
+#include "line_edit.h"
 static CliInfo cli;
 static ShellWords words;
-static int terminal, root, cwd_handle;
+static int terminal, root, cwd_handle, writable;
 static char cwd[128], history[16][SHELL_LINE];
 static u32 history_total, history_count, request_id;
 static i32 last_code, last_start;
 static u32 last_reason = PROCESS_EXITED;
-static char input[64], line[SHELL_LINE];
-static u32 position, available, length;
+static char input[64];
+static u32 position, available;
+static LineEditor editor;
+#define line editor.text
+#define length editor.length
+static int clear_next, recall = -1, rejected;
+static char draft[256];
 static void put(const char *text) {
   u32 written;
   if (StreamWriteAllFor(cli.out, text, strlen(text), 300, &written) < 0)
@@ -27,10 +33,45 @@ static void integer(i32 value) {
   number(magnitude, text);
   put(text);
 }
+static void edit_failure(const char *stage, int error) {
+  char n[12];
+  Log(stage);
+  if (error < 0) {
+    Log("-");
+    number(0u - (u32)error, n);
+  } else
+    number((u32)error, n);
+  Log(n);
+  Log("\n");
+  Exit(1);
+}
+static void render_edit(u32 action) {
+  TerminalEdit frame;
+  memset(&frame, 0, sizeof(frame));
+  copy(frame.text, "gsh:/");
+  copy(frame.text + strlen(frame.text), cwd);
+  copy(frame.text + strlen(frame.text), " $ ");
+  u32 prefix = strlen(frame.text);
+  copy(frame.text + prefix, line);
+  frame.bytes = prefix + length;
+  frame.cursor = prefix + editor.cursor;
+  frame.action = action;
+  int s;
+  while ((s = TerminalEditSend(terminal, &frame)) == S_AGAIN)
+    Yield(1);
+  if (s < 0)
+    edit_failure("SHELL EDIT SEND ", s);
+  while ((s = TerminalCall(TERM_EDIT_STATUS, terminal, 0, 0, 0, 0)) == S_AGAIN)
+    Yield(1);
+  if (s < 0)
+    edit_failure("SHELL EDIT ACK ", s);
+}
 static void prompt(void) {
-  put("gsh:/");
-  put(cwd);
-  put(" $ ");
+  int mode = TerminalMode(terminal, 0);
+  if (mode < 0)
+    edit_failure("SHELL RAW MODE ", mode);
+  render_edit(clear_next ? 2 : 0);
+  clear_next = 0;
 }
 static void status(i32 code, u32 reason, i32 startup) {
   last_code = code;
@@ -148,6 +189,13 @@ static void execute(void) {
     }
     Exit(code);
   }
+  if (streq(command, "clear")) {
+    if (usage(1, 1))
+      return;
+    clear_next = 1;
+    status(0, PROCESS_EXITED, 0);
+    return;
+  }
   if (streq(command, "help") || streq(command, "which")) {
     int which = streq(command, "which");
     if (usage(which ? 2 : 1, 2))
@@ -166,17 +214,20 @@ static void execute(void) {
       } else {
         put(item->name);
         put(item->kind == 0   ? ": builtin\n"
+            : item->kind == 5 ? ": /boot/writer.snx (catalog 6)\n"
             : item->kind == 2 ? ": /boot/tview.snx (catalog 5)\n"
                               : ": /boot/gcmd.snx (catalog 4)\n");
       }
     } else {
       put("builtins: help pwd cd history status exit\n");
-      put("navigation: which; paths / = /home/user (read-only)\n");
+      put("navigation: which; clear (Ctrl+L); / = /home/user\n");
       for (u32 i = 0; i < sizeof(shell_commands) / sizeof(*shell_commands); i++)
         if (shell_commands[i].kind == 1 || shell_commands[i].kind == 2) {
           put(shell_commands[i].usage);
           put("\n");
         }
+      put("workspace (write session): touch mkdir rm rmdir write append cp mv "
+          "sync\n");
       put("diagnostics: args exitcode spin fault\n");
     }
   } else if (streq(command, "pwd")) {
@@ -220,6 +271,58 @@ static void execute(void) {
     }
   } else if (entry && (entry->kind == 1 || entry->kind == 3)) {
     external(IX_COMMAND, 0);
+    return;
+  } else if (entry && entry->kind == 5) {
+    if (!writable) {
+      put("read-only session\n");
+      status(1, PROCESS_EXITED, 0);
+      return;
+    }
+    int dual = streq(command, "cp") || streq(command, "mv"),
+        text = streq(command, "write") || streq(command, "append"),
+        sync = streq(command, "sync");
+    if ((sync && words.argc != 1) ||
+        (!sync && !text && words.argc != (dual ? 3u : 2u)) ||
+        (text && words.argc < 3)) {
+      put("usage: ");
+      put(entry->usage);
+      put("\n");
+      status(2, PROCESS_EXITED, 0);
+      return;
+    }
+    ShellWords original = words;
+    words.used = 0;
+    for (u32 i = 0; i < original.argc; i++) {
+      const char *value = original.bytes + original.offsets[i];
+      char path[128];
+      if (i == 1 || (dual && i == 2)) {
+        if (shell_path(cwd, value, path)) {
+          put("path outside grant or too long\n");
+          status(1, PROCESS_EXITED, 0);
+          return;
+        }
+        if (!*path)
+          copy(path, ".");
+        value = path;
+      }
+      words.offsets[i] = words.used;
+      copy(words.bytes + words.used, value);
+      words.used += strlen(value) + 1;
+    }
+    u32 rights = FS_LOOKUP;
+    if (sync)
+      rights = FS_COMMIT;
+    else if (streq(command, "touch"))
+      rights |= FS_CREATE | FS_WRITE;
+    else if (streq(command, "mkdir"))
+      rights |= FS_CREATE;
+    else if (streq(command, "rm") || streq(command, "rmdir"))
+      rights |= FS_REMOVE;
+    else if (streq(command, "mv"))
+      rights |= FS_REMOVE | FS_CREATE;
+    else
+      rights |= FS_READ | FS_WRITE | FS_CREATE;
+    external(IX_WRITETOOLS, rights);
     return;
   } else if (entry && entry->kind == 4) {
     put("unavailable: ");
@@ -295,6 +398,133 @@ static void execute(void) {
   }
   status(0, PROCESS_EXITED, 0);
 }
+static char candidates[128][128];
+static int starts(const char *s, const char *prefix) {
+  while (*prefix)
+    if (*s++ != *prefix++)
+      return 0;
+  return 1;
+}
+static void complete_input(void) {
+  if (editor.cursor != length)
+    return;
+  u32 start = editor.cursor;
+  while (start && line[start - 1] != ' ')
+    start--;
+  for (u32 i = 0; i < length; i++)
+    if (line[i] == '\\' || line[i] == '\'' || line[i] == '"')
+      return;
+  char token[256];
+  copy(token, line + start);
+  u32 n = 0, prefix = 0;
+  if (!start) {
+    for (u32 i = 0; i < sizeof(shell_commands) / sizeof(*shell_commands); i++)
+      if (shell_commands[i].kind != 4 &&
+          starts(shell_commands[i].name, token)) {
+        copy(candidates[n++], shell_commands[i].name);
+      }
+  } else {
+    char path[128], parent[256];
+    copy(parent, token);
+    char *base = token;
+    for (u32 i = 0; token[i]; i++)
+      if (token[i] == '/')
+        base = token + i + 1;
+    prefix = (u32)(base - token);
+    if (prefix)
+      parent[prefix] = 0;
+    else
+      copy(parent, ".");
+    if (shell_path(cwd, parent, path))
+      return;
+    if (!*path)
+      copy(path, ".");
+    int dir = OpenAt(root, path, FS_READ | FS_LOOKUP | FS_ENUM, OPEN_DIRECTORY);
+    if (dir < 0)
+      return;
+    DirEntry entries[8];
+    DirPage page = {0, 0, (u32)entries, 8, 0, 0};
+    int error = 0;
+    do {
+      error = DirectoryRead(dir, &page);
+      if (error < 0)
+        break;
+      for (u32 i = 0; i < page.count; i++)
+        if (n < 128 && starts(entries[i].name, base)) {
+          copy(candidates[n], entries[i].name);
+          if (entries[i].dir)
+            copy(candidates[n] + strlen(candidates[n]), "/");
+          n++;
+        }
+    } while (!page.done);
+    Close(dir);
+    if (error < 0)
+      return;
+  }
+  if (!n)
+    return;
+  u32 common = strlen(candidates[0]);
+  for (u32 i = 1; i < n; i++) {
+    u32 j = 0;
+    while (j < common && candidates[0][j] == candidates[i][j])
+      j++;
+    common = j;
+  }
+  while (common && ((u8)candidates[0][common] & 0xc0) == 0x80)
+    common--;
+  u32 typed = strlen(token + prefix);
+  if (common > typed) {
+    char suffix[256];
+    u32 used = 0;
+    for (u32 i = typed; i < common; i++) {
+      char c = candidates[0][i];
+      if (c == ' ' || c == '\\' || c == '\'' || c == '"' || c == '|' ||
+          c == '&' || c == ';' || c == '<' || c == '>' || c == '$' ||
+          c == '`' || c == '*' || c == '?')
+        suffix[used++] = '\\';
+      suffix[used++] = c;
+    }
+    if (line_insert(&editor, suffix, used) < 0)
+      return;
+  } else if (n > 1) {
+    render_edit(1);
+    for (u32 i = 0; i < n; i++) {
+      for (u32 j = 0; candidates[i][j]; j++)
+        if ((u8)candidates[i][j] < 32 || candidates[i][j] == 127)
+          candidates[i][j] = '?';
+      put(candidates[i]);
+      put("\n");
+    }
+  }
+  if (n == 1 && candidates[0][strlen(candidates[0]) - 1] != '/')
+    line_insert(&editor, " ", 1);
+  render_edit(0);
+}
+static void edit_key(int key) {
+  if (key == 328) {
+    if (recall < 0)
+      copy(draft, line);
+    if ((u32)(recall + 1) < history_count)
+      recall++;
+    if (recall >= 0)
+      line_set(&editor, history[(history_total - 1 - (u32)recall) % 16]);
+  } else if (key == 336) {
+    if (recall >= 0) {
+      recall--;
+      line_set(&editor, recall < 0
+                            ? draft
+                            : history[(history_total - 1 - (u32)recall) % 16]);
+    }
+  } else if (key == 12) {
+    render_edit(2);
+    return;
+  } else if (key == 9) {
+    complete_input();
+    return;
+  } else
+    line_key(&editor, key);
+  render_edit(0);
+}
 int main(void) {
   StartInfo start;
   terminal = TerminalCurrent();
@@ -318,23 +548,48 @@ int main(void) {
       put(banner[row][1]);
       put("\n");
     }
+  writable = cli.argc == 1 && streq(cli.bytes, "shell-write");
   put("SINO user Shell\nSINO 0.10 | ");
   integer((i32)columns);
   put(" x ");
   integer((i32)rows);
-  put("\n/ = /home/user (read-only)\nType help for commands; about for "
-      "sources.\n");
+  put(writable ? "\n/ = /home/user (read-write)\n"
+               : "\n/ = /home/user (read-only)\n");
+  put("Type help for commands; about for sources.\n");
   prompt();
+  char utf[4];
+  u32 utf_used = 0, utf_need = 0;
   for (;;) {
     TerminalEvent event;
-    while (TerminalNextEvent(terminal, &event) == 0)
-      if (event.type == TERM_INTERRUPT) {
-        length = 0;
-        position = available;
-        status(130, PROCESS_CANCELED, 0);
-        put("\n");
-        prompt();
+    if (TerminalNextEvent(terminal, &event) == 0) {
+      if (event.type == TERM_TEXT) {
+        input[0] = (char)event.value;
+        position = 0;
+        available = 1;
+        goto consume;
       }
+      if (event.type == TERM_EOF) {
+        render_edit(1);
+        if (length && !rejected)
+          execute();
+        return last_code;
+      }
+      if (event.type == TERM_INTERRUPT) {
+        render_edit(1);
+        line_set(&editor, "");
+        position = available;
+        recall = -1;
+        utf_used = utf_need = 0;
+        rejected = 0;
+        status(130, PROCESS_CANCELED, 0);
+        prompt();
+      } else if (event.type == TERM_KEY) {
+        utf_used = utf_need = 0;
+        edit_key((int)event.value);
+      } else if (event.type == TERM_RESIZE)
+        render_edit(0);
+      continue;
+    }
     if (position == available) {
       int n = StreamRead(cli.in, input, sizeof(input));
       if (n == S_AGAIN) {
@@ -342,11 +597,9 @@ int main(void) {
         continue;
       }
       if (n == 0) {
-        if (length) {
-          line[length] = 0;
+        render_edit(1);
+        if (length && !rejected)
           execute();
-          length = 0;
-        }
         return last_code;
       }
       if (n == S_CLOSED)
@@ -356,17 +609,50 @@ int main(void) {
       position = 0;
       available = (u32)n;
     }
-    char c = input[position++];
+  consume:;
+    u8 c = (u8)input[position++];
     if (c == '\n') {
-      line[length] = 0;
-      execute();
-      length = 0;
+      utf_used = utf_need = 0;
+      if (!rejected) {
+        render_edit(1);
+        execute();
+      }
+      line_set(&editor, "");
+      recall = -1;
+      rejected = 0;
       prompt();
-    } else if (length < SHELL_LINE - 1)
-      line[length++] = c;
-    else {
-      put("line too long\n");
-      return 2;
+      continue;
     }
+    if (rejected)
+      continue;
+    if (c == 8 || c == 9) {
+      utf_used = utf_need = 0;
+      edit_key(c);
+      continue;
+    }
+    int result = 0;
+    if (c < 128) {
+      utf_used = utf_need = 0;
+      char ch = (char)c;
+      result = line_insert(&editor, &ch, 1);
+    } else {
+      if (!utf_used)
+        utf_need = c >= 0xc2 && c <= 0xdf   ? 2
+                   : c >= 0xe0 && c <= 0xef ? 3
+                   : c >= 0xf0 && c <= 0xf4 ? 4
+                                            : 1;
+      utf[utf_used++] = (char)c;
+      if (utf_used == utf_need) {
+        result = line_insert(&editor, utf, utf_used);
+        utf_used = utf_need = 0;
+      }
+    }
+    if (result < 0) {
+      render_edit(1);
+      put("input rejected: invalid UTF-8 or line limit\n");
+      line_set(&editor, "");
+      rejected = 1;
+    }
+    render_edit(0);
   }
 }

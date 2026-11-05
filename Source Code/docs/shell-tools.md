@@ -1,6 +1,6 @@
 # G5a everyday Shell commands
 
-Use `run /boot/term.snx /g3`. The new frontend starts at **120 by 25 cells**
+Press F12 or use `run /boot/term.snx`. The new frontend starts at **120 by 25 cells**
 in an 872 by 522 pixel window (7-pixel ASCII cells plus margins). Resizing still
 maps to the actual available grid, up to 120 by 35. Non-ASCII glyphs occupy
 three cells under the existing font convention. The legacy F2 terminal keeps
@@ -86,8 +86,8 @@ the output address, ECX capacity>=32 and EDX must be0. CalendarTime is eight u32
 size32, version1, year, month, day, hour, minute, second. Success writes exactly
 32 bytes. Invalid/short/nonwritable output, flags or stale RTC data leave output
 unchanged; stale data returns S_AGAIN. The cached RTC service supplies the value;
-there is no CMOS access from userspace. FEATURE_CALENDAR=256 makes the current
-feature mask511. Older clients must keep querying feature bits.
+there is no CMOS access from userspace. FEATURE_CALENDAR=256 made the G5a
+feature mask511; G5b adds WORKSPACE=512 for mask1023, and G5c adds LINE_EDIT=1024 for mask2047. Older clients must keep querying feature bits.
 
 policy_tests.c checks strict/compat access, layout, date ranges, invalid output,
 reserved flags and untouched output tails. test-text-scan.c exercises the same
@@ -97,3 +97,5 @@ calendar/information output, long files and resource recovery. Run the Stage2
 gate and read its saved summary; full GUI/system validation has separate scope.
 
 Final evidence: stage2-20261105-184009-da901c97 passed 8/8 groups and389 checks, failed0/not-run0/exit0. Ordinary dev-20261105-184416-8fd9f1b2 passed (kernel151648 bytes, BSS end1884800). Visible private-VM welcome/120-column/date/tail/pager smoke passed; screenshot inspected and VM stopped.
+
+G5b adds explicit `run /boot/term.snx /write` for touch/mkdir/rm/rmdir/write/append/cp/mv/sync using a granted home workspace. Read-only sessions and catalogs 4 and 5 keep their previous access scope. Writable-mode authority, publication versus persistence and intentional compatibility differences are in [workspace-shell.md](workspace-shell.md).

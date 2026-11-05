@@ -1,9 +1,7 @@
 # Text sessions and G1 desktop frontend
 
 Stage F delivered the headless session backend. G1 adds a Ring 3 desktop frontend
-and a strict, deadline-bound session probe using the same API. F12 opens the new
-frontend. G2 adds atomic interactive launch/restore and G3 adds an opt-in user
-Shell; PTY, ANSI and job control remain future work. Input arrives through focused USERAPP events, with copied drawing
+and a strict, deadline-bound session probe using the same API. F12 now opens the formal user Shell. G2 adds atomic interactive launch/restore; PTY, ANSI and job control remain future work. Input arrives through focused USERAPP events, with copied drawing
 commands for display. Global input and framebuffer access stay kernel-owned.
 
 Stage F gate: stage2-20261105-040857-714bf310, 8/8 groups, 360 checks, failed=0,
@@ -84,7 +82,7 @@ automatically rebound: applications explicitly use TerminalCurrent's handle.
 
 ## Wire ABI
 
-FEATURE_TERMINALS=128, current feature mask=511. SYS_TERMINAL=0x14a:
+FEATURE_TERMINALS=128, current feature mask=2047. SYS_TERMINAL=0x14a:
 EBX=TerminalRequest*, ECX=24, EDX=0. Six u32 fields: op, handle, buffer, bytes,
 value, extra. All unused request fields must be zero, except zero-length I/O
 ignores its data pointer and queries ignore capacity beyond the defined output.
@@ -131,7 +129,7 @@ does not reserve global device input. The headless F suite covers its own API
 authority checks. G1 separately exercises desktop keyboard/focus routing below.
 Thread-level WAITING and blocked kernel C stacks remain future work.
 
-## G1 desktop frontend
+## Historical G1 desktop frontend
 
 `user/terminal_frontend.c` implements `/boot/term.snx`. F12 and the legacy Shell
 command `run /boot/term.snx` open independent windows. The resolved read-only boot
@@ -207,10 +205,14 @@ with a 148128-byte kernel and BSS end 1884768. A visible smoke test on that
 ordinary ISO passed F12, ASCII input, Chinese IME and copied text checks. Its
 screenshot was inspected and its private VM stopped.
 
-G2 adds an opt-in atomic interactive startup and session broker. See [interactive-runs.md](interactive-runs.md) for ownership, typed requests/results and stream roles. Use `run /boot/term.snx /g2` for its strict diagnostic probes.
+G2 adds an opt-in atomic interactive startup and session broker. See [interactive-runs.md](interactive-runs.md) for ownership, typed requests/results and stream roles. In a ShellBridge test image, use `run /boot/termqa.snx /broker-test` for its strict diagnostic probes.
 
-G3 adds `run /boot/term.snx /g3` for a strict user Shell with quoted argv,
+G3 introduced the broker path now used by `run /boot/term.snx` for a strict user Shell with quoted argv,
 per-session cwd within a read-only home grant, bounded history and external text
 tools. See [user-shell.md](user-shell.md) for syntax, statuses and verification.
 
 G5a adds the plain-text user welcome, everyday text/information commands and a 120-column default. See [shell-tools.md](shell-tools.md). The historical G1 dimensions and evidence above describe that earlier delivery.
+
+G5b adds an explicit writable frontend mode, now selected by /write. The default stays read-only; session ownership and cancellation contracts are unchanged. See [workspace-shell.md](workspace-shell.md).
+
+G5c adds the editable prompt protocol and separates diagnostics from the ordinary boot image. See [shell-editing.md](shell-editing.md).

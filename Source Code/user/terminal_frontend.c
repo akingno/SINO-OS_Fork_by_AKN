@@ -1,8 +1,16 @@
-/* G1 trusted compatibility frontend, caps=0. Shell launch policy follows in G2.
- */
+/* Trusted text frontend; stage-number launch switches are not public ABI. */
+#ifndef MODE
+#define MODE 0
+#endif
 #include "sdk.h"
 #include "interactive.h"
 #include "terminal_model.h"
+#include "terminal_edit_model.h"
+#include "line_edit.h"
+static char paste_text[256];
+static u32 paste_size, paste_position;
+static TerminalEditView edit_view;
+static TerminalEdit edit_frame;
 int terminal_probe(void);
 
 #define PENDING_INPUT 64u
@@ -44,9 +52,14 @@ static int draw(void) {
       column = next;
     }
   }
-  if (!model.scroll && model.column < model.columns)
-    ui_canvas_fill(&canvas, 16 + (int)model.column * 7,
-                   56 + (int)(shown - 1) * 18, 6, 1, 0xd6dce6);
+  u32 caret_line = edit_view.active ? edit_view.caret_line : model.line;
+  u32 caret_column = edit_view.active ? edit_view.caret_column : model.column;
+  u32 distance =
+      (model.line + TERMINAL_HISTORY - caret_line) % TERMINAL_HISTORY;
+  int caret_row = (int)shown - 1 - (int)distance + (int)model.scroll;
+  if (caret_row >= 0 && caret_row < (int)shown && caret_column < model.columns)
+    ui_canvas_fill(&canvas, 16 + (int)caret_column * 7, 56 + caret_row * 18, 6,
+                   1, 0xd6dce6);
   ui_canvas_text(&canvas, 16, (int)height - 26, 2, notice, 0x94ade3);
   return Scene(window, (const UiScene *)&canvas);
 }
@@ -64,6 +77,28 @@ static void size(void) {
 }
 static void enqueue(const UiEvent *e, u32 mode) {
   PendingInput item = {TERM_TEXT, 0, 0, {0}};
+  if (paste_size && !(e->type == MSG_KEY && e->key == 3)) {
+    notice = "Paste busy: new input rejected";
+    dirty = 1;
+    return;
+  }
+  if (e->type == MSG_KEY && e->key == 22) {
+    if (!shell_mode || child) {
+      notice = "Paste is available at the Shell prompt";
+      dirty = 1;
+      return;
+    }
+    int n = api(SYS_CLIP_GET, (u32)paste_text, 255, 0);
+    LineEditor check = {0};
+    if (n < 0 || line_insert(&check, paste_text, (u32)n) < 0) {
+      notice = "Paste rejected: single line, valid UTF-8, at most 255 bytes";
+      dirty = 1;
+      return;
+    }
+    paste_size = (u32)n;
+    paste_position = 0;
+    return;
+  }
   if (e->type == MSG_TEXT)
     item.bytes = (u32)text_encode((u32)e->key, item.text);
   else if (e->type == MSG_KEY) {
@@ -76,6 +111,7 @@ static void enqueue(const UiEvent *e, u32 mode) {
     if (e->key == 3) {
       int status = TerminalFeed(control, TERM_CANCEL, 0, 0, 0);
       count = 0;
+      paste_size = paste_position = 0;
       if (status == S_AGAIN) {
         pending[head] = (PendingInput){TERM_CANCEL, 0, 0, {0}};
         count = 1;
@@ -84,7 +120,10 @@ static void enqueue(const UiEvent *e, u32 mode) {
       dirty = 1;
       return;
     }
-    if (e->key == 4)
+    if (e->key == 12) {
+      item.type = TERM_KEY;
+      item.value = 12;
+    } else if (e->key == 4)
       item.type = TERM_EOF;
     else if (e->key == 13 || e->key == 8 || e->key == 9 ||
              (e->key >= 32 && e->key < 127)) {
@@ -100,8 +139,11 @@ static void enqueue(const UiEvent *e, u32 mode) {
   if (item.type == TERM_TEXT && !item.bytes)
     return;
   if (count == PENDING_INPUT) {
+    head = count = 0;
+    pending[0] = (PendingInput){TERM_CANCEL, 0, 0, {0}};
+    count = 1;
     if (notice != input_full && streq(Arguments(), "/qa"))
-      Log("G1 INPUT FULL\n");
+      Log("TERMINAL INPUT FULL\n");
     notice = input_full;
     dirty = 1;
     return;
@@ -124,6 +166,22 @@ static void feed(void) {
     count--;
   }
 }
+static void queue_paste(void) {
+  for (u32 turn = 0;
+       turn < 8 && paste_position < paste_size && count < PENDING_INPUT - 1;
+       turn++) {
+    PendingInput item = {TERM_TEXT, 0, 0, {0}};
+    u8 first = (u8)paste_text[paste_position];
+    u32 n = first < 128 ? 1 : first < 0xe0 ? 2 : first < 0xf0 ? 3 : 4;
+    item.bytes = n;
+    memcpy(item.text, paste_text + paste_position, n);
+    paste_position += n;
+    pending[(head + count) % PENDING_INPUT] = item;
+    count++;
+  }
+  if (paste_position == paste_size && !count)
+    paste_size = paste_position = 0;
+}
 static int cleanup(void) {
   if (task > 0) {
     CancelProcess(task);
@@ -141,10 +199,15 @@ int main(void) {
   StartInfo start;
   if (QueryStartInfo(&start) || start.caps)
     return 1;
-  if (start.policy == PROCESS_STRICT)
+  if (start.policy == PROCESS_STRICT) {
+#if MODE == 1
     return terminal_probe();
+#else
+    return 2;
+#endif
+  }
   const char *args = Arguments();
-  if (streq(args, "/selftest")) {
+  if (MODE == 1 && streq(args, "/selftest")) {
     terminal_model_init(&model, 120, 25);
     terminal_model_write(&model, (const u8 *)"ab\bX\n\xe4\xbd", 7);
     terminal_model_write(&model, (const u8 *)"\xa0", 1);
@@ -155,17 +218,22 @@ int main(void) {
     Log("TERMINAL MODEL PASS\n");
     return 0;
   }
-  shell_mode = streq(args, "/g3");
+  int writable = streq(args, "/write");
+  shell_mode = MODE == 0;
+  if (MODE == 0 && *args && !writable) {
+    Log("usage: term [/write]\n");
+    return 2;
+  }
   interactive_mode =
-      shell_mode || streq(args, "/g2") || streq(args, "/g2-fault");
+      shell_mode || streq(args, "/broker-test") || streq(args, "/broker-fault");
   control = TerminalCreate(120, 25);
   if (control < 0) {
     Log("TERMINAL FRONTEND unavailable\n");
     return 1;
   }
-  window = Window(shell_mode         ? "SINO Shell (G3)"
-                  : interactive_mode ? "Interactive Terminal (G2)"
-                                     : "New Terminal (G1)",
+  window = Window(shell_mode         ? "SINO Shell"
+                  : interactive_mode ? "Broker diagnostic"
+                                     : "Terminal diagnostic",
                   872, 522);
   if (window < 0) {
     cleanup();
@@ -185,7 +253,7 @@ int main(void) {
   RunSpec spec = {sizeof(spec),
                   1,
                   0,
-                  (u32) "/boot/term.snx",
+                  (u32) "/boot/termqa.snx",
                   1,
                   strlen(probe_mode) + 1,
                   (u32)probe_mode,
@@ -195,8 +263,10 @@ int main(void) {
                   streq(args, "/fault-test") ? 100u : 30000u,
                   0};
   if (interactive_mode) {
-    directory = GrantDirectory(shell_mode ? "/home/user" : "/boot",
-                               FS_READ | FS_LOOKUP | FS_ENUM | FS_DELEGATE);
+    directory =
+        writable ? WorkspaceDirectory()
+                 : GrantDirectory(shell_mode ? "/home/user" : "/boot",
+                                  FS_READ | FS_LOOKUP | FS_ENUM | FS_DELEGATE);
     if (directory < 0) {
       cleanup();
       return 1;
@@ -206,9 +276,11 @@ int main(void) {
     intent.version = 1;
     intent.program = shell_mode ? IX_SHELL : 1;
     intent.argc = 1;
-    intent.bytes = 6;
-    copy(intent.argv, "shell");
+    copy(intent.argv, writable ? "shell-write" : "shell");
+    intent.bytes = strlen(intent.argv) + 1;
     intent.rights = FS_READ | FS_LOOKUP | (shell_mode ? FS_ENUM : 0);
+    if (writable)
+      intent.rights = FS_RIGHTS & ~FS_DELEGATE;
     task = InteractiveStart(control, &intent, directory, 0);
   } else
     task = StartRun(&spec);
@@ -241,10 +313,13 @@ int main(void) {
       }
       if (changed) {
         count = 0;
+        paste_size = paste_position = 0;
         UiEvent stale;
         for (int i = 0; i < 16 && Event(&stale) == 0; i++)
           if (stale.type == MSG_CLOSE)
             return cleanup();
+          else if (stale.type == MSG_KEY && stale.key == 3)
+            enqueue(&stale, 0);
       }
     }
     TerminalInfo info;
@@ -258,6 +333,13 @@ int main(void) {
       UiEvent event;
       if (Event(&event) != 0)
         break;
+      if (event.type == MSG_INPUT_REJECTED) {
+        UiEvent cancel = {MSG_KEY, 0, 0, 0, 3};
+        enqueue(&cancel, info.mode);
+        notice = "Input overflow: unfinished input canceled";
+        dirty = 1;
+        continue;
+      }
       if (event.type == MSG_CLOSE)
         return cleanup();
       if (!finished)
@@ -274,10 +356,18 @@ int main(void) {
       dirty = 1;
       probe_ready = 1;
     }
-    if (probe_ready &&
-        (streq(args, "/fault-test") || (streq(args, "/g2-fault") && child > 0)))
+    if (TerminalCall(TERM_EDIT_VIEW, control, &edit_frame, sizeof(edit_frame),
+                     0, 0) == 0) {
+      terminal_edit_apply(&model, &edit_view, &edit_frame);
+      dirty = 1;
+      if (TerminalCall(TERM_EDIT_ACK, control, 0, 0, edit_frame.serial, 0) < 0)
+        return cleanup();
+    }
+    if (probe_ready && (streq(args, "/fault-test") ||
+                        (streq(args, "/broker-fault") && child > 0)))
       __asm__ volatile("ud2");
     if (!finished) {
+      queue_paste();
       feed();
       size();
       if (resize_width) {
@@ -332,6 +422,7 @@ int main(void) {
         task = 0;
         count = 0;
         finished = 1;
+        edit_view.active = 0;
         dirty = 1;
         notice =
             shell_mode

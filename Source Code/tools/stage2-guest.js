@@ -144,6 +144,9 @@ async function run(context, mode = 'native') {
             assert.equal(await command('cat /home/user/stage2-marker.txt'), 'stage2 durable marker\n');
             assert.equal((await processes()).length, 0);
         });
+        await check('cold boot preserves G5b user Shell committed bytes',async()=>{
+            assert.equal(await command('cat /home/user/g5b-durable.txt'),'g5b durable\n');
+        });
         return;
     }
 
@@ -277,7 +280,7 @@ async function run(context, mode = 'native') {
     });
     await check('G2 interactive launch and broker contracts', async () => {
         const offset=guestLog().length, faults=await value('process_faults');
-        await launch('g2test','suite');
+        await launch('brokerqa','suite');
         await until(()=>guestLog().slice(offset).includes('INTERACTIVE SUITE PASS'),'G2 suite',30000);
         await until(async()=>(await processes()).length===0,'G2 jobs reaped');
         assert.equal(await value('process_faults'),faults);
@@ -362,6 +365,7 @@ async function run(context, mode = 'native') {
         assert.equal(await value('process_faults'), faults + 1);
         assert.match(await command('sync'), /Home data saved/);
         assert.equal((await processes()).length, 0);
+        await require('./stage2-frontend').persist(context,{check,command,resources,value,until,launch,processes,memory,symbols});
         report.finalResources = await resources();
     });
 }

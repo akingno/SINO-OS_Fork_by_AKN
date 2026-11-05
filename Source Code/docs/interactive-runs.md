@@ -1,7 +1,7 @@
 # G2 interactive tasks and session broker
 
 G2 provides an interactive launch transaction and a session-bound broker. The
-diagnostic frontend is `run /boot/term.snx /g2`. Its strict root probe accepts
+diagnostic frontend is `run /boot/termqa.snx /broker-test` in a ShellBridge test image. Its strict root probe accepts
 `go`, `fault` and `spin` to exercise worker completion, fault and cancellation.
 Ctrl+C at the root produces an interrupt event and clears pending canonical
 input. Ctrl+C during a worker cancels that worker. G3 supplies the application
@@ -47,7 +47,7 @@ session feature flag.
 InteractiveSpec is 1116 bytes. Its fields are size, version=1, program, id, argc,
 bytes, directory rights, sixteen contiguous string offsets, and 1024 argv bytes.
 Up to sixteen NUL-terminated arguments are copied and retain empty/UTF-8 values.
-Only READ/LOOKUP/ENUM directory rights are accepted. The controller must own a
+Legacy probe workers and catalog5 accept only READ/LOOKUP/ENUM directory rights; G5b root catalog3 and writer catalog6 additionally accept explicit workspace write/commit rights without DELEGATE. The controller must own a
 grant with those rights and DELEGATE. Children receive only requested rights.
 
 InteractiveResult is 48 bytes. It holds size, version=1, request id, signed
@@ -63,9 +63,9 @@ status. A completed task has status=0 and its typed exit/fault/cancel reason.
 | IX_FINISH=16 | Controller; value=owned completed worker handle, other fields zero | Restore root foreground, then publish its result |
 
 The boot catalog permits root ID1 and worker ID2, both resolved to the read-only
-boot g2test.snx probe. G3 adds root ID3 (gsh.snx) and worker ID4 (gcmd.snx).
+boot brokerqa.snx probe. G3 adds root ID3 (gsh.snx) and worker ID4 (gcmd.snx).
 G4 adds worker ID5 (tview.snx) for ls/stat/cat/view, with read-only file grants.
-ID4 rejects any directory rights. Runtime writable files and caller-provided
+G5b adds worker ID6 (writer.snx); ID4 rejects any directory rights. Runtime writable files and caller-provided
 executable paths have no catalog entry. See [file-tools.md](file-tools.md).
 
 The first root has request id zero. Its subsequent intents use consecutive
@@ -128,3 +128,5 @@ failed=0, not-run=0, exit=0. Ordinary build dev-20261105-161524-ccac3597
 passed with kernel 151264 bytes and BSS end 1884800. A visible private-VM smoke
 passed root startup, worker completion, Ctrl+C and foreground restoration.
 The screenshot was inspected and the VM stopped.
+
+G5b explicit writable startup and trusted fixed-home grant are defined in [workspace-shell.md](workspace-shell.md). The default Shell and test diagnostics stay read-only.

@@ -7,6 +7,16 @@ typedef struct {
   const char *usage;
 } ShellCommand;
 static const ShellCommand shell_commands[] = {
+ {"clear",0,"clear"},
+    {"touch", 5, "touch path"},
+    {"mkdir", 5, "mkdir path"},
+    {"rm", 5, "rm path"},
+    {"rmdir", 5, "rmdir path"},
+    {"write", 5, "write path text..."},
+    {"append", 5, "append path text..."},
+    {"cp", 5, "cp source target"},
+    {"mv", 5, "mv source target"},
+    {"sync", 5, "sync"},
     {"help", 0, "help [command]"},
     {"pwd", 0, "pwd"},
     {"cd", 0, "cd [path]"},

@@ -36,7 +36,7 @@ int main(void) {
     require(StreamWrite(cli.in, "x", 1) == S_DENIED &&
                 StreamRead(cli.out, &start, 1) == S_DENIED,
             "role rights");
-    require(Spawn("/boot/g2test.snx") == S_DENIED, "strict spawn denied");
+    require(Spawn("/boot/brokerqa.snx") == S_DENIED, "strict spawn denied");
     require(api(SYS_DUP, t, 0, 0) == S_BADHANDLE,
             "zero rights duplicate rejected");
     int reduced = api(SYS_DUP, cli.out, 8, 0);

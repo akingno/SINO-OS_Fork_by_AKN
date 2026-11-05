@@ -2,7 +2,7 @@
 const assert = require('node:assert/strict');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-async function run(context, api) {
+async function run(context, api, persistOnly=false) {
     const {qmp, guestLog} = context;
     const {check, command, resources, value, until, launch, processes, memory, symbols} = api;
     const baseline = await resources();
@@ -56,23 +56,24 @@ async function run(context, api) {
             'frontend and deadline-bound probe reaped');
         assert.deepEqual(await resources(), baseline);
     }
+    if(persistOnly)return require('./stage2-write-tools').persist({launch,until,processes,type,key,text,waitText});
     let first, second;
     await check('G1 independent Ring 3 frontend and shared text model', async () => {
         const offset = guestLog().length;
-        const pid = await launch('term', '/selftest');
+        const pid = await launch('termqa', '/selftest');
         await until(() => guestLog().slice(offset).includes('TERMINAL MODEL PASS'), 'frontend text selftest');
         await until(async () => !(await processes()).some(p => p.pid === pid), 'model selftest exit');
         assert.deepEqual(await resources(), baseline);
-        await key('f12');
-        await until(async () => (await processes()).filter(p => p.name === 'term.snx').length === 2, 'F12 frontend and strict probe');
-        first = (await processes()).filter(p => p.name === 'term.snx')[0].pid;
+        await launch('termqa');
+        await until(async () => (await processes()).filter(p => p.name === 'termqa.snx').length === 2, 'F12 frontend and strict probe');
+        first = (await processes()).filter(p => p.name === 'termqa.snx')[0].pid;
         await waitText(first, 'G1 session probe');
         await type('ab'); await key('backspace'); await type('c\n');
         await waitText(first, 'LINE ac');
         assert(!(await text(first)).includes('LINE abc'));
     });
     await check('G1 two focused windows isolate input and IME commits', async () => {
-        second = await launch('term', '/qa');
+        second = await launch('termqa', '/qa');
         await waitText(second, 'G1 session probe');
         await type('second\n'); await waitText(second, 'LINE second');
         assert(!(await text(first)).includes('second'));
@@ -122,22 +123,22 @@ async function run(context, api) {
     });
     await check('G1 frontend fault and controller loss reclaim bounded probe', async () => {
         const offset = guestLog().length;
-        first = await launch('term', '/fault-test');
+        first = await launch('termqa', '/fault-test');
         await until(async () => await value('process_faults') === faults + 1, 'frontend faults once');
         await until(async () => (await processes()).length === 0, 'faulted frontend probe deadline');
         assert(guestLog().slice(offset).includes('USER fault contained'), 'real CPL3 fault');
         assert.deepEqual(await resources(), baseline);
-        first = await launch('term', '/qa'); await waitText(first, 'G1 session probe');
+        first = await launch('termqa', '/qa'); await waitText(first, 'G1 session probe');
         await close(first);
     });
     await check('G1 client fault and external termination display typed results', async () => {
         const before = await value('process_faults');
-        first = await launch('term', '/qa'); await waitText(first, 'G1 session probe');
+        first = await launch('termqa', '/qa'); await waitText(first, 'G1 session probe');
         await type('fault\n'); await waitText(first, 'Task faulted');
         assert.equal(await value('process_faults'), before + 1);
         await key('ctrl','w'); await until(async () => (await processes()).length === 0, 'client fault window closes');
         assert.deepEqual(await resources(), baseline);
-        first = await launch('term', '/qa'); await waitText(first, 'G1 session probe');
+        first = await launch('termqa', '/qa'); await waitText(first, 'G1 session probe');
         const children = (await processes()).filter(p => p.pid !== first);
         assert.equal(children.length, 1);
         await command('kill ' + children[0].pid); await waitText(first, 'Task terminated');
@@ -145,10 +146,10 @@ async function run(context, api) {
         assert.deepEqual(await resources(), baseline);
     });
     await check('G1 session exhaustion fails cleanly and repeated close recovers', async () => {
-        first = await launch('term', '/qa'); await waitText(first, 'G1 session probe');
-        second = await launch('term', '/qa'); await waitText(second, 'G1 session probe');
+        first = await launch('termqa', '/qa'); await waitText(first, 'G1 session probe');
+        second = await launch('termqa', '/qa'); await waitText(second, 'G1 session probe');
         const offset = guestLog().length;
-        const third = await launch('term', '/qa');
+        const third = await launch('termqa', '/qa');
         await until(() => guestLog().slice(offset).includes('TERMINAL FRONTEND unavailable'), 'session quota failure');
         await until(async () => !(await processes()).some(p => p.pid === third), 'failed frontend reclaimed');
         await key('ctrl','w'); await until(async () => await window(second) < 0, 'second normal close');
@@ -157,11 +158,11 @@ async function run(context, api) {
         assert.equal(await value('process_faults'), faults + 2);
     });
     await check('G1 full pending input remains closable without waiting for the client', async () => {
-        first = await launch('term', '/qa'); await waitText(first, 'G1 session probe');
+        first = await launch('termqa', '/qa'); await waitText(first, 'G1 session probe');
         await type('stall\n'); await waitText(first, 'RAW ready');
         const offset = guestLog().length;
         for (let i = 0; i < 80; i++) await key('up');
-        assert(guestLog().slice(offset).includes('G1 INPUT FULL'), 'actually exhausted the pending queue');
+        assert(guestLog().slice(offset).includes('TERMINAL INPUT FULL'), 'actually exhausted the pending queue');
         await key('ctrl','w');
         await until(async () => (await processes()).length === 0, 'close bypasses input pressure', 2000);
         assert.deepEqual(await resources(), baseline);
@@ -191,7 +192,7 @@ async function run(context, api) {
         assert.deepEqual(await resources(), baseline);
     });
     await check('G2 desktop broker restores foreground after exit, fault and cancel', async () => {
-        first=await launch('term','/g2');await waitText(first,'G2 ready');
+        first=await launch('termqa','/broker-test');await waitText(first,'G2 ready');
         await key('ctrl','c');await waitText(first,'G2 interrupt');
         await type('go\n');await waitText(first,'G2 restored');
         const before=await value('process_faults');
@@ -199,18 +200,18 @@ async function run(context, api) {
         await until(async()=>await value('process_faults')===before+1,'G2 child fault');
         await until(async()=>((await text(first)).match(/G2 restored/g)||[]).length>=2,'restore after fault');
         await type('spin\n');await waitText(first,'G2 worker waiting');
-        second=await launch('term','/g2');await waitText(second,'G2 ready');
+        second=await launch('termqa','/broker-test');await waitText(second,'G2 ready');
         await type('spin\n');await waitText(second,'G2 worker waiting');
         await key('ctrl','c');await waitText(second,'G2 restored');
         assert((await processes()).some(p=>p.pid===first));
-        assert.equal((await processes()).filter(p=>p.name==='g2test.snx').length,3,'other foreground task survives');
+        assert.equal((await processes()).filter(p=>p.name==='brokerqa.snx').length,3,'other foreground task survives');
         await key('ctrl','w');await until(async()=>await window(second)<0,'second G2 closes');
         await key('ctrl','w');await until(async()=>(await processes()).length===0,'G2 group reaped');
         assert.deepEqual(await resources(),baseline);
     });
     await check('G2 last controller loss cancels noncooperative owned tasks', async () => {
         const before=await value('process_faults');
-        first=await launch('term','/g2-fault');await waitText(first,'G2 ready');
+        first=await launch('termqa','/broker-fault');await waitText(first,'G2 ready');
         await type('spin\n');
         await until(async()=>await value('process_faults')===before+1,'G2 frontend fault');
         await until(async()=>(await processes()).length===0,'kernel session ownership cleanup');
@@ -220,6 +221,8 @@ async function run(context, api) {
     await require('./stage2-shell').run({check,launch,processes,resources,value,until,key,type,text,waitText,window,command});
     await require('./stage2-files-cli').run({check,launch,processes,resources,value,until,key,type,text,waitText,window,command,memory,symbols,qmp});
     await require('./stage2-shell-tools').run({check,launch,processes,resources,until,key,type,text,waitText,command});
+    await require('./stage2-write-tools').run({check,launch,processes,resources,until,key,type,text,waitText,command});
+    await require('./stage2-line-edit').run({check,launch,processes,resources,until,key,type,text,waitText});
 
 }
-module.exports = {run};
+module.exports = {run,persist:(context,api)=>run(context,api,true)};

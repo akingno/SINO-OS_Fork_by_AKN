@@ -49,6 +49,6 @@ foreach ($variant in $variants) {
     if ($LASTEXITCODE -ne 0) { throw '32-bit kernel link failed' }
     & $objcopy -O binary (Join-Path $buildPath "kernel-$variant.exe") (Join-Path $buildPath "kernel-$variant.bin")
     if ($LASTEXITCODE -ne 0) { throw 'Flat kernel extraction failed' }
-    & node (Join-Path $taskRoot 'build-image32.js') $variant
+    & node (Join-Path $taskRoot 'build-image32.js') $variant $ShellBridge.IsPresent
     if ($LASTEXITCODE -ne 0) { throw '32-bit floppy image creation failed' }
 }

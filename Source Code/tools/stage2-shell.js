@@ -9,7 +9,7 @@ async function run(api) {
     }
     let first, second;
     await check('G3 Shell builtins, quoting, empty argv and syntax errors', async () => {
-        first = await launch('term', '/g3'); await waitText(first, 'SINO user Shell');
+        first = await launch('term', ''); await waitText(first, 'SINO user Shell');
         await waitText(first, 'gsh:/ $');
         const before = await text(first); await key('backspace');
         assert.equal(await text(first), before, 'empty backspace preserves prompt');
@@ -29,7 +29,7 @@ async function run(api) {
         await type('cd /\n'); await type('pwd\n'); await row(first, '/');
         await type('args '); await key('ctrl','spc'); await type('nihao'); await key('spc');
         await key('ctrl','spc'); await key('ret'); await row(first, 'arg[1]=6:你好');
-        second = await launch('term', '/g3'); await waitText(second, 'gsh:/ $');
+        second = await launch('term', ''); await waitText(second, 'gsh:/ $');
         await type('cd Documents\n'); await waitText(second, 'gsh:/Documents $');
         await key('alt','tab'); await type('pwd\n'); await row(first, '/');
         assert(!(await text(first)).endsWith('gsh:/Documents $'));
@@ -54,7 +54,7 @@ async function run(api) {
         assert.deepEqual(await resources(), baseline);
     });
     await check('G3 startup exhaustion reports a final error and accepts another command', async () => {
-        first=await launch('term','/g3');await waitText(first,'gsh:/ $');
+        first=await launch('term','');await waitText(first,'gsh:/ $');
         const blockers=[];
         try {
             for(let i=0;i<6;i++)blockers.push(await launch('spin'));
@@ -71,7 +71,7 @@ async function run(api) {
         assert.deepEqual(await resources(),baseline);
     });
     await check('G3 Ctrl+C discards a prompt line and long canonical input stays bounded', async () => {
-        first = await launch('term', '/g3'); await waitText(first, 'gsh:/ $');
+        first = await launch('term', ''); await waitText(first, 'gsh:/ $');
         await type('notacommand'); await key('ctrl','c');
         await type('echo reset\n'); await row(first, 'reset');
         assert(!(await text(first)).includes('unknown command: notacommand'));

@@ -9,7 +9,7 @@ async function run(api){
  async function closeAll(){await key('ctrl','w');await until(async()=>(await processes()).length===0,'G4 cleanup');assert.deepEqual(await resources(),baseline);}
  await check('G4 readonly commands, cwd paths, options and confinement',async()=>{
   initial=await resources();await launch('rdtest','fixtures');await until(async()=>(await processes()).length===0,'G4 fixtures ready');
-  baseline=await resources();first=await launch('term','/g3');await waitText(first,'gsh:/ $');
+  baseline=await resources();first=await launch('term','');await waitText(first,'gsh:/ $');
   await complete(first,'ls Documents/g4');await row(first,'tiny.txt');
   assert(!(await text(first)).split('\n').includes('.hidden'));
   await complete(first,'ls -la Documents/g4');await waitText(first,'f 5 tiny.txt');await waitText(first,'f 0 .hidden');
@@ -26,20 +26,20 @@ async function run(api){
   await key('ctrl','w');await until(async()=>(await processes()).length===0,'G4 read tools close');assert.deepEqual(await resources(),baseline);
  });
  await check('G4 pager raw keys, pages, quit, EOF, cancel and two sessions',async()=>{
-  first=await launch('term','/g3');await waitText(first,'gsh:/ $');
+  first=await launch('term','');await waitText(first,'gsh:/ $');
   await type('view Documents/g4/pages.txt\n');await more(first);
   assert(!(await text(first)).includes('PAGE-END'));
   await key('spc');await waitText(first,'PAGE-END');await until(async()=>/gsh:\/[^\n]* \$$/.test(await text(first)),'pager complete');
   await type('view Documents/g4/pages.txt\n');await more(first);await type('q');await until(async()=>/gsh:\/[^\n]* \$$/.test(await text(first)),'pager quit');
   await type('view Documents/g4/pages.txt\n');await more(first);await key('ctrl','d');await until(async()=>/gsh:\/[^\n]* \$$/.test(await text(first)),'pager EOF');
   await type('view Documents/g4/pages.txt\n');await more(first);
-  second=await launch('term','/g3');await waitText(second,'gsh:/ $');await complete(second,'cat Documents/g4/tiny.txt');await row(second,'hello');
+  second=await launch('term','');await waitText(second,'gsh:/ $');await complete(second,'cat Documents/g4/tiny.txt');await row(second,'hello');
   await key('alt','tab');await key('ctrl','c');await waitText(first,'task ended reason=3');
   await complete(first,'cat Documents/g4/tiny.txt');await row(first,'hello');await key('ctrl','w');await key('ctrl','w');
   await until(async()=>(await processes()).length===0,'both G4 windows closed');assert.deepEqual(await resources(),baseline);
  });
  await check('G4 Chinese paths, long-line paging, resize and close release file handles',async()=>{
-  first=await launch('term','/g3');await waitText(first,'gsh:/ $');
+  first=await launch('term','');await waitText(first,'gsh:/ $');
   await type('cat Documents/g4/');await key('ctrl','spc');await type('nihao');await key('spc');await key('ctrl','spc');await type('.txt\n');
   await row(first,'Chinese path');await until(async()=>/gsh:\/[^\n]* \$$/.test(await text(first)),'Chinese file command returns');
   await type('view Documents/g4/big.txt\n');await more(first);
@@ -49,7 +49,7 @@ async function run(api){
   await key('spc');await more(first);await closeAll();
  });
  await check('G4 detects file revision changes while paged and recovers',async()=>{
-  first=await launch('term','/g3');await waitText(first,'gsh:/ $');
+  first=await launch('term','');await waitText(first,'gsh:/ $');
   await type('view Documents/g4/pages.txt\n');await more(first);
   await command('write /home/user/Documents/g4/pages.txt changed');
   await key('spc');await waitText(first,'file changed; reopen');

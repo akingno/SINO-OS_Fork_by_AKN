@@ -5,7 +5,7 @@ async function run(api){
  async function complete(line){await type(line+'\n');await until(async()=>/gsh:\/[^\n]* \$$/.test(await text(pid)),'G5a prompt');}
  async function row(line){await until(async()=>(await text(pid)).split('\n').includes(line),line);}
  await check('G5a user banner, 120-column output, command help and aliases',async()=>{
-  pid=await launch('term','/g3');await waitText(pid,'SINO user Shell');
+  pid=await launch('term','');await waitText(pid,'SINO user Shell');
   await waitText(pid,'120 x 25');await waitText(pid,'/ = /home/user (read-only)');
   await complete('echo '+ 'w'.repeat(120));await row('w'.repeat(120));
   await complete('help grep');await waitText(pid,'grep [-n] text path');
@@ -19,7 +19,7 @@ async function run(api){
   await key('ctrl','w');await until(async()=>(await processes()).length===0,'G5a banner cleanup');assert.deepEqual(await resources(),baseline);
  });
  await check('G5a explicit head line count uses the same existing welcome file',async()=>{
-  pid=await launch('term','/g3');await waitText(pid,'gsh:/ $');
+  pid=await launch('term','');await waitText(pid,'gsh:/ $');
   async function fresh(line){await complete(line);const screen=await text(pid),marker='gsh:/ $ '+line;const at=screen.lastIndexOf(marker);assert(at>=0,'current command echo');return screen.slice(at+marker.length).trim();}
   const output=await fresh('head -n 2 welcome.txt');
   assert.equal(output,'Welcome to SINO Platinum Desktop.\ngsh:/ $','first line plus blank second line');
@@ -30,7 +30,7 @@ async function run(api){
   await key('ctrl','w');await until(async()=>(await processes()).length===0,'head reproduction cleanup');assert.deepEqual(await resources(),baseline);
  });
  await check('G5a public information commands report real values',async()=>{
-  pid=await launch('term','/g3');await waitText(pid,'gsh:/ $');
+  pid=await launch('term','');await waitText(pid,'gsh:/ $');
   await complete('ver');await row('SINO 0.10 SINO32 i386');
   await complete('uname -a');await row('SINO 0.10 SINO32 i386');
   await complete('time');assert.match(await text(pid),/\b\d{2}:\d{2}:\d{2}\b/);
@@ -42,7 +42,7 @@ async function run(api){
  });
  await check('G5a text tools handle options, raw counts and bounded long lines',async()=>{
   await launch('rdtest','fixtures');await until(async()=>(await processes()).length===0,'G5a fixtures');
-  const held=await resources();pid=await launch('term','/g3');await waitText(pid,'gsh:/ $');
+  const held=await resources();pid=await launch('term','');await waitText(pid,'gsh:/ $');
   await complete('head -n 1 Documents/g4/pages.txt');await row('page line');
   await complete('tail -n 1 Documents/g4/pages.txt');await row('PAGE-END');
   await complete('wc Documents/g4/tiny.txt');await row('0 1 5');
