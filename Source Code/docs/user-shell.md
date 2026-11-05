@@ -96,3 +96,5 @@ not-run0, exit0. Ordinary build `dev-20261105-172959-2f8e1044` passed, kernel
 151392 bytes, BSS end1884800. Its visible private-VM smoke passed Shell startup,
 cwd navigation and empty/quoted argv; screenshot inspected and VM stopped.
 The full 22-suite GUI gate remains a separate scope.
+
+G5a extends this entry with a 120-column default, user-owned SINO SH welcome, help/which/aliases, date/time/information tools and head/tail/wc/grep/hexdump/tree/find. Current behavior and intentional old-command differences are in [shell-tools.md](shell-tools.md). The existing strict policies and grant root are retained.

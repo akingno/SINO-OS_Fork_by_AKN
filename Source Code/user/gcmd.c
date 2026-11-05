@@ -2,6 +2,7 @@
  */
 #include "stream.h"
 #include "gsh_parse.h"
+#include "shell_commands.h"
 static CliInfo cli;
 static int put(const char *text) {
   u32 written;
@@ -29,12 +30,103 @@ int main(void) {
     return code;
   }
   if (streq(command, "echo")) {
-    for (u32 i = 1; i < cli.argc; i++) {
-      if ((i > 1 && put(" ") < 0) || put(cli.bytes + cli.offsets[i]) < 0)
+    u32 first = 1;
+    int newline = 1, escapes = 0;
+    while (first < cli.argc) {
+      const char *arg = cli.bytes + cli.offsets[first];
+      if (streq(arg, "-n"))
+        newline = 0;
+      else if (streq(arg, "-e"))
+        escapes = 1;
+      else
+        break;
+      first++;
+    }
+    if (escapes)
+      for (u32 i = first; i < cli.argc; i++)
+        for (const char *p = cli.bytes + cli.offsets[i]; *p; p++)
+          if (*p == '\\') {
+            p++;
+            if (!*p || (*p != 'n' && *p != 't' && *p != '\\')) {
+              put("echo: unsupported escape\n");
+              return 2;
+            }
+          }
+    for (u32 i = first; i < cli.argc; i++) {
+      if (i > first && put(" ") < 0)
+        return 1;
+      const char *p = cli.bytes + cli.offsets[i];
+      for (; *p; p++) {
+        char c = *p;
+        if (escapes && c == '\\') {
+          p++;
+          c = *p == 'n' ? '\n' : *p == 't' ? '\t' : '\\';
+        }
+        char out[2] = {c, 0};
+        if (put(out) < 0)
+          return 1;
+      }
+    }
+    return newline && put("\n") < 0;
+  }
+  if ((streq(command, "date") || streq(command, "time") ||
+       streq(command, "uptime") || streq(command, "about") ||
+       streq(command, "credits")) &&
+      cli.argc != 1)
+    return 2;
+  if (streq(command, "date") || streq(command, "time")) {
+    CalendarTime date;
+    int error = Calendar(&date);
+    if (error < 0) {
+      put("RTC unavailable\n");
+      return 1;
+    }
+    char out[32];
+    if (streq(command, "date")) {
+      number(date.year, out);
+      if (put(out) < 0 || put("-") < 0)
+        return 1;
+    }
+    u32 values[3] = {date.hour, date.minute, date.second};
+    int count = 3;
+    if (streq(command, "date")) {
+      values[0] = date.month;
+      values[1] = date.day;
+      count = 2;
+    }
+    for (int i = 0; i < count; i++) {
+      out[0] = (char)('0' + values[i] / 10);
+      out[1] = (char)('0' + values[i] % 10);
+      out[2] = 0;
+      if (put(out) < 0 || (i + 1 < count && put(count == 2 ? "-" : ":") < 0))
         return 1;
     }
     return put("\n") < 0;
   }
+  if (streq(command, "uptime")) {
+    SystemInfo info;
+    if (QuerySystemInfo(&info) || !info.ticks_hz)
+      return 1;
+    char n[12];
+    number(StreamTicks() / info.ticks_hz, n);
+    return put("up ") < 0 || put(n) < 0 || put(" seconds\n") < 0;
+  }
+  if (streq(command, "uname") || streq(command, "ver")) {
+    if (cli.argc > 2 ||
+        (cli.argc == 2 && (!streq(command, "uname") ||
+                           !streq(cli.bytes + cli.offsets[1], "-a"))))
+      return 2;
+    return put(streq(command, "ver") || cli.argc == 2
+                   ? "SINO 0.10 SINO32 i386\n"
+                   : "SINO\n") < 0;
+  }
+  if (streq(command, "about") || streq(command, "credits"))
+    return put("SINO 0.10 + SINO user Shell\nProject-specific C/assembly; not "
+               "a FreeDOS or Linux kernel fork.\nTools: NASM, GCC/Binutils, "
+               "Node.js, QEMU; firmware: SeaBIOS/VGA BIOS.\nFonts: Jarrah, "
+               "Kurrajong, Mallee and GNU Unifont (SIL OFL 1.1).\nPinyin "
+               "readings: mozillazg/pinyin-data (MIT).\nReferences: Intel "
+               "architecture manuals and QEMU documentation.\n") < 0;
   if (streq(command, "args")) {
     char n[12];
     number(cli.argc, n);

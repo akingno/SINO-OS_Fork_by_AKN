@@ -201,6 +201,9 @@ static inline int Sync(void) {
 static inline int Window(const char *p, int w, int h) {
   return api(SYS_WINDOW, (u32)p, (u32)w, (u32)h);
 }
+static inline int Calendar(CalendarTime *value) {
+  return api(SYS_CALENDAR, (u32)value, sizeof(*value), 0);
+}
 static inline int Time(TimeOfDay *value) {
   return api(SYS_TIME, (u32)value, sizeof(*value), 0);
 }

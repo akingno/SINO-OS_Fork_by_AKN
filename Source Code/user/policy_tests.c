@@ -84,6 +84,14 @@ static void query_tests(int strict) {
   require(api(QUERY_START,(u32)buffer,64,0)==0 && buffer[0]==24 && buffer[1]==1 &&
           buffer[2]==(u32)strict && buffer[3]==(strict?0:CAP_HOME) &&
           (buffer[4]&7)==7 && buffer[5]==0 && buffer[6]==0xccccccccu,"start policy immutable");
+  _Static_assert(SYS_CALENDAR==0x14b && sizeof(CalendarTime)==32,"calendar ABI");
+  CalendarTime date; int calendar=Calendar(&date);
+  for(u32 i=0;i<16;i++) buffer[i]=0xccccccccu;
+  require(api(SYS_CALENDAR,(u32)buffer,31,0)==S_INVALID && buffer[0]==0xccccccccu,"calendar short output");
+  require(api(SYS_CALENDAR,(u32)buffer,64,1)==S_INVALID && buffer[0]==0xccccccccu,"calendar reserved flags");
+  require(api(SYS_CALENDAR,USER_BASE,32,0)==S_INVALID,"calendar output rights");
+  require((system.features&FEATURE_CALENDAR) && calendar==0 && date.size==32 && date.version==1 && date.year>=2000 && date.month>=1 && date.month<=12 && date.day>=1 && date.day<=31 && date.hour<24 && date.minute<60 && date.second<60,"calendar strict read-only query");
+  require(api(SYS_CALENDAR,(u32)buffer,64,0)==0 && buffer[8]==0xccccccccu,"calendar query preserves tail");
   require(api(0xffffffffu,0,0,0)==S_INVALID,"unknown syscall");
 }
 int main(void) {

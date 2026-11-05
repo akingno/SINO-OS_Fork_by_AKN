@@ -219,6 +219,7 @@ async function run(context, api) {
 
     await require('./stage2-shell').run({check,launch,processes,resources,value,until,key,type,text,waitText,window,command});
     await require('./stage2-files-cli').run({check,launch,processes,resources,value,until,key,type,text,waitText,window,command,memory,symbols,qmp});
+    await require('./stage2-shell-tools').run({check,launch,processes,resources,until,key,type,text,waitText,command});
 
 }
 module.exports = {run};

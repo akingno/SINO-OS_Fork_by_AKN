@@ -120,7 +120,11 @@ async function run(directory) {
             const fileTextOutput=path.join(folder,'file-text-output.txt');
             await command(fileText,[],fileTextOutput);
             assert.equal(fs.readFileSync(fileTextOutput,'utf8').trim(),'FILE TEXT PASS');
-            return {checks:result.checks.length + 3, modelOutput, parserOutput, fileTextOutput,
+            const scan=path.join(folder,'text-scan.exe');
+            await command(host.tool('gcc'),[path.join(__dirname,'test-text-scan.c'),'-std=c11','-O2','-Wall','-Wextra','-Werror','-o',scan],path.join(folder,'text-scan-build.txt'));
+            const scanOutput=path.join(folder,'text-scan-output.txt');await command(scan,[],scanOutput);
+            assert.equal(fs.readFileSync(scanOutput,'utf8').trim(),'TEXT SCAN PASS');
+            return {checks:result.checks.length + 4, modelOutput, parserOutput, fileTextOutput, scanOutput,
                 report:path.join(folder, 'src32-refactor-report.json')};
         });
         await phase('rtc-driver', async () => {

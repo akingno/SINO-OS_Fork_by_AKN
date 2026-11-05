@@ -1,6 +1,8 @@
 #include "interactive.h"
 #include "stream.h"
 #include "gsh_parse.h"
+#include "shell_commands.h"
+#include "shell_banner.h"
 static CliInfo cli;
 static ShellWords words;
 static int terminal, root, cwd_handle;
@@ -108,7 +110,19 @@ static void execute(void) {
   }
   if (!words.argc)
     return;
-  const char *command = words.bytes + words.offsets[0];
+  const ShellCommand *entry = shell_command(words.bytes + words.offsets[0]);
+  const char *command = entry ? entry->name : words.bytes + words.offsets[0];
+  if (entry) {
+    ShellWords normalized = words;
+    u32 used = 0;
+    for (u32 i = 0; i < normalized.argc; i++) {
+      const char *arg = i ? normalized.bytes + normalized.offsets[i] : command;
+      words.offsets[i] = used;
+      copy(words.bytes + used, arg);
+      used += strlen(arg) + 1;
+    }
+    words.used = used;
+  }
   if (streq(command, "status")) {
     if (usage(1, 1))
       return;
@@ -134,13 +148,37 @@ static void execute(void) {
     }
     Exit(code);
   }
-  if (streq(command, "help")) {
-    if (usage(1, 1))
+  if (streq(command, "help") || streq(command, "which")) {
+    int which = streq(command, "which");
+    if (usage(which ? 2 : 1, 2))
       return;
-    put("builtins: help pwd cd history status exit\n");
-    put("tools: echo args exitcode spin fault\n");
-    put("files: ls [-a|-l|-la|-al] [path], stat/cat/view path\n");
-    put("paths are relative to the read-only session grant\n");
+    if (words.argc == 2) {
+      const ShellCommand *item = shell_command(words.bytes + words.offsets[1]);
+      if (!item || item->kind == 4) {
+        put(which ? "which: unavailable command\n"
+                  : "help: unavailable command\n");
+        status(1, PROCESS_EXITED, 0);
+        return;
+      }
+      if (!which) {
+        put(item->usage);
+        put("\n");
+      } else {
+        put(item->name);
+        put(item->kind == 0   ? ": builtin\n"
+            : item->kind == 2 ? ": /boot/tview.snx (catalog 5)\n"
+                              : ": /boot/gcmd.snx (catalog 4)\n");
+      }
+    } else {
+      put("builtins: help pwd cd history status exit\n");
+      put("navigation: which; paths / = /home/user (read-only)\n");
+      for (u32 i = 0; i < sizeof(shell_commands) / sizeof(*shell_commands); i++)
+        if (shell_commands[i].kind == 1 || shell_commands[i].kind == 2) {
+          put(shell_commands[i].usage);
+          put("\n");
+        }
+      put("diagnostics: args exitcode spin fault\n");
+    }
   } else if (streq(command, "pwd")) {
     if (usage(1, 1))
       return;
@@ -180,14 +218,18 @@ static void execute(void) {
       put(history[i % 16]);
       put("\n");
     }
-  } else if (streq(command, "echo") || streq(command, "args") ||
-             streq(command, "exitcode") || streq(command, "spin") ||
-             streq(command, "fault")) {
+  } else if (entry && (entry->kind == 1 || entry->kind == 3)) {
     external(IX_COMMAND, 0);
     return;
-  } else if (streq(command, "ls") || streq(command, "stat") ||
-             streq(command, "cat") || streq(command, "view")) {
-    int ls = streq(command, "ls");
+  } else if (entry && entry->kind == 4) {
+    put("unavailable: ");
+    put(command);
+    put("\n");
+    status(127, PROCESS_EXITED, 0);
+    return;
+  } else if (entry && entry->kind == 2) {
+    int ls = streq(command, "ls"),
+        walk = streq(command, "tree") || streq(command, "find");
     u32 index = 1;
     if (ls && index < words.argc && words.bytes[words.offsets[index]] == '-') {
       const char *option = words.bytes + words.offsets[index++];
@@ -197,9 +239,21 @@ static void execute(void) {
         status(2, PROCESS_EXITED, 0);
         return;
       }
-    }
-    if (words.argc > index + 1 || (!ls && words.argc != index + 1)) {
-      put("file tool: expected one path\n");
+    } else if ((streq(command, "head") || streq(command, "tail")) &&
+               words.argc > 1 && streq(words.bytes + words.offsets[1], "-n"))
+      index = 3;
+    else if (streq(command, "wc") && words.argc > 1 &&
+             words.bytes[words.offsets[1]] == '-')
+      index = 2;
+    else if (streq(command, "grep"))
+      index =
+          words.argc > 1 && streq(words.bytes + words.offsets[1], "-n") ? 3 : 2;
+    u32 maximum = index + 1 + (streq(command, "find") ? 1 : 0);
+    if (words.argc > maximum || (!(ls || walk) && words.argc != index + 1) ||
+        words.argc < index) {
+      put("usage: ");
+      put(entry->usage);
+      put("\n");
       status(2, PROCESS_EXITED, 0);
       return;
     }
@@ -217,10 +271,20 @@ static void execute(void) {
      * command/options. No ambient cwd or global path enters the worker. */
     u32 at = index < words.argc ? words.offsets[index] : words.used;
     words.offsets[index] = at;
+    char filter[256];
+    int filtered = streq(command, "find") && words.argc > index + 1;
+    if (filtered)
+      copy(filter, words.bytes + words.offsets[index + 1]);
     copy(words.bytes + at, path);
     words.used = at + strlen(path) + 1;
-    words.argc = index + 1;
-    external(IX_READTOOLS, FS_READ | FS_LOOKUP | (ls ? FS_ENUM : 0));
+    if (filtered) {
+      words.offsets[index + 1] = words.used;
+      copy(words.bytes + words.used, filter);
+      words.used += strlen(filter) + 1;
+    }
+    if (words.argc < index + 1)
+      words.argc = index + 1;
+    external(IX_READTOOLS, FS_READ | FS_LOOKUP | ((ls || walk) ? FS_ENUM : 0));
     return;
   } else {
     put("unknown command: ");
@@ -241,7 +305,25 @@ int main(void) {
     Log("gsh requires an interactive session\n");
     return 2;
   }
-  put("SINO user Shell\n");
+  TerminalInfo display;
+  u32 columns = 120, rows = 25;
+  if (TerminalGetInfo(terminal, &display) == 0) {
+    columns = display.width;
+    rows = display.height;
+  }
+  if (columns >= 56)
+    for (u32 row = 0; row < BANNER_ROWS; row++) {
+      put(banner[row][0]);
+      put("    ");
+      put(banner[row][1]);
+      put("\n");
+    }
+  put("SINO user Shell\nSINO 0.10 | ");
+  integer((i32)columns);
+  put(" x ");
+  integer((i32)rows);
+  put("\n/ = /home/user (read-only)\nType help for commands; about for "
+      "sources.\n");
   prompt();
   for (;;) {
     TerminalEvent event;

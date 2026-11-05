@@ -145,7 +145,7 @@ int main(void) {
     return terminal_probe();
   const char *args = Arguments();
   if (streq(args, "/selftest")) {
-    terminal_model_init(&model, 80, 25);
+    terminal_model_init(&model, 120, 25);
     terminal_model_write(&model, (const u8 *)"ab\bX\n\xe4\xbd", 7);
     terminal_model_write(&model, (const u8 *)"\xa0", 1);
     if (model.cells[0][1] != 'X' || model.cells[1][0] != 0x4f60) {
@@ -158,7 +158,7 @@ int main(void) {
   shell_mode = streq(args, "/g3");
   interactive_mode =
       shell_mode || streq(args, "/g2") || streq(args, "/g2-fault");
-  control = TerminalCreate(80, 25);
+  control = TerminalCreate(120, 25);
   if (control < 0) {
     Log("TERMINAL FRONTEND unavailable\n");
     return 1;
@@ -166,7 +166,7 @@ int main(void) {
   window = Window(shell_mode         ? "SINO Shell (G3)"
                   : interactive_mode ? "Interactive Terminal (G2)"
                                      : "New Terminal (G1)",
-                  592, 522);
+                  872, 522);
   if (window < 0) {
     cleanup();
     return 1;
@@ -176,7 +176,7 @@ int main(void) {
     cleanup();
     return 1;
   }
-  terminal_model_init(&model, 80, 25);
+  terminal_model_init(&model, 120, 25);
   size();
   u32 offset = 0;
   const char *probe_mode = streq(args, "/fault-test") ? "ignore-hangup"

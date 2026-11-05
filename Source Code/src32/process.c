@@ -605,7 +605,7 @@ static int strict_call(u32 call) {
     case SYS_EXIT: case SYS_YIELD: case SYS_LOG: case SYS_TICKS:
     case SYS_CLOSE: case SYS_DUP: case SYS_THREAD: case SYS_THREAD_EXIT:
     case SYS_EVENT_CREATE: case SYS_EVENT_SET: case SYS_EVENT_WAIT:
-    case SYS_TIME: case SYS_UI_LANGUAGE:
+    case SYS_TIME: case SYS_CALENDAR: case SYS_UI_LANGUAGE:
     case SYS_SYSTEM_INFO: case SYS_START_INFO:
     case SYS_PROCESS_RESULT: case SYS_PROCESS_CANCEL:
     case SYS_CLI_INFO: case SYS_STREAM_READ: case SYS_STREAM_WRITE:
@@ -905,6 +905,12 @@ static int syscall(Frame* f) {
       return 0;
     case SYS_PING:
       return net_ping(a, b);
+    case SYS_CALENDAR: {
+      if(c || b < sizeof(CalendarTime) || !user_access_ok(a,sizeof(CalendarTime),1)) return S_INVALID;
+      RtcDateTime date; int result=rtc_read(&date);
+      if(!result){CalendarTime out={sizeof(out),1,date.year,date.month,date.day,date.hour,date.minute,date.second};memcpy((void*)a,&out,sizeof(out));}
+      return result;
+    }
     case SYS_TIME:
       if (b < sizeof(TimeOfDay) || !user_access_ok(a, sizeof(TimeOfDay), 1))
         return S_INVALID;

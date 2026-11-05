@@ -117,3 +117,5 @@ the same Shell entry. Their range reads, revision checks, text decoding and
 paging remain in user/tview.c and file_text.h; see [file-tools.md](file-tools.md).
 Application welcome text belongs in user programs, while src32/shell.c still
 contains the legacy rescue/development Shell and its original banner.
+
+G5a command metadata, user welcome and checked text scans live in user/shell_commands.h, shell_banner.h and text_scan.h. The default frontend is120 columns; the new read-only Calendar query leaves SYS_TIME unchanged. See [shell-tools.md](shell-tools.md).

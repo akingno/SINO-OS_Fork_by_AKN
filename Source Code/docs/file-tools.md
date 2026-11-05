@@ -85,3 +85,5 @@ not-run0, exit0. Ordinary build `dev-20261105-182311-caee9e61` passed (kernel
 151424 bytes, BSS end1884800). Its visible private-VM smoke passed ls/cat,
 pager prompt, Space to the final page and Shell foreground restoration;
 screenshot inspected and VM stopped.
+
+G5a adds head/tail/wc/grep/hexdump/tree/find using the same catalog and file identity checks; see [shell-tools.md](shell-tools.md) for syntax, raw-byte counting versus text display and traversal bounds. tree/find also receive ENUM. Default frontend width is now120 cells.

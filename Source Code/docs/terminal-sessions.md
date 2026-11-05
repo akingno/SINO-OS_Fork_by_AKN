@@ -84,7 +84,7 @@ automatically rebound: applications explicitly use TerminalCurrent's handle.
 
 ## Wire ABI
 
-FEATURE_TERMINALS=128, current feature mask=255. SYS_TERMINAL=0x14a:
+FEATURE_TERMINALS=128, current feature mask=511. SYS_TERMINAL=0x14a:
 EBX=TerminalRequest*, ECX=24, EDX=0. Six u32 fields: op, handle, buffer, bytes,
 value, extra. All unused request fields must be zero, except zero-length I/O
 ignores its data pointer and queries ignore capacity beyond the defined output.
@@ -159,7 +159,7 @@ probe leaves a readable result until the user closes the window.
 
 ### Input and display
 
-- Default grid is 80 by 25 in a 592 by 522 window. Client dimensions map to
+- Since G5a, the default grid is 120 by 25 in an 872 by 522 window. Client dimensions map to
   seven-pixel columns and 18-pixel rows, capped at 120 by 35. Size changes replace
   a pending resize with the newest dimensions and retry S_AGAIN.
 - Each process owns 128 history rows and a streaming UTF-8 decoder. History is
@@ -212,3 +212,5 @@ G2 adds an opt-in atomic interactive startup and session broker. See [interactiv
 G3 adds `run /boot/term.snx /g3` for a strict user Shell with quoted argv,
 per-session cwd within a read-only home grant, bounded history and external text
 tools. See [user-shell.md](user-shell.md) for syntax, statuses and verification.
+
+G5a adds the plain-text user welcome, everyday text/information commands and a 120-column default. See [shell-tools.md](shell-tools.md). The historical G1 dimensions and evidence above describe that earlier delivery.
