@@ -108,3 +108,5 @@ resize/key/EOF/hangup events. Client handles support StreamRead/Write/Ready and
 the existing bounded runtime helpers. See [terminal-sessions.md](terminal-sessions.md).
 Desktop keyboard/display adapters and an interactive Shell are still pending;
 this does not change the existing desktop's input routing.
+
+G2 interactive startup and the narrow session broker use the existing terminal syscall. See [interactive-runs.md](interactive-runs.md) and user/interactive.h for atomic argv/directory/stdio binding, result and cleanup contracts.

@@ -35,6 +35,7 @@ typedef struct {
   u32 policy;
   u32 completion_object; /* Object index + 1; zero for old launch paths. */
   u32 reason, fault_vector;
+  CliInfo* interactive;
   u32 directory; /* Explicit startup grant; never a global working directory. */
 } Process;
 typedef struct {
@@ -114,6 +115,7 @@ static void release(Process* p) {
     if (leases[i].pid == p->pid)
       leases[i].pid = 0;
   handles_close(p->handles);
+  if (p->interactive) page_free(p->interactive);
   if (p->pt) {
     for (u32 i = 0; i < 1024; i++)
       if (p->pt[i] & 1)
@@ -302,9 +304,102 @@ static int tracked_launch(Handle* owner, const char* path, const char* args, Run
   }
   return handle;
 }
+int process_interactive_result(Handle* owner, u32 handle,
+                               ProcessCompletion* out) {
+  Object* o = handle_get(owner, handle, OBJ_PROCESS, PROCESS_WAIT);
+  if (!o)
+    return S_BADHANDLE;
+  if (!completions[o->value].complete)
+    return S_AGAIN;
+  *out = completions[o->value].result;
+  return 0;
+}
+int process_interactive_start(Handle* owner, const InteractiveSpec* spec,
+                              int directory, void* session, u32* pid) {
+  if (spec->size != sizeof(*spec) || spec->version != 1 ||
+      spec->argc > RUN_ARGC || spec->bytes > RUN_ARGS ||
+      (spec->rights & ~(FS_READ | FS_LOOKUP | FS_ENUM)) ||
+      (!directory && spec->rights))
+    return S_INVALID;
+  u32 next = 0;
+  for (u32 i = 0; i < spec->argc; i++) {
+    if (spec->offsets[i] != next || next >= spec->bytes)
+      return S_INVALID;
+    while (next < spec->bytes && spec->argv[next])
+      next++;
+    if (next == spec->bytes)
+      return S_INVALID;
+    next++;
+  }
+  if (next != spec->bytes)
+    return S_INVALID;
+  const char* path = "/boot/g2test.snx";
+  if (spec->program != 1 && spec->program != 2)
+    return S_DENIED;
+  int n = vfs_lookup(path);
+  if (n < 0 || !nodes[n].readonly || nodes[n].boot < 0)
+    return S_DENIED;
+  int grant = -1;
+  if (spec->rights) {
+    grant = filesys_acquire_directory(owner, directory, spec->rights);
+    if (grant < 0)
+      return grant;
+  }
+  CliInfo* cli = page_alloc();
+  if (!cli) {
+    if (grant >= 0)
+      object_unref(grant);
+    return S_NOMEM;
+  }
+  cli->size = sizeof(*cli);
+  cli->version = 1;
+  cli->argc = spec->argc;
+  cli->argv_bytes = spec->bytes;
+  memcpy(cli->offsets, spec->offsets, sizeof(cli->offsets));
+  memcpy(cli->bytes, spec->argv, spec->bytes);
+  int h = tracked_launch(owner, path, "", 0);
+  if (h < 0) {
+    page_free(cli);
+    if (grant >= 0)
+      object_unref(grant);
+    return h;
+  }
+  Handle* handles = process_terminal_target(owner, h, pid);
+  Process* child = 0;
+  for (int i = 0; i < NP; i++)
+    if (handles == processes[i].handles) {
+      child = &processes[i];
+      break;
+    }
+  if (!child) {
+    page_free(cli);
+    if (grant >= 0)
+      object_unref(grant);
+    handle_close(owner, h);
+    return S_IO;
+  }
+  child->interactive = cli;
+  int status = 0;
+  if (grant >= 0) {
+    status = handle_open(handles, grant, spec->rights);
+    if (status >= 0)
+      child->directory = status;
+    else
+      object_unref(grant);
+  }
+  if (status >= 0)
+    status = terminal_bind_interactive(session, handles, *pid, cli);
+  if (status < 0) {
+    release(child);
+    handle_close(owner, h);
+    return status;
+  }
+  return h;
+}
 void process_run_limits(RunLimits* out) {
-  *out = (RunLimits){sizeof(RunLimits), 1, RUN_COUNT, RUN_ARGC, RUN_ARGS,
-                     RUN_BYTES, RUN_BYTES, RUN_BYTES, RUN_IO_MAX, RUN_TIMEOUT_MAX};
+  *out = (RunLimits){
+      sizeof(RunLimits), 1,         RUN_COUNT, RUN_ARGC,   RUN_ARGS,
+      RUN_BYTES,         RUN_BYTES, RUN_BYTES, RUN_IO_MAX, RUN_TIMEOUT_MAX};
 }
 int process_run_start(Handle* owner, const RunSpec* spec) {
   return process_run_start_directory(owner, spec, 0, 0);
@@ -406,6 +501,10 @@ Handle* process_terminal_target(Handle* owner,u32 h,u32* pid) {
   if(!o||completions[o->value].complete)return 0;
   for(int i=0;i<NP;i++)if(processes[i].state==1 && processes[i].policy==PROCESS_STRICT &&
       processes[i].completion_object==(u32)(o-objects)+1){*pid=processes[i].pid;return processes[i].handles;}
+  return 0;
+}
+Handle* process_interactive_handles(u32 pid) {
+  for(int i=0;i<NP;i++)if(processes[i].state==1&&processes[i].pid==pid&&processes[i].interactive)return processes[i].handles;
   return 0;
 }
 int process_terminal_cancel(u32 pid) {
@@ -551,7 +650,7 @@ static int syscall(Frame* f) {
     }
     case SYS_STREAM_READY: {
       if (b || c) return S_INVALID;
-      if(handle_get(current->handles,a,OBJ_TERM_CLIENT,1)){
+      if(handle_get(current->handles,a,OBJ_TERM_CLIENT,0)){
         TerminalRequest q={TERM_READY,a,0,0,0,0};
         return terminal_call(current->handles,current->pid,current->policy,&q,user_access_ok);
       }
@@ -602,6 +701,7 @@ static int syscall(Frame* f) {
     }
     case SYS_CLI_INFO: {
       if (c || b < sizeof(CliInfo) || !user_access_ok(a, sizeof(CliInfo), 1)) return S_INVALID;
+      if (current->interactive) { memcpy((void*)a,current->interactive,sizeof(CliInfo)); return 0; }
       if (!current->completion_object) return S_NOTFOUND;
       RunData* run = completions[objects[current->completion_object - 1].value].run;
       if (!run) return S_NOTFOUND;
@@ -610,7 +710,7 @@ static int syscall(Frame* f) {
     case SYS_STREAM_READ:
     case SYS_STREAM_WRITE: {
       int reading = f->eax == SYS_STREAM_READ;
-      if(handle_get(current->handles,a,OBJ_TERM_CLIENT,1)){
+      if(handle_get(current->handles,a,OBJ_TERM_CLIENT,0)){
         TerminalRequest q={reading?TERM_READ:TERM_WRITE,a,b,c,0,0};
         return terminal_call(current->handles,current->pid,current->policy,&q,user_access_ok);
       }

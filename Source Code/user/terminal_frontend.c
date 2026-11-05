@@ -1,6 +1,7 @@
 /* G1 trusted compatibility frontend, caps=0. Shell launch policy follows in G2.
  */
 #include "sdk.h"
+#include "interactive.h"
 #include "terminal_model.h"
 int terminal_probe(void);
 
@@ -17,6 +18,8 @@ static u32 head, count;
 static TerminalModel model;
 static UiCanvas canvas;
 static int window, control, task, finished, dirty = 1;
+static int interactive_mode, child, directory;
+static InteractiveSpec intent;
 static const char *notice = "Ctrl+C cancel | Ctrl+D EOF | PgUp/PgDn scroll";
 static const char input_full[] = "Input queue full; new input rejected";
 static u32 width, height, resize_width, resize_height;
@@ -71,9 +74,13 @@ static void enqueue(const UiEvent *e, u32 mode) {
       return;
     }
     if (e->key == 3) {
-      if (TerminalFeed(control, TERM_CANCEL, 0, 0, 0) < 0)
-        notice = "Cancel failed";
+      int status = TerminalFeed(control, TERM_CANCEL, 0, 0, 0);
       count = 0;
+      if (status == S_AGAIN) {
+        pending[head] = (PendingInput){TERM_CANCEL, 0, 0, {0}};
+        count = 1;
+      } else if (status < 0)
+        notice = "Cancel failed";
       dirty = 1;
       return;
     }
@@ -122,8 +129,12 @@ static int cleanup(void) {
     CancelProcess(task);
     Close(task);
   }
+  if (child > 0)
+    Close(child);
   if (control > 0)
     Close(control);
+  if (directory > 0)
+    Close(directory);
   return 0;
 }
 int main(void) {
@@ -144,12 +155,15 @@ int main(void) {
     Log("TERMINAL MODEL PASS\n");
     return 0;
   }
+  interactive_mode = streq(args, "/g2") || streq(args, "/g2-fault");
   control = TerminalCreate(80, 25);
   if (control < 0) {
     Log("TERMINAL FRONTEND unavailable\n");
     return 1;
   }
-  window = Window("New Terminal (G1)", 592, 522);
+  window = Window(
+      interactive_mode ? "Interactive Terminal (G2)" : "New Terminal (G1)", 592,
+      522);
   if (window < 0) {
     cleanup();
     return 1;
@@ -177,14 +191,58 @@ int main(void) {
                   0,
                   streq(args, "/fault-test") ? 100u : 30000u,
                   0};
-  task = StartRun(&spec);
-  if (task < 0 || TerminalForeground(control, task) < 0) {
+  if (interactive_mode) {
+    directory =
+        GrantDirectory("/boot", FS_READ | FS_LOOKUP | FS_ENUM | FS_DELEGATE);
+    if (directory < 0) {
+      cleanup();
+      return 1;
+    }
+    memset(&intent, 0, sizeof(intent));
+    intent.size = sizeof(intent);
+    intent.version = 1;
+    intent.program = 1;
+    intent.argc = 1;
+    intent.bytes = 6;
+    copy(intent.argv, "shell");
+    intent.rights = FS_READ | FS_LOOKUP;
+    task = InteractiveStart(control, &intent, directory, 0);
+  } else
+    task = StartRun(&spec);
+  if (task < 0 ||
+      (!interactive_mode && TerminalForeground(control, task) < 0)) {
     Log("TERMINAL FRONTEND launch failed\n");
     cleanup();
     return 1;
   }
   int probe_ready = 0;
   for (;;) {
+    if (interactive_mode && !finished) {
+      int changed = 0;
+      if (child > 0) {
+        int status = InteractiveFinish(control, child);
+        if (status == 0) {
+          Close(child);
+          child = 0;
+          changed = 1;
+        } else if (status != S_AGAIN) {
+          return cleanup();
+        }
+      }
+      if (!child && InteractiveRequest(control, &intent) == 0) {
+        child = InteractiveStart(control, &intent, directory, 1);
+        changed = 1;
+        if (child < 0)
+          child = 0;
+      }
+      if (changed) {
+        count = 0;
+        UiEvent stale;
+        for (int i = 0; i < 16 && Event(&stale) == 0; i++)
+          if (stale.type == MSG_CLOSE)
+            return cleanup();
+      }
+    }
     TerminalInfo info;
     if (TerminalGetInfo(control, &info) < 0) {
       cleanup();
@@ -212,7 +270,8 @@ int main(void) {
       dirty = 1;
       probe_ready = 1;
     }
-    if (probe_ready && streq(args, "/fault-test"))
+    if (probe_ready &&
+        (streq(args, "/fault-test") || (streq(args, "/g2-fault") && child > 0)))
       __asm__ volatile("ud2");
     if (!finished) {
       feed();
@@ -228,7 +287,15 @@ int main(void) {
         }
       }
       RunResult result;
-      if (GetRunResult(task, &result) == 0) {
+      int completed = interactive_mode
+                          ? GetProcessResult(task, &result.completion)
+                          : GetRunResult(task, &result);
+      if (completed == 0) {
+        if (interactive_mode && child > 0) {
+          CancelProcess(child);
+          Close(child);
+          child = 0;
+        }
         /* Consume the final output before drawing a final, typed result. */
         for (int i = 0; i < 4; i++) {
           int n = TerminalDrain(control, bytes, sizeof(bytes));

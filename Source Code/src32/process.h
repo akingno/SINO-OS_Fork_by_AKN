@@ -1,6 +1,7 @@
 #ifndef SINO_PROCESS_H
 #define SINO_PROCESS_H
 #include "api.h"
+#include "interactive.h"
 #include "kernel.h"
 #include "object.h"
 extern volatile u32 user_switch_out;
@@ -20,7 +21,10 @@ int process_run_result(Handle *, u32, RunResult *);
 int process_run_read(Handle *, u32, u32, u32, void *, u32);
 int process_cancel_owned(Handle *, u32);
 Handle* process_terminal_target(Handle*,u32,u32*);
+Handle* process_interactive_handles(u32);
 int process_terminal_cancel(u32);
+int process_interactive_result(Handle*,u32,ProcessCompletion*);
+int process_interactive_start(Handle*,const InteractiveSpec*,int,void*,u32*);
 void process_run_limits(RunLimits *);
 int process_list(ProcessInfo *, u32);
 int process_alive(u32);

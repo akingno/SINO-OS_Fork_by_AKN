@@ -184,5 +184,32 @@ async function run(context, api) {
         await key('ctrl','w');
         assert.deepEqual(await resources(), baseline);
     });
+    await check('G2 desktop broker restores foreground after exit, fault and cancel', async () => {
+        first=await launch('term','/g2');await waitText(first,'G2 ready');
+        await key('ctrl','c');await waitText(first,'G2 interrupt');
+        await type('go\n');await waitText(first,'G2 restored');
+        const before=await value('process_faults');
+        await type('fault\n');
+        await until(async()=>await value('process_faults')===before+1,'G2 child fault');
+        await until(async()=>((await text(first)).match(/G2 restored/g)||[]).length>=2,'restore after fault');
+        await type('spin\n');await waitText(first,'G2 worker waiting');
+        second=await launch('term','/g2');await waitText(second,'G2 ready');
+        await type('spin\n');await waitText(second,'G2 worker waiting');
+        await key('ctrl','c');await waitText(second,'G2 restored');
+        assert((await processes()).some(p=>p.pid===first));
+        assert.equal((await processes()).filter(p=>p.name==='g2test.snx').length,3,'other foreground task survives');
+        await key('ctrl','w');await until(async()=>await window(second)<0,'second G2 closes');
+        await key('ctrl','w');await until(async()=>(await processes()).length===0,'G2 group reaped');
+        assert.deepEqual(await resources(),baseline);
+    });
+    await check('G2 last controller loss cancels noncooperative owned tasks', async () => {
+        const before=await value('process_faults');
+        first=await launch('term','/g2-fault');await waitText(first,'G2 ready');
+        await type('spin\n');
+        await until(async()=>await value('process_faults')===before+1,'G2 frontend fault');
+        await until(async()=>(await processes()).length===0,'kernel session ownership cleanup');
+        assert.deepEqual(await resources(),baseline);
+    });
+
 }
 module.exports = {run};

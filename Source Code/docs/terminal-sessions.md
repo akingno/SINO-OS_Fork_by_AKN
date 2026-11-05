@@ -204,3 +204,5 @@ failed=0, not-run=0, exit=0. Ordinary build `dev-20261105-052604-bccd87f3` passe
 with a 148128-byte kernel and BSS end 1884768. A visible smoke test on that
 ordinary ISO passed F12, ASCII input, Chinese IME and copied text checks. Its
 screenshot was inspected and its private VM stopped.
+
+G2 adds an opt-in atomic interactive startup and session broker. See [interactive-runs.md](interactive-runs.md) for ownership, typed requests/results and stream roles. Use `run /boot/term.snx /g2` for its strict diagnostic probes.
