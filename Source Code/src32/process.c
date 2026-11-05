@@ -263,7 +263,8 @@ static int launch_policy(const char* path, u32 caps, const char* arguments,
                          grant, regardless of launcher. */
   if (nodes[n].readonly && nodes[n].boot >= 0 &&
       (streq(executable, "/boot/calc.snx") ||
-       streq(executable, "/boot/clock.snx")))
+       streq(executable, "/boot/clock.snx") ||
+       streq(executable, "/boot/term.snx")))
     p->caps = 0;
   if (nodes[n].readonly && nodes[n].boot >= 0 &&
       streq(executable, "/boot/files.snx"))

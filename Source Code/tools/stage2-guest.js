@@ -275,6 +275,8 @@ async function run(context, mode = 'native') {
         assert.equal((await processes()).length, 0);
         assert.deepEqual(await resources(), baseline);
     });
+    await require('./stage2-frontend').run(context,
+        {check, command, resources, value, until, launch, processes, memory, symbols});
     for (let i = 1; i <= 8; i++) {
         await check(`normal exit resource recovery ${i}/8`, async () => {
             await native('probe', '/stage2', 'STAGE2 PROBE PASS checks=');

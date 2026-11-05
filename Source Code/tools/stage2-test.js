@@ -103,7 +103,15 @@ async function run(directory) {
             const result = readJSON(path.join(folder, 'src32-refactor-report.json'));
             assert.equal(result.goalSatisfied, true);
             assert(result.checks.length >= 43 && result.checks.every(c => c.result === 'PASS'));
-            return {checks:result.checks.length, report:path.join(folder, 'src32-refactor-report.json')};
+            const model = path.join(folder, 'terminal-model.exe');
+            await command(host.tool('gcc'), [path.join(__dirname, 'test-terminal-model.c'),
+                '-std=c11', '-O2', '-Wall', '-Wextra', '-Werror', '-Wno-unused-function', '-o', model],
+                path.join(folder, 'terminal-model-build.txt'));
+            const modelOutput = path.join(folder, 'terminal-model-output.txt');
+            await command(model, [], modelOutput);
+            assert.equal(fs.readFileSync(modelOutput, 'utf8').trim(), 'TERMINAL MODEL PASS');
+            return {checks:result.checks.length + 1, modelOutput,
+                report:path.join(folder, 'src32-refactor-report.json')};
         });
         await phase('rtc-driver', async () => {
             const exe = path.join(directory, 'rtc-test.exe');

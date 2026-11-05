@@ -4,14 +4,20 @@ const flags=['-m32','-march=i386','-std=c11','-Os','-ffreestanding','-fno-builti
 function command(exe,args){run(exe,args,{cwd:root,stdio:'inherit'});}
 command(path.join(root,'tools/nasm-3.02/nasm.exe'),['-f','win32','user/entry.asm','-o',path.join(out,'entry.o')]);
 command(path.join(tc,'gcc.exe'),[...flags,'-c','user/runtime.c','-o',path.join(out,'runtime.o')]);
-const apps=[['termtest','terminal_tests',0],['pipetest','pipe_tests',0],['fstest','file_tests',0],['clitest','cli_tests',0],['comptest','completion_tests',0],['poltest','policy_tests',0],['probe','probe',0],['fault','probe',1],['iofault','probe',2],['spin','probe',3],['udfault','probe',4],['clock','clock',0],['calc','calculator',0],['hello','hello',0],['setup','setup',0],['apps','apps',0],['instest','installer_tests',0],['nettest','nettest',0],['bstest','basic_tests',0],['basicrun','basicrun',0],['ide','ide',0],['files','files',0],['editor','editor',0],['tasks','tasks',0]];
+const apps=[['term','terminal_frontend',0],['termtest','terminal_tests',0],['pipetest','pipe_tests',0],['fstest','file_tests',0],['clitest','cli_tests',0],['comptest','completion_tests',0],['poltest','policy_tests',0],['probe','probe',0],['fault','probe',1],['iofault','probe',2],['spin','probe',3],['udfault','probe',4],['clock','clock',0],['calc','calculator',0],['hello','hello',0],['setup','setup',0],['apps','apps',0],['instest','installer_tests',0],['nettest','nettest',0],['bstest','basic_tests',0],['basicrun','basicrun',0],['ide','ide',0],['files','files',0],['editor','editor',0],['tasks','tasks',0]];
 for(const [name,source,mode] of apps){
- command(path.join(tc,'gcc.exe'),[...flags,`-DMODE=${mode}`,'-c',`user/${source}.c`,'-o',path.join(out,`${name}.o`)]);
- const extra=[];if(name==='setup'||name==='instest'){const obj=path.join(out,`${name}-service.o`);command(path.join(tc,'gcc.exe'),[...flags,'-c','user/install_service.c','-o',obj]);extra.push(obj);}
+ // The frontend and strict probe share one boot image. Strip unused runtime
+ // sections only for this new program to fit the existing FAT12 image budget.
+ const appFlags=name==='term'?[...flags,'-ffunction-sections','-fno-ident']:flags;
+ const runtime=path.join(out,name==='term'?'term-runtime.o':'runtime.o');
+ if(name==='term')command(path.join(tc,'gcc.exe'),[...appFlags,'-c','user/runtime.c','-o',runtime]);
+ command(path.join(tc,'gcc.exe'),[...appFlags,`-DMODE=${mode}`,'-c',`user/${source}.c`,'-o',path.join(out,`${name}.o`)]);
+ const extra=[];if(name==='term'){const obj=path.join(out,'term-probe.o');command(path.join(tc,'gcc.exe'),[...appFlags,'-c','user/terminal_probe.c','-o',obj]);extra.push(obj);}
+ if(name==='setup'||name==='instest'){const obj=path.join(out,`${name}-service.o`);command(path.join(tc,'gcc.exe'),[...flags,'-c','user/install_service.c','-o',obj]);extra.push(obj);}
  if(name==='bstest'||name==='basicrun'||name==='ide'){for(const module of (name==='bstest'?['basic','netlib']:['basic','netlib','forms'])){const obj=path.join(out,`${name}-${module}.o`);command(path.join(tc,'gcc.exe'),[...flags,'-c',`user/${module}.c`,'-o',obj]);extra.push(obj);}}
  if(name==='nettest'){const obj=path.join(out,`${name}-netlib.o`);command(path.join(tc,'gcc.exe'),[...flags,'-c','user/netlib.c','-o',obj]);extra.push(obj);}
  const exe=path.join(out,`${name}.exe`),bin=path.join(out,`${name}.snx`);
- command(path.join(tc,'ld.exe'),['-m','i386pe','--image-base','0x3fff0000','--disable-reloc-section','--disable-dynamicbase','--no-insert-timestamp','-T','user/linker.ld',path.join(out,'entry.o'),path.join(out,'runtime.o'),path.join(out,`${name}.o`),...extra,'-o',exe]);
+ command(path.join(tc,'ld.exe'),['-m','i386pe','--image-base','0x3fff0000','--disable-reloc-section','--disable-dynamicbase','--no-insert-timestamp',...(name==='term'?['--gc-sections']:[]),'-T','user/linker.ld',path.join(out,'entry.o'),runtime,path.join(out,`${name}.o`),...extra,'-o',exe]);
  command(path.join(tc,'objcopy.exe'),['-O','binary',exe,bin]);
  const symbols={};for(const line of run(path.join(tc,'nm.exe'),['-n',exe],{encoding:'utf8'}).split('\n')){const m=line.match(/^([0-9a-f]+) [A-Za-z] (\w+)\s*$/);if(m)symbols[m[2]]=parseInt(m[1],16)-0x40000000;}
  for(const key of ['_user_start','___user_data','___user_end'])if(!Number.isInteger(symbols[key])||symbols[key]<0)throw Error('Missing/invalid native link symbol '+key);

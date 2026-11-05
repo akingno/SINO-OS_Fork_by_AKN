@@ -346,8 +346,11 @@ static void desktop_draw(void) {
     }
   desktop_dirty = 0;
 }
+static void ime_reset(void);
 static void focus(int id) {
   int previous = gui_focus;
+  if (previous != id && ime_len)
+    ime_reset();
   for (int p = 0; p < count; p++)
     if (order[p] == id) {
       for (int j = p; j < count - 1; j++)
@@ -1299,6 +1302,13 @@ static void user_draw(int id) {
                         max(0, min(24, w->h - 1 - c->y))});
         g_text(c->h <= 3 ? c->h : 0, c->x, c->y, c->text, c->color);
         g_clip((Rect){1, 30, w->w - 2, w->h - 31});
+      } else if (c->kind == UI_CELL_TEXT) {
+        int offset = 0, x = c->x;
+        while (c->text[offset]) {
+          u32 cp = utf_next(c->text, &offset);
+          g_glyph(2, x, c->y, cp, c->color);
+          x += cp >= 128 ? 21 : 7;
+        }
       } else if (c->kind == UI_BUTTON)
         button(c->x, c->y, c->w, c->text);
       else if (c->kind == UI_LINE)
@@ -1767,7 +1777,6 @@ static void context_choose(int row) {
     notice(info);
   }
 }
-static void ime_reset(void);
 static void right_click(int x, int y) {
   int user = hit_window(x, y);
   if (user >= 0 && windows[user].app == USERAPP) {
@@ -2455,6 +2464,11 @@ static void keyboard(int key) {
       focus(order[0]);
     return;
   }
+  if (key == 0x158) {
+    if (process_launch("/boot/term.snx", 0) < 0)
+      notice("New terminal unavailable");
+    return;
+  }
   int id = gui_focus;
   Window* w = id >= 0 ? &windows[id] : 0;
   if (key == 23) {
@@ -2793,7 +2807,7 @@ int gui_user_scene(int token, const UiScene* scene) {
     return S_INVALID;
   for (u32 i = 0; i < scene->count; i++) {
     const UiCommand* c = &((const UiCanvas*)scene)->commands[i];
-    if (c->kind < UI_FILL || c->kind > UI_ELLIPSE || c->x < 0 || c->x > 1000 ||
+    if (c->kind < UI_FILL || c->kind > UI_CELL_TEXT || c->x < 0 || c->x > 1000 ||
         c->y < 30 || c->y > 714 || c->text[79])
       return S_INVALID;
     if (c->kind == UI_LINE) { /* Preserve legacy positive clipping; signed

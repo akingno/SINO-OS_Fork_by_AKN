@@ -20,6 +20,13 @@ Example: `user/hello.c`. Add its build tuple to `tools/build-user.js`, describe 
 
 Window/Scene/Event provide original UI presentation. The kernel copies a validated maximum of 256 commands per canvas (the original UiScene holds 64; UiCanvas holds 256); no framebuffer or kernel pointers are shared. `Arguments()` reads the immutable launch string. Shared threads must use globals/events rather than stack pointers to unmapped memory. Thread functions must call SYS_THREAD_EXIT, not return. Events are manual-reset and nonblocking: wait returns S_AGAIN until signaled. Yield bounds CPU use; application loops must handle failed API calls.
 
+G1 adds `UI_CELL_TEXT=9` for fixed-grid UTF-8 rows in the existing Scene ABI.
+Font 2 advances seven pixels for ASCII and 21 for non-ASCII, with a 79-byte string
+limit per command. `user/terminal_frontend.c` splits rows between codepoints and
+owns its decoder/history. F12 opens this caps=0 compatibility frontend with a
+strict session probe. Current G1 authority, bounds, lifecycle and testing are
+documented in [terminal-sessions.md](terminal-sessions.md).
+
 ABI restrictions: integer C only (no FPU/SIMD, libc, exceptions or dynamic linking), 8 processes, 4 threads each, 24 local handles, 15 pending input events per process, 8 desktop windows, 16 KiB stack per thread. Read/write returns unified negative errors from `src32/api.h`. Home write capability does not authorize writes to `/boot`, `/etc` or kernel memory. Untrusted writable legacy F32 programs are refused.
 
 Handle duplication reduces rights and keeps a separate reference; cookies are unique per handle allocation, so duplicate handles cannot revive a closed slot. Clipboard APIs are shared with legacy desktop apps. SYS_WINDOW_POLICY enables close-request delivery so an editor can show its own unsaved-change dialog. Public data types are in src32/types.h and api.h, separate from kernel declarations. Native apps use Chinese-first UI; full per-application localization and adaptive layouts remain pending. SysBASIC currently needs roughly 1024x768 logical space for its complete fixed layout.

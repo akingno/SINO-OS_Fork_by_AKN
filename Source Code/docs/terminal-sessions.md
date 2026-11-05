@@ -1,12 +1,12 @@
-# Stage F: text session backend
+# Text sessions and G1 desktop frontend
 
-The headless text-session backend is implemented and tested. Desktop keyboard /
-display wiring, a user terminal/Shell, PTY, ANSI parsing and job control are NOT
-implemented by this delivery. No global input or framebuffer access is granted.
-Both a headless and a future graphical frontend use the same session API and
-process/handle cleanup; only the headless frontend has been exercised here.
+Stage F delivered the headless session backend. G1 adds a Ring 3 desktop frontend
+and a strict, deadline-bound session probe using the same API. F12 opens the new
+frontend. Interactive Shell launch/restore, PTY, ANSI and job control remain
+future work. Input arrives through focused USERAPP events, with copied drawing
+commands for display. Global input and framebuffer access stay kernel-owned.
 
-Final gate: stage2-20261105-040857-714bf310, 8/8 groups, 360 checks, failed=0,
+Stage F gate: stage2-20261105-040857-714bf310, 8/8 groups, 360 checks, failed=0,
 not-run=0, exit 0. Ordinary non-bridge build dev-20261105-041022-5443cb45 passed
 (kernel 147904 bytes, BSS end 1884768). The test-first run on Stage E failed at
 session creation, as expected. This does not claim the full 22-suite GUI gate.
@@ -122,9 +122,85 @@ EOF versus explicit hangup, controller loss, and generic stream/runtime access.
 The host waits for completion, checks one intentional #UD, all remaining PIDs
 and object/page baselines. Existing A-E, host protocol and cold boot stay enabled.
 
-Remaining work: desktop keyboard/display adapter, interactive Shell integration,
+Remaining work: interactive Shell launch/restore and application integration,
 atomic launch-time terminal binding if needed, foreground groups instead of one
 task, full PTY/ANSI and detailed page-allocation failure injection. The backend
-does not reserve global device input, so it does not establish desktop focus
-security or prove physical keyboard routing. No thread WAITING/blocked kernel
-stack has been introduced. Stage F's full frontend integration is still pending.
+does not reserve global device input. The headless F suite covers its own API
+authority checks. G1 separately exercises desktop keyboard/focus routing below.
+Thread-level WAITING and blocked kernel C stacks remain future work.
+
+## G1 desktop frontend
+
+`user/terminal_frontend.c` implements `/boot/term.snx`. F12 and the legacy Shell
+command `run /boot/term.snx` open independent windows. The resolved read-only boot
+image is forced to caps=0. Its frontend uses compatibility policy and retains
+ambient read access under that policy. Its strict child runs the probe from
+`user/terminal_probe.c`. Both entry points share the boot image, selected by the
+trusted startup policy, to fit the current FAT12 image. Only this new program
+uses function-section garbage collection during linking.
+
+The frontend creates a session, launches a C bounded run, then explicitly calls
+TerminalForeground. The probe waits at most 100 ticks for TerminalCurrent and
+uses that client directly. CliInfo stdio retains the existing C finite backend.
+Each session consumes two process slots, one of the two retained C runs, three
+frontend handles and four child handles. At steady state its window, controller,
+completion, three finite streams and terminal client occupy seven objects.
+Two windows use four of eight process slots and both C run slots. G2 needs a
+separate interactive task contract before adding resident Shells and children.
+
+The default probe deadline is 30000 guest ticks, approximately five guest
+minutes. Window close requests cancel the owned task and release observation
+and control references. Frontend crash still follows F controller-loss semantics,
+with the managed run deadline bounding a client that ignores hangup. The fault
+test uses a 100-tick deadline and verifies this noncooperative case. A completed
+probe leaves a readable result until the user closes the window.
+
+### Input and display
+
+- Default grid is 80 by 25 in a 592 by 522 window. Client dimensions map to
+  seven-pixel columns and 18-pixel rows, capped at 120 by 35. Size changes replace
+  a pending resize with the newest dimensions and retry S_AGAIN.
+- Each process owns 128 history rows and a streaming UTF-8 decoder. History is
+  clipped when resized. Newline, CR, four-cell tabs, wide-character backspace and
+  malformed/incomplete UTF-8 have explicit handling. NUL, ESC and other unsupported
+  controls display `?`, preserving bytes after them. Output returns to the bottom
+  of scrollback. PgUp/PgDn are reserved for local history in G1.
+- MSG_TEXT codepoints are encoded once. MSG_KEY provides printable ASCII,
+  newline, backspace and tab. Other raw keys become typed KEY events. Ctrl+D
+  feeds EOF. Ctrl+C cancels the owned foreground probe. A desktop focus selection
+  clears an unfinished IME composition before assigning another window.
+- Each iteration consumes at most eight window events, retries eight pending
+  input items and drains 1024 output bytes. Accepted input survives S_AGAIN in
+  order. The pending queue holds 64 items. Further input receives visible full
+  queue feedback, while close/cancel remain responsive. The existing 15-event
+  desktop delivery queue also remains bounded. Arbitrarily fast input has no
+  lossless delivery guarantee.
+- `UI_CELL_TEXT=9` appends a copied drawing command for fixed-grid text. Font 2
+  draws at x/y, advancing seven pixels for ASCII and 21 for non-ASCII. The existing
+  17-pixel CJK glyph sits within the latter cells. Strings hold at most 79 UTF-8
+  bytes and split only between codepoints. The frontend's compile-time bound
+  ensures the entire visible grid fits one 256-command canvas.
+
+### Probe and regression coverage
+
+Type any line to receive `LINE ...`. `raw` enables byte and special-key reporting,
+Escape returns to canonical mode, `flood` writes 12289 bytes under backpressure,
+and `unicode` splits a UTF-8 sequence across writes and includes visible controls.
+`fault` deliberately faults the strict client. `/selftest` runs a small CPL3 model
+smoke check. `/qa` enables bounded diagnostic markers. `/fault-test` faults the
+frontend after the probe starts. `rawpause` and `stall` exercise input pressure.
+
+The host compiles the actual model for malformed UTF-8, wide-cell overwrite,
+backspace, wrapping, ring history, independent state and bounded scene segments.
+The native suite injects real QMP keys, verifies copied scene text, switches two
+focused windows, commits Chinese input, checks ordered retries, maps a simple
+maximize operation and checks EOF/cancel/fault/external termination. It also
+exhausts sessions and the pending queue, closes a stalled client, and checks exact
+page/object baselines. F2 receives a separate real-keyboard compatibility check.
+Complex visual interactions and the complete 22-suite GUI gate remain separate.
+
+G1 final gate `stage2-20261105-052330-93993a43` passed 8/8 groups, 371 checks,
+failed=0, not-run=0, exit=0. Ordinary build `dev-20261105-052604-bccd87f3` passed
+with a 148128-byte kernel and BSS end 1884768. A visible smoke test on that
+ordinary ISO passed F12, ASCII input, Chinese IME and copied text checks. Its
+screenshot was inspected and its private VM stopped.

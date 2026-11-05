@@ -207,7 +207,8 @@ enum {
   UI_PANEL,
   UI_GRID,
   UI_SELECTION,
-  UI_ELLIPSE
+  UI_ELLIPSE,
+  UI_CELL_TEXT /* Font 2, seven-pixel cells, non-ASCII occupies three cells. */
 };
 enum {
   WINDOW_CLOSE_REQUEST = 1,
