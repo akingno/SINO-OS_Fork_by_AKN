@@ -1,10 +1,31 @@
 #include "klog.h"
 #include "vfs.h"
 #include "storage.h"
+#include "api.h"
 Node nodes[VFS_NODES];
 int cwd;
 u32 vfs_generation[VFS_NODES];
+u32 vfs_revision[VFS_NODES], vfs_refs[VFS_NODES];
 static u32 next_generation;
+static u32 next_revision;
+static int revision_room(u32 count) { return next_revision <= ~0u - count; }
+static void changed(int index) {
+  vfs_revision[index] = ++next_revision;
+  if (index) vfs_revision[nodes[index].parent] = ++next_revision;
+  storage_changed();
+}
+/* Any live descendant reference also anchors every ancestor against moves. */
+int vfs_busy(int index) {
+  for (int i = 0; i < VFS_NODES; i++) if (nodes[i].used && vfs_refs[i]) {
+    int p = i;
+    for (;;) {
+      if (p == index) return 1;
+      if (!p) break;
+      p = nodes[p].parent;
+    }
+  }
+  return 0;
+}
 const char* vfs_error = "unknown error";
 TextKey vfs_error_key = VFS_ERROR_UNKNOWN_ERROR;
 static int vfs_fail(const char* s, TextKey key) {
@@ -173,6 +194,8 @@ static int parent_name(const char* path, int* parent, char* name) {
   return 0;
 }
 static int allocate(int parent, const char* name, int dir) {
+  if (next_generation == ~0u || !revision_room(2))
+    return vfs_fail("version limit", VFS_ERROR_NODE_LIMIT);
   for (int i = 1; i < VFS_NODES; i++)
     if (!nodes[i].used) {
       memset(&nodes[i], 0, sizeof(Node));
@@ -182,7 +205,7 @@ static int allocate(int parent, const char* name, int dir) {
       nodes[i].dir = dir;
       nodes[i].boot = -1;
       copy(nodes[i].name, name);
-      storage_changed();
+      changed(i);
       return i;
     }
   return vfs_fail("File table is full (128 nodes)", VFS_ERROR_NODE_LIMIT);
@@ -263,6 +286,8 @@ int vfs_write(int index, const u8* data, u32 length, int append) {
   if (length > MAX_FILE - offset)
     return vfs_fail("RAM file limit is 64 KB",
                     VFS_ERROR_A_FILE_CAN_CONTAIN_AT_MOST_64_KB);
+  if (!revision_room(2))
+    return vfs_fail("version limit", VFS_ERROR_NODE_LIMIT);
   u32 total = offset + length, old = (n->size + 4095) / 4096,
       needed = (total + 4095) / 4096, allocated = old;
   while (allocated < needed) {
@@ -285,7 +310,7 @@ int vfs_write(int index, const u8* data, u32 length, int append) {
     n->pages[old] = 0;
   }
   n->size = total;
-  storage_changed();
+  changed(index);
   return 0;
 }
 int vfs_remove(const char* path, int dir) {
@@ -293,6 +318,10 @@ int vfs_remove(const char* path, int dir) {
   if (index < 0)
     return -1;
   Node* n = &nodes[index];
+  if (vfs_busy(index)) {
+    vfs_fail("open object is busy", VFS_ERROR_THIS_ITEM_IS_PROTECTED_OR_READ_ONLY);
+    return S_BUSY;
+  }
   if (n->pinned || n->readonly)
     return vfs_fail("protected or read-only path",
                     VFS_ERROR_THIS_ITEM_IS_PROTECTED_OR_READ_ONLY);
@@ -307,6 +336,9 @@ int vfs_remove(const char* path, int dir) {
     if (nodes[i].used && nodes[i].parent == index)
       return vfs_fail("directory is not empty",
                       VFS_ERROR_THIS_FOLDER_IS_NOT_EMPTY_MOVE_ITS_FILES_FIRST);
+  if (!revision_room(2))
+    return vfs_fail("version limit", VFS_ERROR_NODE_LIMIT);
+  changed(index);
   for (u32 i = 0; i < VFS_PAGES; i++)
     if (n->pages[i])
       page_free(n->pages[i]);
@@ -336,6 +368,10 @@ int vfs_move(const char* source, const char* dest) {
   if (index < 0)
     return -1;
   Node* n = &nodes[index];
+  if (vfs_busy(index)) {
+    vfs_fail("open object is busy", VFS_ERROR_THIS_ITEM_IS_PROTECTED_OR_READ_ONLY);
+    return S_BUSY;
+  }
   if (n->readonly || n->pinned)
     return vfs_fail("protected or read-only path",
                     VFS_ERROR_THIS_ITEM_IS_PROTECTED_OR_READ_ONLY);
@@ -366,9 +402,12 @@ int vfs_move(const char* source, const char* dest) {
       if (ancestor == index && base + relative >= VFS_PATH)
         return vfs_fail("path too long", VFS_ERROR_PATH_TOO_LONG);
     }
+  if (!revision_room(3))
+    return vfs_fail("version limit", VFS_ERROR_NODE_LIMIT);
+  vfs_revision[n->parent] = ++next_revision;
   n->parent = parent;
   copy(n->name, name);
-  storage_changed();
+  changed(index);
   return 0;
 }
 int vfs_copy(const char* source, const char* dest, u8* buffer) {
@@ -389,8 +428,91 @@ int vfs_copy(const char* source, const char* dest, u8* buffer) {
     return -1;
   return vfs_write(target, buffer, (u32)length, 0);
 }
+/* Range access never places a whole file on a kernel or user stack. */
+int vfs_read_at(int index, u32 offset, u8* dest, u32 length) {
+  if (index < 0 || index >= VFS_NODES || !nodes[index].used) return S_NOTFOUND;
+  Node* n = &nodes[index];
+  if (n->dir || offset > MAX_FILE || length > MAX_FILE - offset) return S_INVALID;
+  if (offset >= n->size || !length) return 0;
+  if (length > n->size - offset) length = n->size - offset;
+  if (n->boot >= 0)
+    return fs_read_at((u32)n->boot, offset, dest, length) ? (int)length : S_IO;
+  for (u32 i = 0; i < length; i++)
+    dest[i] = n->pages[(offset + i) / 4096][(offset + i) % 4096];
+  return (int)length;
+}
+int vfs_buffer_write(u8** pages, u32* size, u32 offset, const u8* data, u32 length) {
+  if (offset > MAX_FILE || length > MAX_FILE - offset) return S_INVALID;
+  if (!length) return 0;
+  u32 total = offset + length;
+  if (total < *size) total = *size;
+  u32 old = (*size + 4095) / 4096, need = (total + 4095) / 4096, have = old;
+  while (have < need) {
+    pages[have] = page_alloc();
+    if (!pages[have]) {
+      while (have > old) { have--; page_free(pages[have]); pages[have] = 0; }
+      return S_NOMEM;
+    }
+    have++;
+  }
+  /* Zero gaps even when they share the old last page. */
+  for (u32 i = *size; i < offset; i++) pages[i / 4096][i % 4096] = 0;
+  for (u32 i = 0; i < length; i++)
+    pages[(offset + i) / 4096][(offset + i) % 4096] = data[i];
+  *size = total;
+  return (int)length;
+}
+int vfs_write_at(int index, u32 offset, const u8* data, u32 length) {
+  if (index < 0 || index >= VFS_NODES || !nodes[index].used) return S_NOTFOUND;
+  Node* n = &nodes[index];
+  if (n->dir) return S_INVALID;
+  if (n->readonly) return S_DENIED;
+  if (!revision_room(2)) return S_LIMIT;
+  int result = vfs_buffer_write(n->pages, &n->size, offset, data, length);
+  if (result > 0) changed(index);
+  return result;
+}
+/* All fallible checks precede the page ownership transfer. The kernel is not
+   preemptible, so callers observe either the old or the complete new contents. */
+int vfs_publish(int parent, const char* name, u32 generation, u32 revision,
+                u8** pages, u32 size, int* published) {
+  if (parent < 0 || parent >= VFS_NODES || !nodes[parent].used ||
+      !nodes[parent].dir || size > MAX_FILE) return S_INVALID;
+  if (nodes[parent].readonly) return S_DENIED;
+  int index = vfs_child(parent, name);
+  if (index < 0) {
+    if (generation || revision) return S_CHANGED;
+    char path[VFS_PATH]; vfs_path(parent, path);
+    if (strlen(path) + (parent != 0) + strlen(name) >= VFS_PATH) return S_LIMIT;
+    if (next_generation == ~0u || !revision_room(4)) return S_LIMIT;
+    index = allocate(parent, name, 0);
+    if (index < 0) return S_LIMIT;
+  } else {
+    if (!generation || vfs_generation[index] != generation ||
+        vfs_revision[index] != revision) return S_CHANGED;
+    if (nodes[index].dir) return S_INVALID;
+    if (nodes[index].readonly || nodes[index].pinned) return S_DENIED;
+    if (vfs_refs[index]) return S_BUSY;
+    if (!revision_room(2)) return S_LIMIT;
+  }
+  Node* n = &nodes[index];
+  for (u32 i = 0; i < VFS_PAGES; i++) {
+    u8* old = n->pages[i];
+    n->pages[i] = pages[i]; pages[i] = 0;
+    if (old) page_free(old);
+  }
+  n->size = size;
+  changed(index);
+  *published = index;
+  return 0;
+}
 void vfs_init(void) {
   memset(nodes, 0, sizeof(nodes));
+  memset(vfs_generation, 0, sizeof(vfs_generation));
+  memset(vfs_revision, 0, sizeof(vfs_revision));
+  memset(vfs_refs, 0, sizeof(vfs_refs));
+  next_generation = next_revision = 1;
+  vfs_generation[0] = vfs_revision[0] = 1;
   nodes[0].used = nodes[0].dir = nodes[0].pinned = 1;
   nodes[0].boot = -1;
   cwd = 0;

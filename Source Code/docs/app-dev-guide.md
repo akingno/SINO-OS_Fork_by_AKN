@@ -69,3 +69,15 @@ WINDOW_DESKTOP_COMMANDS=8 opts a window into desktop command messages and generi
 Cross-window/desktop drag presentation and the actual checked VFS transfer remain shared desktop infrastructure. Clients register explicit hit regions; the kernel checks stale references, readonly targets, writable home scope and name conflicts at drop time. Readonly sources may be copied into home; writable home sources move. Native Files does not receive raw disk privileges. The desktop's own icons/context/file actions still reside in Ring 0; this does not claim migration of the complete desktop service.
 
 `files.snx /selftest` runs actual user-side rights, pointer, geometry, clipboard and capability checks and emits FILES SELFTEST PASS only after assertions. `/fault-test` draws the real application and deliberately executes UD2 to verify cleanup/isolation. `/boot/files.snx` is always provided by normal image packaging. Full file bytes remain limited to 64 KiB; native copying uses bounded static storage, not the 16-KiB user stack. Folder copy remains unsupported (as with the old file-copy path); moving folders and permanent deletion of empty folders retain VFS rules.
+
+## Stage D explicit file authority
+
+Stage D adds GrantDirectory, StartRunWithDirectory/StartDirectory, OpenAt,
+FileReadAt/FileWriteAt, versioned enumeration, and private FileStage/Publish/Commit.
+Strict programs need explicit directory handles; legacy global Read/Write/Sync
+remain denied to them. Existing GUI applications continue using their current
+compatibility APIs. Full layouts, rights, failure semantics and limits are in
+[file-objects.md](file-objects.md). The implementation and fstest.snx regression
+client passed compilation and the Stage 2 text gate, including cold-boot byte
+checks. Remaining fault-injection coverage is documented there. Publication
+alone does not confirm durability.

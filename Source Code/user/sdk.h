@@ -41,6 +41,54 @@ static inline int CancelProcess(int handle) {
 static inline int StartRun(const RunSpec *spec) {
   return api(SYS_RUN_START, (u32)spec, sizeof(*spec), 0);
 }
+static inline int StartRunWithDirectory(const RunSpecV2 *spec) {
+  return api(SYS_RUN_START, (u32)spec, sizeof(*spec), 0);
+}
+/* Compatibility launchers acquire grants; strict children use only handed-in
+   directory handles. Close/Dup retain their existing ownership rules. */
+static inline int GrantDirectory(const char *path, u32 rights) {
+  return api(SYS_DIR_GRANT, (u32)path, rights, 0);
+}
+static inline int StartDirectory(void) {
+  return api(SYS_START_DIRECTORY, 0, 0, 0);
+}
+static inline int OpenAt(int directory, const char *path, u32 rights, u32 flags) {
+  OpenRequest request = {(u32)path, rights, flags};
+  return api(SYS_OPEN_AT, (u32)directory, (u32)&request, sizeof(request));
+}
+static inline int FileReadAt(int file, u32 offset, void *buffer, u32 bytes) {
+  FileIo io = {offset, (u32)buffer, bytes};
+  return api(SYS_FILE_READ_AT, (u32)file, (u32)&io, sizeof(io));
+}
+static inline int FileWriteAt(int file, u32 offset, const void *data, u32 bytes) {
+  FileIo io = {offset, (u32)data, bytes};
+  return api(SYS_FILE_WRITE_AT, (u32)file, (u32)&io, sizeof(io));
+}
+static inline int FileGetStat(int file, FileStat *out) {
+  return api(SYS_FILE_STAT, (u32)file, (u32)out, sizeof(*out));
+}
+static inline int DirectoryRead(int directory, DirPage *page) {
+  return api(SYS_DIR_READ, (u32)directory, (u32)page, sizeof(*page));
+}
+static inline int RemoveAt(int directory, const char *path, int is_directory) {
+  return api(SYS_REMOVE_AT, (u32)directory, (u32)path, (u32)is_directory);
+}
+static inline int RenameAt(int source_dir, const char *source, int target_dir, const char *target) {
+  RenameSpec spec = {(u32)source_dir, (u32)source, (u32)target_dir, (u32)target};
+  return api(SYS_RENAME_AT, (u32)&spec, sizeof(spec), 0);
+}
+static inline int FileStage(int directory, const char *path, u32 expected_revision) {
+  StageSpec spec = {(u32)path, expected_revision};
+  return api(SYS_FILE_STAGE, (u32)directory, (u32)&spec, sizeof(spec));
+}
+/* Once the stage handle is valid, result is filled even on publish/commit
+   failure. Always inspect published/durable as well as the return code. */
+static inline int FilePublish(int stage, CommitInfo *result) {
+  return api(SYS_FILE_PUBLISH, (u32)stage, (u32)result, sizeof(*result));
+}
+static inline int FileCommit(int stage, CommitInfo *result) {
+  return api(SYS_FILE_COMMIT, (u32)stage, (u32)result, sizeof(*result));
+}
 static inline int QueryCliInfo(CliInfo *out) {
   return api(SYS_CLI_INFO, (u32)out, sizeof(*out), 0);
 }

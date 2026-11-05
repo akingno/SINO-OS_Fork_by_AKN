@@ -14,7 +14,8 @@ enum {
   S_IO = -7,
   S_LIMIT = -8,
   S_BADHANDLE = -9,
-  S_EXISTS = -10
+  S_EXISTS = -10,
+  S_CHANGED = -11
 };
 enum {
   SYS_EXIT = 0x100,
@@ -76,6 +77,18 @@ enum {
   SYS_RUN_RESULT,
   SYS_RUN_READ,
   SYS_RUN_LIMITS,
+  SYS_DIR_GRANT,
+  SYS_START_DIRECTORY,
+  SYS_OPEN_AT,
+  SYS_FILE_READ_AT,
+  SYS_FILE_WRITE_AT,
+  SYS_FILE_STAT,
+  SYS_DIR_READ,
+  SYS_REMOVE_AT,
+  SYS_RENAME_AT,
+  SYS_FILE_STAGE,
+  SYS_FILE_PUBLISH,
+  SYS_FILE_COMMIT,
   SYS_CALL_END /* Append future calls before this sentinel. */
 };
 
@@ -83,7 +96,8 @@ enum { PROCESS_COMPAT = 0, PROCESS_STRICT = 1 };
 enum { FEATURE_SYSTEM_INFO = 1, FEATURE_STRICT_POLICY = 2, FEATURE_START_INFO = 4 };
 #define FEATURE_COMPLETION 8u
 #define FEATURE_BOUNDED_RUN 16u
-#define SYSTEM_FEATURES (FEATURE_SYSTEM_INFO | FEATURE_STRICT_POLICY | FEATURE_START_INFO | FEATURE_COMPLETION | FEATURE_BOUNDED_RUN)
+#define FEATURE_FILE_OBJECTS 32u
+#define SYSTEM_FEATURES (FEATURE_SYSTEM_INFO | FEATURE_STRICT_POLICY | FEATURE_START_INFO | FEATURE_COMPLETION | FEATURE_BOUNDED_RUN | FEATURE_FILE_OBJECTS)
 #define RUN_COUNT 2u
 #define RUN_ARGC 16u
 #define RUN_ARGS 1024u
@@ -94,6 +108,36 @@ typedef struct {
   u32 size, version, flags, path, argc, argv_bytes, argv, offsets;
   u32 input_bytes, input, timeout_ticks, reserved;
 } RunSpec;
+/* v1 stays 48 bytes. v2 adds one explicitly attenuated directory grant. */
+typedef struct {
+  RunSpec run;
+  u32 directory, directory_rights, reserved[2];
+} RunSpecV2;
+
+enum {
+  FS_READ = 1, FS_WRITE = 2, FS_LOOKUP = 4, FS_ENUM = 8,
+  FS_CREATE = 16, FS_REMOVE = 32, FS_COMMIT = 64, FS_DELEGATE = 128
+};
+#define FS_RIGHTS 255u
+enum { OPEN_CREATE = 1, OPEN_EXCLUSIVE = 2, OPEN_TRUNCATE = 4,
+       OPEN_DIRECTORY = 8 };
+enum { FILE_REGULAR = 1, FILE_DIRECTORY = 2, FILE_STAGING = 3 };
+typedef struct { u32 path, rights, flags; } OpenRequest;
+typedef struct { u32 offset, buffer, bytes; } FileIo;
+typedef struct {
+  u32 size, version, kind, length, generation, revision, readonly, reserved;
+} FileStat;
+typedef struct { char name[32]; u32 length, dir, revision; } DirEntry;
+/* version=0,cursor=0 begins enumeration. A changed version requires restart. */
+typedef struct { u32 version, cursor, buffer, capacity, count, done; } DirPage;
+typedef struct { u32 source_dir, source_path, target_dir, target_path; } RenameSpec;
+/* expected_revision=0 requires an absent target. Staging starts empty. */
+typedef struct { u32 path, expected_revision; } StageSpec;
+typedef struct {
+  u32 size, version, published, revision, durable, generation;
+  i32 status;
+  u32 reserved;
+} CommitInfo;
 typedef struct {
   u32 size, version, argc, in, out, err, argv_bytes, reserved;
   u32 offsets[RUN_ARGC];

@@ -3,7 +3,8 @@
 #include "api.h"
 #define OBJECTS 64
 #define HANDLES 24
-enum { OBJ_EVENT = 1, OBJ_WINDOW, OBJ_SOCKET, OBJ_PROCESS, OBJ_STREAM };
+enum { OBJ_EVENT = 1, OBJ_WINDOW, OBJ_SOCKET, OBJ_PROCESS, OBJ_STREAM,
+       OBJ_DIRECTORY, OBJ_FILE, OBJ_STAGING };
 typedef struct {
   u32 object, generation, rights, cookie;
 } Handle;

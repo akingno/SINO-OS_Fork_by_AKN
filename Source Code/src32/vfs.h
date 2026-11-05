@@ -14,6 +14,7 @@ typedef struct {
 } Node;
 extern Node nodes[VFS_NODES];
 extern u32 vfs_generation[VFS_NODES];
+extern u32 vfs_revision[VFS_NODES], vfs_refs[VFS_NODES];
 extern int cwd;
 extern const char* vfs_error;
 extern TextKey vfs_error_key;
@@ -28,4 +29,10 @@ int vfs_remove(const char*, int);
 int vfs_move(const char*, const char*);
 int vfs_copy(const char*, const char*, u8*);
 int vfs_child(int, const char*);
+int vfs_busy(int);
+int vfs_read_at(int, u32, u8*, u32);
+int vfs_write_at(int, u32, const u8*, u32);
+/* Private page buffers use the same bounded, allocate-before-write logic. */
+int vfs_buffer_write(u8**, u32*, u32, const u8*, u32);
+int vfs_publish(int, const char*, u32, u32, u8**, u32, int*);
 #endif

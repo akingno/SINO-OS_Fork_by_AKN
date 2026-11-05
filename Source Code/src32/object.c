@@ -4,6 +4,7 @@
 #include "gui.h"
 #include "net.h"
 #include "process.h"
+#include "filesys.h"
 Object objects[OBJECTS];
 static u32 generation, cookie;
 int object_new(u32 type, int value) {
@@ -50,6 +51,8 @@ void object_unref(int index) {
     else if (o->type == OBJ_SOCKET) net_close(o->value);
     else if (o->type == OBJ_PROCESS) process_completion_release(o->value);
     else if (o->type == OBJ_STREAM) process_stream_release(o->value);
+    else if (o->type == OBJ_DIRECTORY || o->type == OBJ_FILE || o->type == OBJ_STAGING)
+      filesys_release(o->value);
   }
 }
 int handle_close(Handle* table, u32 h) {

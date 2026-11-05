@@ -124,10 +124,12 @@ async function run(directory) {
             const records = volume(disk).current.records;
             const binary = Buffer.from(Array.from({length:257}, (_, i) => (i * 37 + 11) & 255));
             assert(records.get('/home/user/stage2-persist.bin')?.data.equals(binary), 'CRC-valid binary snapshot');
+            const saved = Buffer.from(Array.from({length:257}, (_, i) => (i * 19 + 7) & 255));
+            assert(records.get('/home/user/stage2-file-save.bin')?.data.equals(saved), 'Stage D CRC-valid published snapshot');
             assert.equal(records.get('/home/user/stage2-marker.txt')?.data.toString(), 'stage2 durable marker\n');
             assert(records.has('/home/user/.sino/rollback/journal'), 'interrupted install journal committed');
             report.privateSeed = {path:disk, sha256:hash(disk)};
-            return {...result, snapshotChecks:3, guestAssertions:run.result.cases
+            return {...result, snapshotChecks:4, guestAssertions:run.result.cases
                 .reduce((sum, c) => sum + (c.guestAssertions || 0), 0)};
         });
         await phase('managed-cli', async () => passed(await shellSuite('managed-cli',
@@ -137,7 +139,7 @@ async function run(directory) {
             assert.equal(hash(seed.path), seed.sha256, 'private disk unchanged before clone');
             const run = await shellSuite('reboot', {suite:'stage2'}, c => guest.run(c, 'reboot'), seed.path);
             assert.equal(hash(seed.path), seed.sha256, 'cold boot does not modify the original private disk');
-            return passed(run, 3);
+            return passed(run, 4);
         });
         await phase('runner-rejects-failure', async () => {
             const run = await shellSuite('intentional-failure', {suite:'stage2'}, c => guest.run(c, 'reject'));

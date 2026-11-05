@@ -76,6 +76,7 @@ extern File files[224];
 extern u32 file_count;
 int fs_init(void);
 int fs_read(u32, u8*, u32);
+int fs_read_at(u32, u32, u8*, u32);
 void shell_init(void);
 void shell_step(void);
 void shell_text(const char*);

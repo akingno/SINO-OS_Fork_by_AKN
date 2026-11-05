@@ -8,6 +8,7 @@
 #include "net.h"
 #include "settings.h"
 #include "rtc.h"
+#include "filesys.h"
 #define NP 8
 #define NT 4
 typedef struct {
@@ -32,17 +33,20 @@ typedef struct {
   u32 policy;
   u32 completion_object; /* Object index + 1; zero for old launch paths. */
   u32 reason, fault_vector;
+  u32 directory; /* Explicit startup grant; never a global working directory. */
 } Process;
 typedef struct {
   CliInfo cli;
   char path[128];
   u8 *buffer[3];
   u32 input_bytes, input_position, length[2], deadline, timed, incomplete;
+  u32 pending_directory, directory_rights;
 } RunData;
 _Static_assert(sizeof(RunData) <= 4096, "run metadata fits one page");
 static u32 run_count;
 static void run_free(RunData* run) {
   if (!run) return;
+  if (run->pending_directory) object_unref((int)run->pending_directory - 1);
   for (int i = 0; i < 3; i++) if (run->buffer[i]) page_free(run->buffer[i]);
   page_free(run);
   run_count--;
@@ -220,6 +224,12 @@ static int launch_policy(const char* path, u32 caps, const char* arguments,
     }
   RunData* run = completion >= 0 ? completions[objects[completion].value].run : 0;
   if (run) {
+    if (run->pending_directory) {
+      int h = handle_open(p->handles, (int)run->pending_directory - 1, run->directory_rights);
+      if (h < 0) { release(p); return h; }
+      p->directory = (u32)h;
+      run->pending_directory = 0; /* Transfer the pending reference to the child. */
+    }
     u32* handles[3] = {&run->cli.in, &run->cli.out, &run->cli.err};
     for (int i = 0; i < 3; i++) {
       int stream = object_new(OBJ_STREAM, completion * 3 + i);
@@ -285,10 +295,14 @@ void process_run_limits(RunLimits* out) {
                      RUN_BYTES, RUN_BYTES, RUN_BYTES, RUN_IO_MAX, RUN_TIMEOUT_MAX};
 }
 int process_run_start(Handle* owner, const RunSpec* spec) {
+  return process_run_start_directory(owner, spec, 0, 0);
+}
+int process_run_start_directory(Handle* owner, const RunSpec* spec, u32 directory, u32 rights) {
   if (spec->size != sizeof(RunSpec) || spec->version != 1 || spec->flags ||
       spec->reserved || spec->argc > RUN_ARGC || spec->argv_bytes > RUN_ARGS ||
       spec->input_bytes > RUN_BYTES || spec->timeout_ticks > RUN_TIMEOUT_MAX ||
       (!spec->argc && spec->argv_bytes)) return S_INVALID;
+  if ((!directory && rights) || (directory && !rights)) return S_INVALID;
   if (run_count >= RUN_COUNT) return S_LIMIT;
   RunData* run = page_alloc();
   if (!run) return S_NOMEM;
@@ -319,6 +333,12 @@ int process_run_start(Handle* owner, const RunSpec* spec) {
   if (spec->input_bytes) memcpy(run->buffer[0], (void*)spec->input, spec->input_bytes);
   run->timed = spec->timeout_ticks != 0;
   run->deadline = ticks + spec->timeout_ticks;
+  if (directory) {
+    int object = filesys_acquire_directory(owner, directory, rights);
+    if (object < 0) { run_free(run); return object; }
+    run->pending_directory = (u32)object + 1;
+    run->directory_rights = rights;
+  }
   return tracked_launch(owner, run->path, "", run);
 }
 int process_run_result(Handle* owner, u32 handle, RunResult* out) {
@@ -442,7 +462,7 @@ static void leave(Frame* f) {
   user_switch_out = 1;
   cr3(0x90000);
 }
-/* Allow only process-local mechanisms and explicitly public read-only data.
+/* Allow local mechanisms, public queries and explicitly authorized objects.
  * New calls are denied until reviewed; old ambient paths cannot bypass this. */
 static int strict_call(u32 call) {
   switch (call) {
@@ -454,6 +474,10 @@ static int strict_call(u32 call) {
     case SYS_PROCESS_RESULT: case SYS_PROCESS_CANCEL:
     case SYS_CLI_INFO: case SYS_STREAM_READ: case SYS_STREAM_WRITE:
     case SYS_RUN_RESULT: case SYS_RUN_READ: case SYS_RUN_LIMITS:
+    case SYS_START_DIRECTORY: case SYS_OPEN_AT:
+    case SYS_FILE_READ_AT: case SYS_FILE_WRITE_AT: case SYS_FILE_STAT:
+    case SYS_DIR_READ: case SYS_REMOVE_AT: case SYS_RENAME_AT:
+    case SYS_FILE_STAGE: case SYS_FILE_PUBLISH: case SYS_FILE_COMMIT:
       return 1;
     default: return 0;
   }
@@ -468,17 +492,35 @@ static int syscall(Frame* f) {
   if (f->eax >= SYS_SOCKET && f->eax <= SYS_RECVFROM &&
       !(current->caps & CAP_NETWORK))
     return S_DENIED;
+  if (f->eax >= SYS_DIR_GRANT && f->eax <= SYS_FILE_COMMIT &&
+      f->eax != SYS_START_DIRECTORY)
+    return filesys_call(current->handles, current->caps, f->eax, a, b, c,
+                        user_access_ok, copy_user_string);
   switch (f->eax) {
+    case SYS_START_DIRECTORY:
+      if (a || b || c) return S_INVALID;
+      if (!current->directory) return S_NOTFOUND;
+      return handle_get(current->handles, current->directory, OBJ_DIRECTORY, 0)
+                 ? (int)current->directory : S_BADHANDLE;
     case SYS_RUN_START: {
-      if (c || b != sizeof(RunSpec) || !user_access_ok(a, sizeof(RunSpec), 0)) return S_INVALID;
+      if (c || (b != sizeof(RunSpec) && b != sizeof(RunSpecV2)) ||
+          !user_access_ok(a, b, 0)) return S_INVALID;
       RunSpec spec; memcpy(&spec, (void*)a, sizeof(spec));
+      u32 directory = 0, rights = 0;
+      if (b == sizeof(RunSpecV2)) {
+        RunSpecV2 extended; memcpy(&extended, (void*)a, sizeof(extended));
+        if (spec.size != sizeof(extended) || spec.version != 2 ||
+            extended.reserved[0] || extended.reserved[1]) return S_INVALID;
+        directory = extended.directory; rights = extended.directory_rights;
+        spec.size = sizeof(spec); spec.version = 1;
+      }
       if (spec.argc > RUN_ARGC || spec.argv_bytes > RUN_ARGS || spec.input_bytes > RUN_BYTES ||
           !copy_user_string(spec.path, path, sizeof(path)) ||
           (spec.argc && !user_access_ok(spec.offsets, spec.argc * 4, 0)) ||
           (spec.argv_bytes && !user_access_ok(spec.argv, spec.argv_bytes, 0)) ||
           (spec.input_bytes && !user_access_ok(spec.input, spec.input_bytes, 0))) return S_INVALID;
       spec.path = (u32)path;
-      return process_run_start(current->handles, &spec);
+      return process_run_start_directory(current->handles, &spec, directory, rights);
     }
     case SYS_RUN_LIMITS: {
       if (c || b < sizeof(RunLimits) || !user_access_ok(a, sizeof(RunLimits), 1)) return S_INVALID;
@@ -764,7 +806,7 @@ static int syscall(Frame* f) {
           return r;
         r = vfs_move(path, dest);
         if (r < 0)
-          return S_IO;
+          return r == S_BUSY ? S_BUSY : S_IO;
         gui_files_changed();
         return 0;
       }
@@ -885,7 +927,8 @@ static int syscall(Frame* f) {
       r = homepath(a, path, 1);
       if (r)
         return r;
-      return vfs_remove(path, (int)b) < 0 ? S_IO : 0;
+      r = vfs_remove(path, (int)b);
+      return r < 0 ? (r == S_BUSY ? S_BUSY : S_IO) : 0;
     case SYS_LIST:
       r = homepath(a, path, 0);
       if (r)

@@ -1,9 +1,12 @@
-# OS interface: Stages A, B and C
+# OS interface: Stages A through D
 
 Stage A adds discovery and an opt-in strict process policy. Stage B adds bounded,
 nonblocking completion objects. Stage C adds finite argv/input/output and a
-supervised host protocol; see [bounded-cli.md](bounded-cli.md). File objects,
-general delegation, streaming pipes and blocking wait remain future work.
+supervised host protocol; see [bounded-cli.md](bounded-cli.md). Stage D adds
+directory grants, range I/O and private publication/commit; see
+[file-objects.md](file-objects.md). Stage D's minimum version passed compilation
+and the 8-group Stage 2 text gate; remaining failure-injection limits are listed
+there. General delegation, streaming pipes and blocking wait remain future work.
 Existing SNX1 headers, startup strings and all 47 old syscall numbers remain
 unchanged. Existing negative errors and whole-file Write's success value 0 are
 unchanged. The policy test pins old syscall numbers with compile-time assertions.
@@ -36,7 +39,7 @@ Arguments()/Executable() still use the original immutable startup strings.
 Stage C provides structured arguments through a separate CliInfo query.
 
 Feature bits: SYSTEM_INFO=1, STRICT_POLICY=2, START_INFO=4, COMPLETION=8,
-BOUNDED_RUN=16; currently features=31. Old clients mask known bits, not equality.
+BOUNDED_RUN=16, FILE_OBJECTS=32; currently features=63. Old clients mask known bits, not equality.
 These indicate implemented mechanisms, not grants to use every mechanism.
 Unknown feature bits must not be interpreted as authority. Unknown syscalls
 return S_INVALID. Add future syscall IDs before SYS_CALL_END; the sentinel is not
@@ -62,6 +65,10 @@ THREAD_EXIT, EVENT_CREATE, EVENT_SET, EVENT_WAIT, TIME, UI_LANGUAGE, SYSTEM_INFO
 and START_INFO, plus Stage B PROCESS_RESULT and PROCESS_CANCEL for owned handles.
 Stage C also allows CLI_INFO, STREAM_READ/WRITE, RUN_RESULT/READ/LIMITS; RUN_START
 is still denied to strict callers. Streams and captures require owned handles.
+Stage D also allows START_DIRECTORY, OPEN_AT, FILE_READ_AT/WRITE_AT/STAT,
+DIR_READ, REMOVE_AT, RENAME_AT, FILE_STAGE/PUBLISH/COMMIT. They require explicit
+owned directory/file/staging handles; DIR_GRANT remains denied. RunSpecV2 lets a
+compatibility launcher explicitly attenuate one directory grant to a strict child.
 Existing pointer, object-type, rights and resource checks still
 apply. LOG remains diagnostics, not stdout; time and language are public data.
 
@@ -73,7 +80,7 @@ compatibility child, including through aliases or writable copies. Strict policy
 rejects both old Spawn and Stage B SpawnTracked; later delegation must preserve authority.
 
 This confines explicitly strict processes, not every legacy application or the
-remaining Ring 0 desktop. No file selection grants, arbitrary delegation or general
+remaining Ring 0 desktop. No GUI file selection grants, arbitrary delegation or general
 revocation system are claimed. New CLI launch mechanisms should default to
 strict policy when introduced, without silently changing old launch semantics.
 

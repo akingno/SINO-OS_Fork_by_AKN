@@ -557,6 +557,29 @@ int fs_read(u32 index, u8* dest, u32 cap) {
   return 1;
 }
 
+int fs_read_at(u32 index, u32 offset, u8* dest, u32 length) {
+  if (index >= file_count || offset > files[index].size ||
+      length > files[index].size - offset) return 0;
+  u32 c = files[index].cluster, steps = 0, position = 0;
+  while (length) {
+    if (c < 2 || c >= cluster_count + 2 || ++steps > cluster_count) return 0;
+    u32 off = data_offset + (c - 2) * 512;
+    if (off > RAMDISK_SIZE - 512) return 0;
+    if (offset < position + 512) {
+      u32 skip = offset - position, count = 512 - skip;
+      if (count > length) count = length;
+      memcpy(dest, RAMDISK + off + skip, count);
+      dest += count; offset += count; length -= count;
+    }
+    position += 512;
+    u32 fat = fat_offset + c + c / 2;
+    if (fat + 1 >= root_offset) return 0;
+    u32 next = le16(RAMDISK + fat);
+    c = (c & 1) ? next >> 4 : next & 0xfff;
+  }
+  return 1;
+}
+
 void kernel_tests(void) {
   u32 before = free_pages;
   u32 *a = page_alloc(), *b = page_alloc();
