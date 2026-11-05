@@ -180,3 +180,15 @@ G2普通构建dev-20261105-161524-ccac3597通过，内核151264字节、BSS末�
 ```powershell
 .\stage2-summary.ps1 -RunDirectory 'Build Output/dev/runs/stage2-20261105-172615-7d9a6804'
 ```
+
+## 阶段G4验收
+
+最终 `stage2-20261105-182013-bf319296`：8/8组385项、失败0、未执行0、退出0；分组46+130+25+112+55+12+4+1。使用stage2-summary.ps1精简读取明确轮次。新增同源流式解码/排版测试1项和真实QMP场景4项：ls隐藏/详细项、cwd路径、stat/cat/view、空文件/无末尾换行/控制字节、跨512字节UTF-8、64KiB文件到末尾、页键/q/EOF/Ctrl+C、双会话、中文路径、长行分页与尺寸事件、文件中途变更以及关闭/清理后的精确页面和对象基线。
+
+测试先行的缺实现编译按预期失败。补充尺寸测试曾因宿主脚本漏接window方法失败，摘要定位后修正接线再通过，未放宽超时或断言。夹具仅写私有盘并最终删除，不影响日常开发盘。普通构建 `dev-20261105-182311-caee9e61` 通过，内核151424字节、BSS末端1884800。正式行为与范围见 [file-tools.md](../Source%20Code/docs/file-tools.md)；这是安全文本工具，非二进制复制或新增宿主有限捕获模式，不等于完整22组GUI门禁。
+
+```powershell
+.\stage2-summary.ps1 -RunDirectory 'Build Output/dev/runs/stage2-20261105-182013-bf319296'
+```
+
+G4普通镜像可见冒烟：ls、cat、分页提示、Space继续和返回Shell通过，截图已检查，私有VM已停止。

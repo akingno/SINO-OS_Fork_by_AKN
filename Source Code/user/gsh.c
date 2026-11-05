@@ -42,12 +42,13 @@ static int usage(u32 minimum, u32 maximum) {
   status(2, PROCESS_EXITED, 0);
   return -1;
 }
-static void external(void) {
+static void external(u32 program, u32 rights) {
   InteractiveSpec request;
   memset(&request, 0, sizeof(request));
   request.size = sizeof(request);
   request.version = 1;
-  request.program = IX_COMMAND;
+  request.program = program;
+  request.rights = rights;
   if (request_id == 0xffffffffu) {
     put("request limit\n");
     status(126, 0, S_LIMIT);
@@ -138,6 +139,7 @@ static void execute(void) {
       return;
     put("builtins: help pwd cd history status exit\n");
     put("tools: echo args exitcode spin fault\n");
+    put("files: ls [-a|-l|-la|-al] [path], stat/cat/view path\n");
     put("paths are relative to the read-only session grant\n");
   } else if (streq(command, "pwd")) {
     if (usage(1, 1))
@@ -181,7 +183,44 @@ static void execute(void) {
   } else if (streq(command, "echo") || streq(command, "args") ||
              streq(command, "exitcode") || streq(command, "spin") ||
              streq(command, "fault")) {
-    external();
+    external(IX_COMMAND, 0);
+    return;
+  } else if (streq(command, "ls") || streq(command, "stat") ||
+             streq(command, "cat") || streq(command, "view")) {
+    int ls = streq(command, "ls");
+    u32 index = 1;
+    if (ls && index < words.argc && words.bytes[words.offsets[index]] == '-') {
+      const char *option = words.bytes + words.offsets[index++];
+      if (!streq(option, "-a") && !streq(option, "-l") &&
+          !streq(option, "-la") && !streq(option, "-al")) {
+        put("usage: ls [-a|-l|-la|-al] [path]\n");
+        status(2, PROCESS_EXITED, 0);
+        return;
+      }
+    }
+    if (words.argc > index + 1 || (!ls && words.argc != index + 1)) {
+      put("file tool: expected one path\n");
+      status(2, PROCESS_EXITED, 0);
+      return;
+    }
+    char path[128];
+    if (shell_path(
+            cwd, index == words.argc ? "." : words.bytes + words.offsets[index],
+            path)) {
+      put("path outside grant or too long\n");
+      status(1, PROCESS_EXITED, 0);
+      return;
+    }
+    if (!*path)
+      copy(path, ".");
+    /* Replace the path with a normalized grant-relative argument, preserving
+     * command/options. No ambient cwd or global path enters the worker. */
+    u32 at = index < words.argc ? words.offsets[index] : words.used;
+    words.offsets[index] = at;
+    copy(words.bytes + at, path);
+    words.used = at + strlen(path) + 1;
+    words.argc = index + 1;
+    external(IX_READTOOLS, FS_READ | FS_LOOKUP | (ls ? FS_ENUM : 0));
     return;
   } else {
     put("unknown command: ");

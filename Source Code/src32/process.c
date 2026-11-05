@@ -333,8 +333,10 @@ int process_interactive_start(Handle* owner, const InteractiveSpec* spec,
   }
   if (next != spec->bytes)
     return S_INVALID;
-  const char* path = spec->program==IX_SHELL ? "/boot/gsh.snx" : spec->program==IX_COMMAND ? "/boot/gcmd.snx" : "/boot/g2test.snx";
-  if (spec->program != 1 && spec->program != 2 && spec->program!=IX_SHELL && spec->program!=IX_COMMAND)
+  const char* path = spec->program==IX_SHELL ? "/boot/gsh.snx" : spec->program==IX_COMMAND ? "/boot/gcmd.snx" : spec->program==IX_READTOOLS ? "/boot/tview.snx" : "/boot/g2test.snx";
+  if (spec->program != 1 && spec->program != 2 && spec->program!=IX_SHELL && spec->program!=IX_COMMAND && spec->program!=IX_READTOOLS)
+    return S_DENIED;
+  if (spec->program == IX_COMMAND && spec->rights)
     return S_DENIED;
   int n = vfs_lookup(path);
   if (n < 0 || !nodes[n].readonly || nodes[n].boot < 0)

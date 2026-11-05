@@ -286,7 +286,7 @@ static int interactive_call(Terminal* t, Client* c, Object* control,
     const InteractiveSpec* q = (void*)r->buffer;
     if (q->size != sizeof(*q) || q->version != 1 || !q->id ||
         t->request_id == 0xffffffffu || q->id != t->request_id + 1 ||
-        (q->program != 2 && q->program != IX_COMMAND) || q->argc > RUN_ARGC ||
+        (q->program != 2 && q->program != IX_COMMAND && q->program != IX_READTOOLS) || q->argc > RUN_ARGC ||
         q->bytes > RUN_ARGS || (q->rights & ~t->rights))
       return S_INVALID;
     u32 n = 0;

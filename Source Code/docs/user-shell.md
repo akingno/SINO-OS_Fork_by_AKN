@@ -3,7 +3,7 @@
 Open the legacy Shell and enter `run /boot/term.snx /g3`. This opens the existing
 Ring 3 frontend in G3 mode and atomically starts `/boot/gsh.snx` through the
 [interactive broker](interactive-runs.md). F2 and the default F12 probe keep their
-existing routes; default entry switching belongs to G5.
+existing routes; default entry switching belongs to G6.
 
 ## Authority and paths
 
@@ -23,9 +23,10 @@ Busy rules apply while a directory is held. No write rights are delegated.
 Catalog ID3 is the Shell root. ID4 is `/boot/gcmd.snx`, a small external tool
 selected by argv[0]. Both executable nodes must resolve to read-only boot files.
 The Shell submits typed broker requests and cannot directly Spawn/StartRun.
-Current text tools request zero directory rights and receive no directory
-handle at all. G4 file tools will need an explicit catalog entry, read-only
-directory attenuation and a defined cwd-relative file argument policy.
+The ID4 text tools request zero directory rights and receive no directory
+handle at all. G4 adds ID5, `/boot/tview.snx`, for read-only file commands with
+normalized cwd-relative arguments and explicit READ|LOOKUP (plus ENUM for ls).
+See [file-tools.md](file-tools.md) for text safety, paging and consistency.
 
 ## Commands and syntax
 
@@ -42,6 +43,10 @@ directory attenuation and a defined cwd-relative file argument policy.
 | `exitcode signed-i32` | External tool returns the specified signed code |
 | `spin` | Diagnostic worker waits until canceled |
 | `fault` | Diagnostic worker triggers intentional #UD |
+| `ls [-a\|-l\|-la\|-al] [path]` | List cwd or another granted directory |
+| `stat path` | Print file/directory kind, byte length and revision |
+| `cat path` | Display a file as safe text, without pagination |
+| `view path` | Page safe text; Space continues, q quits |
 
 Lines contain at most 255 bytes, up to 16 arguments and a 1024-byte argv block.
 Single/double quotes preserve spaces and empty arguments; adjacent quoted and

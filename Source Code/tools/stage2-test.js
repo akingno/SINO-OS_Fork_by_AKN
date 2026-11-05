@@ -115,7 +115,12 @@ async function run(directory) {
             const parserOutput=path.join(folder,'gsh-output.txt');
             await command(parser,[],parserOutput);
             assert.equal(fs.readFileSync(parserOutput,'utf8').trim(),'GSH PARSER PASS');
-            return {checks:result.checks.length + 2, modelOutput, parserOutput,
+            const fileText=path.join(folder,'file-text.exe');
+            await command(host.tool('gcc'),[path.join(__dirname,'test-file-text.c'),'-std=c11','-O2','-Wall','-Wextra','-Werror','-o',fileText],path.join(folder,'file-text-build.txt'));
+            const fileTextOutput=path.join(folder,'file-text-output.txt');
+            await command(fileText,[],fileTextOutput);
+            assert.equal(fs.readFileSync(fileTextOutput,'utf8').trim(),'FILE TEXT PASS');
+            return {checks:result.checks.length + 3, modelOutput, parserOutput, fileTextOutput,
                 report:path.join(folder, 'src32-refactor-report.json')};
         });
         await phase('rtc-driver', async () => {

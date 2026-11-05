@@ -64,8 +64,9 @@ status. A completed task has status=0 and its typed exit/fault/cancel reason.
 
 The boot catalog permits root ID1 and worker ID2, both resolved to the read-only
 boot g2test.snx probe. G3 adds root ID3 (gsh.snx) and worker ID4 (gcmd.snx).
-Runtime writable files and caller-provided executable paths have no catalog
-entry. File tools such as tview require a subsequent explicit catalog extension.
+G4 adds worker ID5 (tview.snx) for ls/stat/cat/view, with read-only file grants.
+ID4 rejects any directory rights. Runtime writable files and caller-provided
+executable paths have no catalog entry. See [file-tools.md](file-tools.md).
 
 The first root has request id zero. Its subsequent intents use consecutive
 nonzero ids, without wrap. Only that session's foreground root can submit.

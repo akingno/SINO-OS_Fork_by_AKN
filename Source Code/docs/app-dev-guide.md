@@ -107,7 +107,13 @@ handles, foreground input, line/raw mode, bounded echo/output and typed
 resize/key/EOF/hangup events. Client handles support StreamRead/Write/Ready and
 the existing bounded runtime helpers. See [terminal-sessions.md](terminal-sessions.md).
 G1 supplies the opt-in desktop frontend. G3 supplies a strict user Shell via
-`run /boot/term.snx /g3`; existing default desktop routes remain until G5.
+`run /boot/term.snx /g3`; existing default desktop routes remain until G6.
 See [user-shell.md](user-shell.md) for commands, read-only home paths and results.
 
 G2 interactive startup and the narrow session broker use the existing terminal syscall. See [interactive-runs.md](interactive-runs.md) and user/interactive.h for atomic argv/directory/stdio binding, result and cleanup contracts.
+
+G4 supplies strict read-only terminal file tools, `ls/stat/cat/view`, through
+the same Shell entry. Their range reads, revision checks, text decoding and
+paging remain in user/tview.c and file_text.h; see [file-tools.md](file-tools.md).
+Application welcome text belongs in user programs, while src32/shell.c still
+contains the legacy rescue/development Shell and its original banner.
