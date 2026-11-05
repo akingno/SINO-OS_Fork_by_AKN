@@ -2,8 +2,8 @@
 
 Stage F delivered the headless session backend. G1 adds a Ring 3 desktop frontend
 and a strict, deadline-bound session probe using the same API. F12 opens the new
-frontend. Interactive Shell launch/restore, PTY, ANSI and job control remain
-future work. Input arrives through focused USERAPP events, with copied drawing
+frontend. G2 adds atomic interactive launch/restore and G3 adds an opt-in user
+Shell; PTY, ANSI and job control remain future work. Input arrives through focused USERAPP events, with copied drawing
 commands for display. Global input and framebuffer access stay kernel-owned.
 
 Stage F gate: stage2-20261105-040857-714bf310, 8/8 groups, 360 checks, failed=0,
@@ -56,8 +56,10 @@ newline; backspace/delete removes the last UTF-8 byte sequence from the edit
 line. Input is transported as bytes, not validated/normalized Unicode. EOF
 commits an unfinished line, then reads return 0 after draining. RAW mode exposes
 bytes immediately, including NUL. Mode changes with a partial edit line return
-S_BUSY so no input silently disappears. ECHO appends the original input bytes
-to output: a frontend owns their presentation, not the kernel session backend.
+S_BUSY so no input silently disappears. RAW ECHO appends the original input
+bytes. Canonical ECHO appends accepted text and effective backspaces only:
+backspace at an empty edit line emits nothing, and DEL becomes byte8. This
+prevents erasing a prompt. A frontend owns presentation of these echo bytes.
 
 When committing input or echo cannot fit, feed returns S_AGAIN and changes
 nothing. An overlong edit line returns S_LIMIT without mutation. Output writes
@@ -122,8 +124,8 @@ EOF versus explicit hangup, controller loss, and generic stream/runtime access.
 The host waits for completion, checks one intentional #UD, all remaining PIDs
 and object/page baselines. Existing A-E, host protocol and cold boot stay enabled.
 
-Remaining work: interactive Shell launch/restore and application integration,
-atomic launch-time terminal binding if needed, foreground groups instead of one
+G2/G3 deliver atomic launch-time binding and interactive Shell launch/restore.
+Remaining work includes further application integration, foreground groups instead of one
 task, full PTY/ANSI and detailed page-allocation failure injection. The backend
 does not reserve global device input. The headless F suite covers its own API
 authority checks. G1 separately exercises desktop keyboard/focus routing below.
@@ -206,3 +208,7 @@ ordinary ISO passed F12, ASCII input, Chinese IME and copied text checks. Its
 screenshot was inspected and its private VM stopped.
 
 G2 adds an opt-in atomic interactive startup and session broker. See [interactive-runs.md](interactive-runs.md) for ownership, typed requests/results and stream roles. Use `run /boot/term.snx /g2` for its strict diagnostic probes.
+
+G3 adds `run /boot/term.snx /g3` for a strict user Shell with quoted argv,
+per-session cwd within a read-only home grant, bounded history and external text
+tools. See [user-shell.md](user-shell.md) for syntax, statuses and verification.

@@ -106,7 +106,8 @@ Stage F now provides a headless text-session backend with controller/client
 handles, foreground input, line/raw mode, bounded echo/output and typed
 resize/key/EOF/hangup events. Client handles support StreamRead/Write/Ready and
 the existing bounded runtime helpers. See [terminal-sessions.md](terminal-sessions.md).
-Desktop keyboard/display adapters and an interactive Shell are still pending;
-this does not change the existing desktop's input routing.
+G1 supplies the opt-in desktop frontend. G3 supplies a strict user Shell via
+`run /boot/term.snx /g3`; existing default desktop routes remain until G5.
+See [user-shell.md](user-shell.md) for commands, read-only home paths and results.
 
 G2 interactive startup and the narrow session broker use the existing terminal syscall. See [interactive-runs.md](interactive-runs.md) and user/interactive.h for atomic argv/directory/stdio binding, result and cleanup contracts.

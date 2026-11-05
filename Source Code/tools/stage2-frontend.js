@@ -14,7 +14,13 @@ async function run(context, api) {
         await sleep(30);
     }
     async function type(text) {
-        for (const c of text) await key(c === '\n' ? 'ret' : c === ' ' ? 'spc' : c);
+        const plain={'\n':'ret',' ':'spc',"'":'apostrophe','\\':'backslash','/':'slash','.':'dot','-':'minus','|':'backslash'};
+        for (const c of text) {
+            if(c==='"') await key('shift','apostrophe');
+            else if(c==='|') await key('shift','backslash');
+            else if(/[A-Z]/.test(c)) await key('shift',c.toLowerCase());
+            else await key(plain[c]||c);
+        }
     }
     async function window(pid) {
         const owners = await memory(symbols.user_owner, 32);
@@ -210,6 +216,8 @@ async function run(context, api) {
         await until(async()=>(await processes()).length===0,'kernel session ownership cleanup');
         assert.deepEqual(await resources(),baseline);
     });
+
+    await require('./stage2-shell').run({check,launch,processes,resources,value,until,key,type,text,waitText,window,command});
 
 }
 module.exports = {run};

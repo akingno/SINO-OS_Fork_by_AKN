@@ -24,7 +24,9 @@ The C StartRun family, finite captures and host v2 protocol retain their contrac
 
 Each session has one root and at most one external task. Two complete sessions
 use six of eight process slots and four of sixteen completion records. Each
-frontend, root and worker uses at most five local handles in the current path.
+frontend, root and worker uses at most five local handles in the G2 probe path.
+G3 adds one local handle and one directory object per Shell while its cwd is
+below the grant root; returning to the root closes that additional reference.
 With separate frontend directory grants, the two sessions use fourteen objects
 for windows, controllers, grants, clients and completions. Standard-stream
 handles share each process's client object through separate references. Metadata
@@ -60,16 +62,18 @@ status. A completed task has status=0 and its typed exit/fault/cancel reason.
 | IX_RESULT=15 | Root primary client, Result output; value=request id, extra zero | Consume one ready result, S_AGAIN while running, S_NOTFOUND after consumption |
 | IX_FINISH=16 | Controller; value=owned completed worker handle, other fields zero | Restore root foreground, then publish its result |
 
-The current boot catalog permits program IDs 1 and 2, both resolved to the
-read-only boot g2test.snx probe. ID1 is the root, ID2 the worker. Runtime writable
-files and caller-provided executable paths have no catalog entry. Extending the
-catalog for gsh/tview is a separate application integration change.
+The boot catalog permits root ID1 and worker ID2, both resolved to the read-only
+boot g2test.snx probe. G3 adds root ID3 (gsh.snx) and worker ID4 (gcmd.snx).
+Runtime writable files and caller-provided executable paths have no catalog
+entry. File tools such as tview require a subsequent explicit catalog extension.
 
 The first root has request id zero. Its subsequent intents use consecutive
 nonzero ids, without wrap. Only that session's foreground root can submit.
 Pending/running/ready requests block another submission. A controller launch
-must match the copied intent exactly and use the same pinned directory object
-as the root, with rights no greater than the root grant. A worker cannot submit
+must match the copied intent exactly. A worker requesting nonzero directory
+rights uses the same pinned directory object as the root, with rights no greater
+than the root grant. A zero-rights request instead passes directory handle zero
+and receives no directory grant. A worker cannot submit
 root requests. Cross-session observers cannot finish a job. Arbitrary PIDs and
 capability selections are absent from this protocol.
 
@@ -94,7 +98,7 @@ cancel for retry. Worker Ctrl+C uses the existing owned foreground cancellation.
 Foreground transitions clear old input, canonical state and queued terminal
 events. The frontend also discards transition typeahead while honoring close
 requests. General desktop event overflow and controlled paste remain subsequent
-work alongside G3.
+work after G3's canonical echo and Shell integration.
 
 The last controller reference cancels both registered interactive PIDs, including
 clients that ignore hangup and make no terminal I/O calls. This ownership policy

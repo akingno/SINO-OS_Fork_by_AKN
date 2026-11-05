@@ -1,0 +1,93 @@
+# G3 strict user Shell
+
+Open the legacy Shell and enter `run /boot/term.snx /g3`. This opens the existing
+Ring 3 frontend in G3 mode and atomically starts `/boot/gsh.snx` through the
+[interactive broker](interactive-runs.md). F2 and the default F12 probe keep their
+existing routes; default entry switching belongs to G5.
+
+## Authority and paths
+
+The frontend uses compatibility policy with caps=0. The Shell and external
+tools use PROCESS_STRICT with caps=0. The frontend explicitly delegates a
+READ|LOOKUP|ENUM grant for `/home/user` to the Shell. In the Shell, `/` means
+that grant's root, not the global filesystem root. `pwd` and the prompt show
+this logical path. Each Shell owns its own relative cwd and open directory
+reference. There is no kernel-global chdir or environment inheritance.
+
+`cd` normalizes `.`, repeated separators and `..`; traversal above the grant
+root is rejected. Absolute paths restart at the grant root. Normalized paths
+fit 127 bytes. A failed open preserves the old cwd; successful navigation opens
+the new directory before closing the old reference. Existing VFS open-reference
+Busy rules apply while a directory is held. No write rights are delegated.
+
+Catalog ID3 is the Shell root. ID4 is `/boot/gcmd.snx`, a small external tool
+selected by argv[0]. Both executable nodes must resolve to read-only boot files.
+The Shell submits typed broker requests and cannot directly Spawn/StartRun.
+Current text tools request zero directory rights and receive no directory
+handle at all. G4 file tools will need an explicit catalog entry, read-only
+directory attenuation and a defined cwd-relative file argument policy.
+
+## Commands and syntax
+
+| Command | Behavior |
+| --- | --- |
+| `help` | List builtins and tools |
+| `pwd` | Print logical cwd |
+| `cd [path]` | Change cwd; omitted path selects grant root |
+| `history` | Print the last 16 submitted nonempty lines, including itself |
+| `status` | Print retained signed code, completion reason and startup status |
+| `exit [0..255]` | Exit with explicit code or retained last code |
+| `echo [args...]` | External tool prints arguments separated by spaces |
+| `args [args...]` | External tool prints argc, argument byte lengths and values |
+| `exitcode signed-i32` | External tool returns the specified signed code |
+| `spin` | Diagnostic worker waits until canceled |
+| `fault` | Diagnostic worker triggers intentional #UD |
+
+Lines contain at most 255 bytes, up to 16 arguments and a 1024-byte argv block.
+Single/double quotes preserve spaces and empty arguments; adjacent quoted and
+unquoted fragments concatenate. Backslash escapes the next byte except inside
+single quotes. UTF-8 argument bytes are preserved. Unterminated quotes, trailing
+escapes, embedded NUL and unsupported control bytes are syntax errors.
+Unquoted `| & ; < > $` and backtick, `*`, `?` are rejected rather than interpreted.
+There are no pipelines, redirections, expansions, scripts or arbitrary executable
+paths in this version. For example, `args "" "a b"` passes two arguments after
+the command name, one empty and one containing a space.
+
+## Input and task results
+
+Canonical editing and echo belong to the session backend. G3 collects committed
+input until newline; its 64-byte read buffer does not limit command length.
+Backspace cannot erase the prompt. History is a list, not raw-mode recall.
+Ctrl+C at the prompt clears the unfinished line and retains code130/reason3;
+during a tool it cancels only that foreground worker. The broker restores the
+Shell foreground before delivering the once-consumed result. As in G2, queued
+typeahead is discarded during foreground transfer; wait for the next prompt
+before entering another external command. General GUI queue overflow and
+controlled paste remain separate follow-up work.
+
+Normal worker completion preserves its signed exit code and reason1. Cancel
+maps to code130/reason3, fault to 128+vector/reason2 (#UD gives134), other
+termination to137. Syntax/usage errors use2, unknown commands127, startup
+failure126 with reason0 and the negative startup status. `status` leaves the
+retained result unchanged. Ctrl+D commits an unfinished line, executes it, then
+exits with the retained code. Closing the window uses G2 group cleanup.
+
+stdin, stdout and stderr are atomically bound directional session handles;
+display output shares one terminal stream. This path does not use the C finite
+4KiB capture buffers or either of its two retained-run slots. It is an interactive
+entry, not a new host run.ps1/v2 protocol.
+
+## Verification
+
+`tools/test-gsh.c` compiles the actual shared parser/path/integer helpers.
+`tools/stage2-shell.js` adds five real QMP cases for command recovery, argv,
+independent cwd/UTF-8 sessions, signed results/fault/cancel/EOF, process-table
+exhaustion and recovery, bounded history, canonical editing and exact resource
+cleanup. These run through `stage2-test.ps1`; inspect the saved run with
+`stage2-summary.ps1`.
+
+Final gate `stage2-20261105-172615-7d9a6804`: 8/8 groups, 380 checks, failed0,
+not-run0, exit0. Ordinary build `dev-20261105-172959-2f8e1044` passed, kernel
+151392 bytes, BSS end1884800. Its visible private-VM smoke passed Shell startup,
+cwd navigation and empty/quoted argv; screenshot inspected and VM stopped.
+The full 22-suite GUI gate remains a separate scope.

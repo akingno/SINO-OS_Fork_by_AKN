@@ -18,7 +18,7 @@ static u32 head, count;
 static TerminalModel model;
 static UiCanvas canvas;
 static int window, control, task, finished, dirty = 1;
-static int interactive_mode, child, directory;
+static int interactive_mode, child, directory, shell_mode;
 static InteractiveSpec intent;
 static const char *notice = "Ctrl+C cancel | Ctrl+D EOF | PgUp/PgDn scroll";
 static const char input_full[] = "Input queue full; new input rejected";
@@ -155,15 +155,18 @@ int main(void) {
     Log("TERMINAL MODEL PASS\n");
     return 0;
   }
-  interactive_mode = streq(args, "/g2") || streq(args, "/g2-fault");
+  shell_mode = streq(args, "/g3");
+  interactive_mode =
+      shell_mode || streq(args, "/g2") || streq(args, "/g2-fault");
   control = TerminalCreate(80, 25);
   if (control < 0) {
     Log("TERMINAL FRONTEND unavailable\n");
     return 1;
   }
-  window = Window(
-      interactive_mode ? "Interactive Terminal (G2)" : "New Terminal (G1)", 592,
-      522);
+  window = Window(shell_mode         ? "SINO Shell (G3)"
+                  : interactive_mode ? "Interactive Terminal (G2)"
+                                     : "New Terminal (G1)",
+                  592, 522);
   if (window < 0) {
     cleanup();
     return 1;
@@ -192,8 +195,8 @@ int main(void) {
                   streq(args, "/fault-test") ? 100u : 30000u,
                   0};
   if (interactive_mode) {
-    directory =
-        GrantDirectory("/boot", FS_READ | FS_LOOKUP | FS_ENUM | FS_DELEGATE);
+    directory = GrantDirectory(shell_mode ? "/home/user" : "/boot",
+                               FS_READ | FS_LOOKUP | FS_ENUM | FS_DELEGATE);
     if (directory < 0) {
       cleanup();
       return 1;
@@ -201,11 +204,11 @@ int main(void) {
     memset(&intent, 0, sizeof(intent));
     intent.size = sizeof(intent);
     intent.version = 1;
-    intent.program = 1;
+    intent.program = shell_mode ? IX_SHELL : 1;
     intent.argc = 1;
     intent.bytes = 6;
     copy(intent.argv, "shell");
-    intent.rights = FS_READ | FS_LOOKUP;
+    intent.rights = FS_READ | FS_LOOKUP | (shell_mode ? FS_ENUM : 0);
     task = InteractiveStart(control, &intent, directory, 0);
   } else
     task = StartRun(&spec);
@@ -230,7 +233,8 @@ int main(void) {
         }
       }
       if (!child && InteractiveRequest(control, &intent) == 0) {
-        child = InteractiveStart(control, &intent, directory, 1);
+        child = InteractiveStart(control, &intent,
+                                 intent.rights ? directory : 0, 1);
         changed = 1;
         if (child < 0)
           child = 0;
@@ -329,7 +333,10 @@ int main(void) {
         count = 0;
         finished = 1;
         dirty = 1;
-        notice = "Probe complete. Close this window to release the session.";
+        notice =
+            shell_mode
+                ? "Shell exited. Close this window."
+                : "Probe complete. Close this window to release the session.";
       }
     } else
       size();

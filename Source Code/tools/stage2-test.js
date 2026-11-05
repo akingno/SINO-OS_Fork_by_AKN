@@ -110,7 +110,12 @@ async function run(directory) {
             const modelOutput = path.join(folder, 'terminal-model-output.txt');
             await command(model, [], modelOutput);
             assert.equal(fs.readFileSync(modelOutput, 'utf8').trim(), 'TERMINAL MODEL PASS');
-            return {checks:result.checks.length + 1, modelOutput,
+            const parser=path.join(folder,'gsh-parser.exe');
+            await command(host.tool('gcc'),[path.join(__dirname,'test-gsh.c'),'-std=c11','-O2','-Wall','-Wextra','-Werror','-o',parser],path.join(folder,'gsh-build.txt'));
+            const parserOutput=path.join(folder,'gsh-output.txt');
+            await command(parser,[],parserOutput);
+            assert.equal(fs.readFileSync(parserOutput,'utf8').trim(),'GSH PARSER PASS');
+            return {checks:result.checks.length + 2, modelOutput, parserOutput,
                 report:path.join(folder, 'src32-refactor-report.json')};
         });
         await phase('rtc-driver', async () => {

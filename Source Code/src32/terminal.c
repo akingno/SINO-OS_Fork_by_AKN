@@ -188,7 +188,8 @@ static int feed(Terminal* t, const TerminalRequest* r) {
     return S_INVALID;
   if (t->eof)
     return S_CLOSED;
-  u8 line[256], committed[512];
+  u8 line[256], committed[512], echo[256];
+  u32 echo_size = 0;
   u32 ln = t->line_size, n = 0;
   memcpy(line, t->line, ln);
   const u8* text = (const u8*)r->buffer;
@@ -200,12 +201,14 @@ static int feed(Terminal* t, const TerminalRequest* r) {
           ln--;
           while (ln && (line[ln] & 0xc0) == 0x80)
             ln--;
+          echo[echo_size++] = 8;
         }
         continue;
       }
       if (ln == 256)
         return S_LIMIT;
       line[ln++] = ch;
+      echo[echo_size++] = ch;
       if (ch == '\n') {
         memcpy(committed + n, line, ln);
         n += ln;
@@ -215,17 +218,19 @@ static int feed(Terminal* t, const TerminalRequest* r) {
   } else {
     n = r->bytes;
     memcpy(committed, text, n);
+    memcpy(echo, text, n);
+    echo_size = n;
   }
   if (n > 1024 - t->input_size ||
-      ((t->mode & TERM_ECHO) && r->bytes > 1024 - t->output_size))
+      ((t->mode & TERM_ECHO) && echo_size > 1024 - t->output_size))
     return S_AGAIN;
   memcpy(t->input + t->input_size, committed, n);
   t->input_size += n;
   memcpy(t->line, line, ln);
   t->line_size = ln;
   if (t->mode & TERM_ECHO) {
-    memcpy(t->output + t->output_size, text, r->bytes);
-    t->output_size += r->bytes;
+    memcpy(t->output + t->output_size, echo, echo_size);
+    t->output_size += echo_size;
   }
   return 0;
 }
@@ -281,8 +286,8 @@ static int interactive_call(Terminal* t, Client* c, Object* control,
     const InteractiveSpec* q = (void*)r->buffer;
     if (q->size != sizeof(*q) || q->version != 1 || !q->id ||
         t->request_id == 0xffffffffu || q->id != t->request_id + 1 ||
-        q->program != 2 || q->argc > RUN_ARGC || q->bytes > RUN_ARGS ||
-        (q->rights & ~t->rights))
+        (q->program != 2 && q->program != IX_COMMAND) || q->argc > RUN_ARGC ||
+        q->bytes > RUN_ARGS || (q->rights & ~t->rights))
       return S_INVALID;
     u32 n = 0;
     for (u32 i = 0; i < q->argc; i++) {
@@ -369,7 +374,8 @@ static int interactive_call(Terminal* t, Client* c, Object* control,
   memcpy(q, (void*)r->buffer, sizeof(*q));
   int role = r->extra, status;
   u32 child = 0;
-  if ((!role && (t->shell || t->foreground || q->program != 1 || q->id)) ||
+  if ((!role && (t->shell || t->foreground ||
+                 (q->program != 1 && q->program != IX_SHELL) || q->id)) ||
       (role && (!t->shell || t->phase != 1))) {
     page_free(q);
     return S_BUSY;
@@ -387,7 +393,8 @@ static int interactive_call(Terminal* t, Client* c, Object* control,
                                              q->rights | FS_DELEGATE)
                                 : 0;
   if ((q->rights && !directory) || (!q->rights && r->value) ||
-      (role && ((directory ? (u32)(directory - objects) + 1 : 0) != t->root))) {
+      (role && directory &&
+       ((directory ? (u32)(directory - objects) + 1 : 0) != t->root))) {
     page_free(q);
     return S_DENIED;
   }
