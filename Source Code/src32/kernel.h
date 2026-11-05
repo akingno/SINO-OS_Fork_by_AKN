@@ -1,8 +1,10 @@
 #ifndef SINO_KERNEL_H
 #define SINO_KERNEL_H
 #include "types.h"
+#include "boot-layout.h"
 #define RAMDISK ((const u8*)0x200000)
-#define RAMDISK_SIZE 1474560u
+#define RAMDISK_SIZE (BOOT_SECTORS * 512u)
+_Static_assert(0x200000u + RAMDISK_SIZE <= 0x700000u, "RAM disk overlaps graphics assets");
 #define MAX_FILE 65536u
 static inline void outb(u16 p, u8 v) {
   __asm__ volatile("outb %0,%1" ::"a"(v), "Nd"(p));

@@ -49,7 +49,7 @@ Source layout:
 - tools: build, font provenance, and automated validation tools.
 - build-iso.js: ISO 9660 / El Torito BIOS optical-disc builder.
 
-The ISO uses a standard El Torito 1.44 MB floppy-emulation boot entry while retaining a real ISO 9660 filesystem. The existing bootloader can read boot data from a virtual optical drive without modification.
+The ISO uses a standard El Torito 2.88 MB floppy-emulation boot entry while retaining a real ISO 9660 filesystem. The existing bootloader can read boot data from a virtual optical drive without modification.
 Reference: Phoenix/IBM El Torito 1.0 and ECMA-119.
 https://pdos.csail.mit.edu/6.828/2017/readings/boot-cdrom.pdf
 
@@ -62,3 +62,5 @@ Version 0.9 added system settings and a real BIOS/MBR hard-disk installer. setti
 Version 0.10 added src32/process.c, object.c, api.h, and net.c for Ring 3, threads/preemption, handles/system calls, and the loopback protocol stack. user/ contains the independent installer, common runtime, file/editor/task applications, and SysBASIC. These additions were written for this project; Windows, VB6, Linux, and FreeDOS implementations were not imported. See SOURCES.md for details.
 
 The English archive translates human-authored documentation and distribution names. Chinese UI strings and the Pinyin dataset remain in source because they are the system's supported Chinese-language resources. Third-party license texts and data are preserved as supplied.
+
+Boot capacity, shared layout and expansion checks are documented in [boot-image.md](docs/boot-image.md).

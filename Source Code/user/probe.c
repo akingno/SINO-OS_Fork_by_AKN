@@ -127,6 +127,19 @@ int main(void) {
   __asm__ volatile("ud2");
 #else
   const char *arg = Arguments(), *prefix = "/foreign-title:";
+  if (streq(arg, "/boot-extent")) {
+    int directory = GrantDirectory("/boot", FS_READ | FS_LOOKUP);
+    check(directory > 0, "boot extent directory");
+    int file = OpenAt(directory, "extent.txt", FS_READ, 0);
+    check(file > 0, "boot extent file");
+    u8 range[24];
+    check(FileReadAt(file, 1020, range, 23) == 23, "cross cluster range");
+    const char *expected = "aaa\nEXPANDED TAIL PASS\n";
+    for (u32 i = 0; i < 23; i++) check(range[i] == (u8)expected[i], "extent exact range byte");
+    Close(file); Close(directory);
+    Log("BOOT EXTENT RANGE PASS\n");
+    return 0;
+  }
   if (streq(arg, "/stage2-fail"))
     check(0, "intentional Stage 2 runner failure");
   if (streq(arg, "/stage2-read")) {

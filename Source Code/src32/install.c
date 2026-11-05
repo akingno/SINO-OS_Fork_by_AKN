@@ -240,7 +240,7 @@ static int plan(void) {
     return 0;
   }
   for (int i = 0; i < 4; i++) {
-    if (parts[i].type == 1 && parts[i].size >= 2880 && system_slot < 0)
+    if (parts[i].type == 1 && parts[i].size >= BOOT_SECTORS && system_slot < 0)
       system_slot = i;
     if (parts[i].type == 0x7f && parts[i].size >= 16392 && data_slot < 0)
       data_slot = i;
@@ -299,7 +299,7 @@ int install_poll(void) {
   int ok = 1;
   u32 base = parts[system_slot].start;
   if (copy_phase == 0) {
-    for (int n = 0; n < 32 && copied < 2880; n++, copied++) {
+    for (int n = 0; n < 32 && copied < BOOT_SECTORS; n++, copied++) {
       memcpy(block, RAMDISK + copied * 512, 512);
       if (!copied) {
         *(u32*)(block + 28) = base;
@@ -310,12 +310,12 @@ int install_poll(void) {
         break;
       }
     }
-    if (copied == 2880) {
+    if (copied == BOOT_SECTORS) {
       ok = disk_flush(selected_disk);
       copy_phase = 1;
     }
   } else if (copy_phase == 1) {
-    for (int n = 0; n < 32 && verified < 2880; n++, verified++) {
+    for (int n = 0; n < 32 && verified < BOOT_SECTORS; n++, verified++) {
       if (!disk_read(selected_disk, base + verified, check)) {
         ok = 0;
         break;
@@ -331,7 +331,7 @@ int install_poll(void) {
       if (!ok)
         break;
     }
-    if (verified == 2880)
+    if (verified == BOOT_SECTORS)
       copy_phase = 2;
   } else {
     u32 data = parts[data_slot].start;

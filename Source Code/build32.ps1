@@ -23,8 +23,9 @@ if ($BuildId) {
     Set-Content -LiteralPath (Join-Path $buildPath 'build-id.h') -Encoding ASCII -Value ('#define SINO_BUILD_ID "' + $BuildId + '"')
 }
 $sourcePath = Join-Path $taskRoot 'src32'
+$bootDefines = @(Get-Content (Join-Path $sourcePath 'boot-layout.h') | ForEach-Object { if ($_ -match '^#define (BOOT_\w+) (\d+)$') { '-D' + $Matches[1] + '=' + $Matches[2] } })
 foreach ($source in @('boot','loader','hello','mbr')) {
-    & $nasmPath -f bin -Wall -Werror -w-reloc-abs-word -w-reloc-abs-dword (Join-Path $sourcePath "$source.asm") -o (Join-Path $buildPath "$source.bin") -l (Join-Path $buildPath "$source.lst")
+    & $nasmPath @bootDefines -f bin -Wall -Werror -w-reloc-abs-word -w-reloc-abs-dword (Join-Path $sourcePath "$source.asm") -o (Join-Path $buildPath "$source.bin") -l (Join-Path $buildPath "$source.lst")
     if ($LASTEXITCODE -ne 0) { throw "Assembly failed: $source" }
 }
 # COFF relocations are resolved by the linker below.

@@ -4,14 +4,14 @@ jmp short boot
 nop
 db 'SINO    '
 dw 512
-db 1
-dw 321                        ; 4 KB loader + up to 156 KB native kernel
+db BOOT_CLUSTER_SECTORS
+dw BOOT_RESERVED_SECTORS                        ; 4 KB loader + up to 156 KB native kernel
 db 2
-dw 224
-dw 2880
+dw BOOT_ROOT_ENTRIES
+dw BOOT_SECTORS
 db 0xf0
-dw 9
-dw 18
+dw BOOT_FAT_SECTORS
+dw BOOT_TRACK_SECTORS
 dw 2
 dd 0, 0
 db 0, 0, 0x29
@@ -61,7 +61,7 @@ normalized:
 .chs:
     mov ax, [lba]
     xor dx, dx
-    mov cx, 18
+    mov cx, BOOT_TRACK_SECTORS
     div cx
     mov cl, dl
     inc cl
@@ -103,7 +103,7 @@ normalized:
     mov es, ax
 .segment_ready:
     inc word [lba]
-    cmp word [lba], 321
+    cmp word [lba], BOOT_RESERVED_SECTORS
     jb .load
     mov dl, [drive]
     jmp 0x1000:0

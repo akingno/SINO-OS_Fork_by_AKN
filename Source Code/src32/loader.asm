@@ -65,13 +65,15 @@ start:
 .chs:
     mov ax, [disk_lba]
     xor dx, dx
-    mov cx, 18
+    mov cx, BOOT_TRACK_SECTORS
     div cx
+    push dx
     xor dx, dx
     mov si, 2
     div si
+    pop cx
+    inc cl
     mov ch, al
-    mov cl, 1
     mov dh, dl
     mov dl, [drive]
     mov ax, 0x0212
@@ -101,7 +103,7 @@ start:
     push cs
     pop ds
     add word [disk_lba], 18
-    cmp word [disk_lba], 2880
+    cmp word [disk_lba], BOOT_SECTORS
     jb .track
     ; Save the 8x16 ROM font for early diagnostics; the desktop loads OFL fonts.
     mov ax, 0x1130
