@@ -46,7 +46,6 @@ extern volatile u8 mouse_buttons, mouse_dirty;
 extern u32 free_pages, usable_memory, fault_resume, fault_expected, fault_count;
 extern int mouse_present;
 void arch_init(void);
-void memory_init(void);
 void* page_alloc(void);
 void* page_alloc_run(u32);
 int page_free_run(void*, u32);

@@ -1,6 +1,7 @@
 #include "klog.h"
 #include "rtc.h"
 #include "kernel.h"
+#include "mm/page.h"
 #include "gui.h"
 #include "storage.h"
 #include "disk.h"
@@ -372,45 +373,14 @@ void ps2_byte(int aux, u8 value) {
     __asm__ volatile("nop");
 }
 
-static u8 pages[16384];
-u32 free_pages, usable_memory;
-typedef struct PACKED {
-  u32 base, base_hi, length, length_hi, type, attributes;
-} MemoryRange;
-void memory_init(void) {
-  memset(pages, 2, sizeof(pages));
-  u32 count = *(volatile u16*)0x4f00;
-  const MemoryRange* map = (const MemoryRange*)0x5000;
-  if (!count || count > 32)
-    panic("Invalid E820 memory map", count, 0);
-  for (u32 i = 0; i < count; i++)
-    if (map[i].type == 1 && !map[i].base_hi) {
-      u32 start = map[i].base,
-          end = map[i].length_hi ? 0x4000000 : start + map[i].length;
-      if (end < start || end > 0x4000000)
-        end = 0x4000000;
-      if (end > usable_memory)
-        usable_memory = end;
-      /* GUI: backbuffer 8-14 MB, assets 7 MB, copy scratch 15 MB,
-         desktop 16-22 MB, front 22-28 MB, window caches 28-52 MB. */
-      start = (start + 4095) & ~4095u;
-      if (start < 0x3400000)
-        start = 0x3400000;
-      for (u32 a = start; a + 4096 <= end && a < 0x4000000; a += 4096)
-        if (pages[a >> 12]) {
-          pages[a >> 12] = 0;
-          free_pages++;
-        }
-    }
-  if (!free_pages)
-    panic("At least 64 MB RAM required", usable_memory, 0);
+static void paging_init(void) {
   u32* pd = (u32*)0x90000;
   u32* pt = (u32*)0x1e0000;
   memset(pd, 0, 4096);
-  for (u32 i = 0; i < 16384; i++)
+  for (u32 i = 0; i < BOOT_IDENTITY_BYTES / 4096; i++)
     pt[i] = (i * 4096) | 3;
   pt[0] = 0;
-  for (u32 i = 0; i < 16; i++)
+  for (u32 i = 0; i < BOOT_IDENTITY_BYTES / 0x400000; i++)
     pd[i] = (0x1e0000 + i * 4096) | 3;
   const u8* vbe = (const u8*)0x5800;
   u32 fb = *(const u32*)(vbe + 40);
@@ -419,7 +389,7 @@ void memory_init(void) {
       vbe[31] != 8 || vbe[32] != 16 || vbe[33] != 8 || vbe[34] != 8 ||
       vbe[35] != 8 || vbe[36] != 0)
     panic("VBE direct-color mode unavailable", fb, vbe[25]);
-  if ((fb >> 22) < 16 || (fb >> 22) > 1022)
+  if ((fb >> 22) < BOOT_IDENTITY_BYTES / 0x400000 || (fb >> 22) > 1022)
     panic("Invalid VBE framebuffer", fb, 0);
   for (u32 bank = 0; bank < 3; bank++) {
     u32* video = (u32*)(0x1f0000 + bank * 4096);
@@ -439,58 +409,6 @@ void memory_init(void) {
   pr_debug_hex(fb);
   pr_debug(" 1024x768x32\n");
 }
-void* page_alloc(void) {
-  for (u32 i = 13312; i < 16384; i++)
-    if (!pages[i]) {
-      pages[i] = 1;
-      free_pages--;
-      void* p = (void*)(i * 4096);
-      memset(p, 0, 4096);
-      return p;
-    }
-  return (void*)0;
-}
-void* page_alloc_run(u32 count) {
-  if (!count || count > 64)
-    return 0;
-  for (u32 i = 13312; i + count <= 16384; i++) {
-    u32 j = 0;
-    while (j < count && !pages[i + j])
-      j++;
-    if (j == count) {
-      for (j = 0; j < count; j++)
-        pages[i + j] = 1;
-      free_pages -= count;
-      void* p = (void*)(i * 4096);
-      memset(p, 0, count * 4096);
-      return p;
-    }
-    i += j;
-  }
-  return 0;
-}
-int page_free_run(void* p, u32 count) {
-  u32 a = (u32)p;
-  if (!count || count > 64 || (a & 4095) || a < 0x3400000 || a >= 0x4000000 ||
-      count > (0x4000000 - a) / 4096)
-    return 0;
-  for (u32 i = 0; i < count; i++)
-    if (pages[(a >> 12) + i] != 1)
-      return 0;
-  for (u32 i = 0; i < count; i++)
-    pages[(a >> 12) + i] = 0;
-  free_pages += count;
-  return 1;
-}
-int page_free(void* p) {
-  u32 a = (u32)p;
-  if ((a & 4095) || a < 0x3400000 || a >= 0x4000000 || pages[a >> 12] != 1)
-    return 0;
-  pages[a >> 12] = 0;
-  free_pages++;
-  return 1;
-}
-
 File files[224];
 u32 file_count;
 static u32 fat_offset, root_offset, data_offset, cluster_count, root_count;
@@ -589,22 +507,7 @@ int fs_read_at(u32 index, u32 offset, u8* dest, u32 length) {
 }
 
 void kernel_tests(void) {
-  u32 before = free_pages;
-  u32 *a = page_alloc(), *b = page_alloc();
-  if (!a || !b || a == b)
-    panic("Page allocation", 0, 0);
-  *a = 0x46454c49;
-  *b = 0x58333221;
-  if (*a != 0x46454c49 || *b != 0x58333221)
-    panic("Memory read/write", 0, 0);
-  if (!page_free(a) || !page_free(b) || page_free(a) ||
-      page_free((void*)0x200000) || free_pages != before)
-    panic("Page free validation", free_pages, before);
-  void* run = page_alloc_run(2);
-  if (!run || !page_free_run(run, 2) || page_free_run(run, 2) ||
-      free_pages != before)
-    panic("Page run", 0, 0);
-  pr_debug("PAGE allocator self-check passed\n");
+  page_allocator_test();
   __asm__ volatile("int3");
   u32 v = 2;
   __asm__ volatile("int $0x80" : "+a"(v)::"memory");
@@ -624,7 +527,8 @@ void kmain(void) {
   pr_debug("SINO BUILD ID: " SINO_BUILD_ID "\n");
 #endif
   arch_init();
-  memory_init();
+  page_init();
+  paging_init();
   if (!fs_init())
     panic("FAT12 mount failed", 0, 0);
   process_init();

@@ -15,4 +15,6 @@
 /SINO-*.zip
 /SINO-*.7z
 
+/.idea/
+
 /Documentation/Stage2-Testing.md
