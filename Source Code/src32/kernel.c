@@ -2,6 +2,7 @@
 #include "rtc.h"
 #include "kernel.h"
 #include "mm/page.h"
+#include "mm/paging.h"
 #include "gui.h"
 #include "storage.h"
 #include "disk.h"
@@ -374,7 +375,7 @@ void ps2_byte(int aux, u8 value) {
 }
 
 static void paging_init(void) {
-  u32* pd = (u32*)0x90000;
+  u32* pd = BOOT_KERNEL_PD;
   u32* pt = (u32*)0x1e0000;
   memset(pd, 0, 4096);
   for (u32 i = 0; i < BOOT_IDENTITY_BYTES / 4096; i++)
@@ -397,7 +398,7 @@ static void paging_init(void) {
       video[i] = ((fb & 0xffc00000u) + (bank * 1024 + i) * 4096) | 0x1b;
     pd[(fb >> 22) + bank] = (u32)video | 3;
   }
-  __asm__ volatile("mov %0,%%cr3" ::"r"(0x90000) : "memory");
+  paging_activate(pd);
   u32 cr0;
   __asm__ volatile("mov %%cr0,%0" : "=r"(cr0));
   cr0 = (cr0 & ~0x60000000u) | 0x80010000u;

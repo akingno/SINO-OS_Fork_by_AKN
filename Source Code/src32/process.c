@@ -1,6 +1,7 @@
 #include "klog.h"
 /* Preemption only at user boundaries. Kernel/desktop remain non-preemptible. */
 #include "process.h"
+#include "mm/paging.h"
 #include "object.h"
 #include "vfs.h"
 #include "gui.h"
@@ -14,6 +15,7 @@
 #include "ui_queue.h"
 #define NP 8
 #define NT 4
+#define USER_STACK_BYTES 16384u
 typedef struct {
   Frame frame;
   u32 useresp, ss;
@@ -26,7 +28,7 @@ typedef struct {
 typedef struct {
   u32 pid, state, caps;
   int code;
-  u32 *pd, *pt;
+  u32* pd;
   void* kernel_stack;
   Thread thread[NT];
   Handle handles[HANDLES];
@@ -110,23 +112,14 @@ void process_init(void) {
   object_tests();
   pr_debug("USER GDT/TSS ready, CPL3 selectors 1B/23, I/O denied\n");
 }
-static void cr3(u32 a) {
-  __asm__ volatile("mov %0,%%cr3" ::"r"(a) : "memory");
-}
 static void release(Process* p) {
   for (int i = 0; i < 8; i++)
     if (leases[i].pid == p->pid)
       leases[i].pid = 0;
   handles_close(p->handles);
   if (p->interactive) page_free(p->interactive);
-  if (p->pt) {
-    for (u32 i = 0; i < 1024; i++)
-      if (p->pt[i] & 1)
-        page_free((void*)(p->pt[i] & ~4095u));
-    page_free(p->pt);
-  }
   if (p->pd)
-    page_free(p->pd);
+    paging_user_destroy(p->pd, USER_BASE);
   if (p->kernel_stack)
     page_free(p->kernel_stack);
   /* Publish only after execution resources and owned handles are gone. */
@@ -143,11 +136,28 @@ static void release(Process* p) {
   }
   memset(p, 0, sizeof(*p));
 }
-static int map_page(Process* p, u32 index, u32 flags) {
+static void* alloc_user_page(Process* p, u32 va, int write) {
   void* page = page_alloc();
-  if (!page)
+  if (page && !paging_user_map(p->pd, va, page, write)) {
+    page_free(page);
     return 0;
-  p->pt[index] = (u32)page | flags;
+  }
+  return page;
+}
+static void free_user_pages(Process* p, u32 start, u32 end) {
+  for (u32 va = start; va < end; va += 4096) {
+    void* page = paging_user_unmap(p->pd, va);
+    if (page)
+      page_free(page);
+  }
+}
+static int alloc_user_stack(Process* p, int thread) {
+  u32 top = USER_STACK(thread), start = top - USER_STACK_BYTES;
+  for (u32 va = start; va < top; va += 4096)
+    if (!alloc_user_page(p, va, 1)) {
+      free_user_pages(p, start, va);
+      return 0;
+    }
   return 1;
 }
 static void initial(Thread* t, u32 entry, u32 stack) {
@@ -252,41 +262,37 @@ static int launch_policy(const char* path, u32 caps, const char* arguments,
   if (!p || next_pid >= 0x7fffffu || strlen(arguments) > 255)
     return S_LIMIT;
   memset(p, 0, sizeof(*p));
-  p->pd = page_alloc();
-  p->pt = page_alloc();
+  p->pd = paging_user_create(BOOT_KERNEL_PD, USER_BASE);
   p->kernel_stack = page_alloc();
-  if (!p->pd || !p->pt || !p->kernel_stack) {
+  if (!p->pd || !p->kernel_stack) {
     release(p);
     return S_NOMEM;
   }
-  memcpy(p->pd, (void*)0x90000, 4096);
-  p->pd[USER_BASE >> 22] = (u32)p->pt | 7;
-  for (u32 i = 0; i < (h->memory_bytes + 4095) / 4096; i++) {
-    if (!map_page(p, i, i * 4096 < h->data_offset ? 5 : 7)) {
+  for (u32 offset = 0; offset < h->memory_bytes; offset += 4096) {
+    void* page = alloc_user_page(p, USER_BASE + offset, offset >= h->data_offset);
+    if (!page) {
       release(p);
       return S_NOMEM;
     }
-    u32 offset = i * 4096,
-        length = h->image_bytes > offset ? h->image_bytes - offset : 0;
+    u32 length = h->image_bytes > offset ? h->image_bytes - offset : 0;
     if (length > 4096)
       length = 4096;
     if (length)
-      memcpy((void*)(p->pt[i] & ~4095u), bytes + offset, length);
+      memcpy(page, bytes + offset, length);
   }
-  if (!map_page(p, 48, 5)) {
+  u8* params = alloc_user_page(p, USER_ARGUMENTS, 0);
+  if (!params) {
     release(p);
     return S_NOMEM;
   }
-  memcpy((void*)(p->pt[48] & ~4095u), arguments, strlen(arguments) + 1);
+  memcpy(params, arguments, strlen(arguments) + 1);
   char executable[128];
   vfs_path(n, executable);
-  memcpy((void*)((p->pt[48] & ~4095u) + 256), executable,
-         strlen(executable) + 1);
-  for (u32 i = 60; i < 64; i++)
-    if (!map_page(p, i, 7)) {
-      release(p);
-      return S_NOMEM;
-    }
+  memcpy(params + 256, executable, strlen(executable) + 1);
+  if (!alloc_user_stack(p, 0)) {
+    release(p);
+    return S_NOMEM;
+  }
   RunData* run = completion >= 0 ? completions[objects[completion].value].run : 0;
   if (run) {
     if (run->pending_directory) {
@@ -613,10 +619,10 @@ static int user_access_ok(u32 address, u32 length, int write) {
     return 0;
   if (!length)
     return 1;
-  u32 a = (address - USER_BASE) >> 12,
-      b = (address + length - 1 - USER_BASE) >> 12;
-  for (; a <= b; a++)
-    if ((current->pt[a] & (write ? 7u : 5u)) != (write ? 7u : 5u))
+  u32 needed = PAGE_PRESENT | PAGE_USER | (write ? PAGE_WRITE : 0);
+  u32 end = address + length - 1;
+  for (u32 page = address & ~4095u; page <= end; page += 4096)
+    if ((paging_user_flags(current->pd, page) & needed) != needed)
       return 0;
   return 1;
 }
@@ -651,7 +657,7 @@ static void leave(Frame* f) {
   Thread* t = &current->thread[current_thread];
   memcpy(&t->saved, f, sizeof(UserFrame));
   user_switch_out = 1;
-  cr3(0x90000);
+  paging_activate(BOOT_KERNEL_PD);
 }
 /* Allow local mechanisms, public queries and explicitly authorized objects.
  * New calls are denied until reviewed; old ambient paths cannot bypass this. */
@@ -1214,27 +1220,7 @@ static int syscall(Frame* f) {
     case SYS_PROCESSES:
       if (c > NP || !user_access_ok(b, c * sizeof(ProcessInfo), 1))
         return S_INVALID;
-      {
-        u32 count = 0;
-        ProcessInfo* out = (ProcessInfo*)b;
-        for (int i = 0; i < NP && count < c; i++)
-          if (processes[i].state) {
-            Process* p = &processes[i];
-            ProcessInfo* v = &out[count++];
-            memset(v, 0, sizeof(*v));
-            v->pid = p->pid;
-            v->state = p->state;
-            v->exit_code = p->code;
-            memcpy(v->name, p->name, 32);
-            for (int j = 0; j < NT; j++)
-              if (p->thread[j].state)
-                v->threads++;
-            for (int j = 0; j < 1024; j++)
-              if (p->pt[j] & 1)
-                v->pages++;
-          }
-        return (int)count;
-      }
+      return process_list((ProcessInfo*)b, c);
     case SYS_SYNC:
       if (storage_sync())
         return 0;
@@ -1244,26 +1230,18 @@ static int syscall(Frame* f) {
       return S_IO;
     case SYS_THREAD:
       if (a < USER_BASE + 32 || a >= USER_BASE + USER_BYTES ||
-          !user_access_ok(a, 1, 0) || current->pt[(a - USER_BASE) >> 12] & 2)
+          paging_user_flags(current->pd, a) != (PAGE_PRESENT | PAGE_USER))
         return S_INVALID;
       for (int i = 1; i < NT; i++)
         if (!current->thread[i].state) {
-          for (u32 j = 60 + i * 8; j < 64 + (u32)i * 8; j++)
-            if (!map_page(current, j, 7)) {
-              for (u32 k = 60 + i * 8; k < j; k++) {
-                page_free((void*)(current->pt[k] & ~4095u));
-                current->pt[k] = 0;
-              }
-              return S_NOMEM;
-            }
+          if (!alloc_user_stack(current, i))
+            return S_NOMEM;
           initial(&current->thread[i], a, USER_STACK(i));
           return i;
         }
       return S_LIMIT;
-    case SYS_THREAD_EXIT:
-      current->thread[current_thread].state =
-          0; /* pages reclaimed with process; thread slots not reused until
-                their stack is freed */
+    case SYS_THREAD_EXIT: {
+      current->thread[current_thread].state = 0;
       int live = 0;
       for (int i = 0; i < NT; i++)
         if (current->thread[i].state)
@@ -1273,13 +1251,11 @@ static int syscall(Frame* f) {
         current->reason = PROCESS_EXITED;
         current->code = 0;
       }
-      for (u32 j = 60 + current_thread * 8; j < 64 + (u32)current_thread * 8;
-           j++) {
-        page_free((void*)(current->pt[j] & ~4095u));
-        current->pt[j] = 0;
-      }
+      u32 top = USER_STACK(current_thread);
+      free_user_pages(current, top - USER_STACK_BYTES, top);
       leave(f);
       return 0;
+    }
     case SYS_EVENT_CREATE:
       n = object_new(OBJ_EVENT, 0);
       if (n < 0)
@@ -1360,10 +1336,10 @@ void process_step(void) {
     quantum_end = ticks + 2;
     tss[1] = (u32)p->kernel_stack + 4096;
     cli();
-    cr3((u32)p->pd);
+    paging_activate(p->pd);
     process_switches++;
     user_enter(&t->saved);
-    cr3(0x90000);
+    paging_activate(BOOT_KERNEL_PD);
     current = 0;
     sti();
     break;
@@ -1387,9 +1363,7 @@ int process_list(ProcessInfo* out, u32 cap) {
       for (int j = 0; j < NT; j++)
         if (p->thread[j].state)
           v->threads++;
-      for (int j = 0; j < 1024; j++)
-        if (p->pt[j] & 1)
-          v->pages++;
+      v->pages = paging_user_count(p->pd, USER_BASE);
     }
   return (int)count;
 }
