@@ -99,7 +99,7 @@ handle in the child's table, which is not usable in the controller's table.
 | 4 | FEED | control | TEXT bytes / length, otherwise 0 / 0 | event type / event value |
 | 5 | INFO | either | TerminalInfo* / capacity >=32 | 0 / 0 |
 | 6 | MODE | client | 0 / 0 | mode flags / 0 |
-| 7 | READ | client | data / capacity <=1024 | 0 / 0 |
+| 7 | READ | client | data / capacity <=1024 | 0 / 0, or TERM_READ_BLOCK / timeout ticks |
 | 8 | WRITE | client | data / length <=1024 | 0 / 0 |
 | 9 | DRAIN | control | data / capacity <=1024 | 0 / 0 |
 | 10 | EVENT | client | TerminalEvent* / capacity >=16 | 0 / 0 |
@@ -111,6 +111,24 @@ Modes: LINE=1, ECHO=2; zero is raw without echo. TerminalInfo: size=32, version=
 width, height, mode, foreground PID, closed, reserved=0. TerminalEvent: type,
 value, width, height. INFO/EVENT failure leaves output unchanged; query tails
 remain untouched. Nonblocking empty reads/event/drain return S_AGAIN while live.
+
+### Blocking byte reads
+
+Stage 4 adds opt-in waiting to TERM_READ. Set value to `TERM_READ_BLOCK` (1) and
+extra to the timeout in guest ticks (0..60000). Zero selects indefinite waiting.
+An empty, live read suspends the calling thread. Committed TEXT, EOF and hangup
+wake readers, including hangup caused by closing the last controller. A partial
+canonical line becomes readable on newline or EOF. KEY, RESIZE and edit events
+remain on their respective event paths.
+
+The kernel saves the request and revalidates its client handle, foreground
+ownership and output range on wake. If another reader takes the bytes first,
+the wait continues with its original deadline. A foreground change wakes the
+previous foreground reader so it can receive S_DENIED. Closing the exact local
+client handle from a sibling thread completes the read with S_BADHANDLE.
+Expiry returns S_TIMEOUT without writing to the destination. EOF, buffered
+data and S_CLOSED follow the same ordering as a nonblocking read. Existing
+interactive-shell cancellation on controller loss still applies.
 
 ## Evidence and remaining work
 
@@ -127,7 +145,10 @@ Remaining work includes further application integration, foreground groups inste
 task, full PTY/ANSI and detailed page-allocation failure injection. The backend
 does not reserve global device input. The headless F suite covers its own API
 authority checks. G1 separately exercises desktop keyboard/focus routing below.
-Thread-level WAITING and blocked kernel C stacks remain future work.
+The Stage 4 Phase D runner `tools/test-stage4-terminal.js <ShellBridge build directory>`
+checks blocking reads and selected pipe/completion regressions with a private
+guest disk. The scheduler parks only the calling thread and resumes from its
+saved user state.
 
 ## Historical G1 desktop frontend
 

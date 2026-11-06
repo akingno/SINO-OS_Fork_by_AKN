@@ -72,7 +72,147 @@ static int anon_fault_parent(void) {
   Log("ANON TERMINAL FAULT PASS\n");
   return 0;
 }
+static int blocking_read(int term, void* out, u32 length, u32 timeout) {
+  return call(TERM_READ, term, out, length, TERM_READ_BLOCK, timeout);
+}
+static TerminalRequest wait_request;
+static volatile int wait_entered, wait_done, wait_status;
+static void read_worker(void) {
+  wait_entered = 1;
+  wait_status = api(SYS_TERMINAL, (u32)&wait_request, sizeof(wait_request), 0);
+  wait_done = 1;
+  api(SYS_THREAD_EXIT, 0, 0, 0);
+}
+static void start_read_worker(int term, void* out) {
+  wait_request = (TerminalRequest){TERM_READ, (u32)term, (u32)out, 4, TERM_READ_BLOCK, 0};
+  check(api(SYS_THREAD, (u32)read_worker, 0, 0) > 0, "start terminal reader");
+  u32 start = StreamTicks();
+  while (!wait_entered && StreamTicks() - start < 30) Yield(1);
+  Yield(4);
+  check(wait_entered && !wait_done, "reader stays blocked");
+}
+static int read_worker_result(void) {
+  u32 start = StreamTicks();
+  while (!wait_done && StreamTicks() - start < 100) Yield(1);
+  check(wait_done, "terminal reader finishes");
+  return wait_status;
+}
+static void blocking_child(int term, const char* mode) {
+  if (streq(mode, "snapshot") || streq(mode, "unmap") || streq(mode, "local-close")) {
+    if (streq(mode, "unmap")) {
+      u32 address = (u32)AnonMap(4096);
+      check(address >= USER_DYNAMIC_BASE && address < USER_DYNAMIC_END, "map read output");
+      start_read_worker(term, (void*)address);
+      check(AnonUnmap((void*)address) == S_OK, "unmap read output while blocked");
+    } else {
+      start_read_worker(term, bytes);
+    }
+    if (streq(mode, "snapshot")) {
+      wait_request.buffer = USER_BASE;
+      wait_request.op = TERM_WRITE;
+    } else if (streq(mode, "local-close")) {
+      int duplicate = api(SYS_DUP, term, 1, 0);
+      check(duplicate > 0 && Close(term) == S_OK, "close exact client handle");
+      int replacement = api(SYS_DUP, duplicate, 1, 0);
+      check(replacement > 0 && (replacement & 255) == (term & 255) &&
+            read_worker_result() == S_BADHANDLE && Close(replacement) == S_OK,
+            "reused client slot does not redirect waiter");
+      term = duplicate;
+    }
+    check(TerminalWrite(term, "wait", 4) == 4, "worker checkpoint");
+    if (streq(mode, "snapshot"))
+      check(read_worker_result() == 4 && streq((const char*)bytes, "data"), "retry uses captured request");
+    if (streq(mode, "unmap"))
+      check(read_worker_result() == S_INVALID && TerminalRead(term, bytes, 4) == 4 &&
+            streq((const char*)bytes, "data"), "invalid retry output leaves input queued");
+    return;
+  }
+
+  if (streq(mode, "canonical") || streq(mode, "eof"))
+    check(TerminalMode(term, TERM_LINE) == S_OK, "canonical mode without echo");
+  check(TerminalRead(term, bytes, 1) == S_AGAIN, "legacy read returns immediately when empty");
+  check(TerminalWrite(term, "wait", 4) == 4, "reader checkpoint");
+  if (streq(mode, "raw")) {
+    check(blocking_read(term, bytes, 4, 0) == 3 && bytes[0] == 'a' &&
+          bytes[1] == 0 && bytes[2] == 'b', "feed wakes reader with raw binary input");
+  } else if (streq(mode, "canonical")) {
+    check(blocking_read(term, bytes, 4, 0) == 3 &&
+          streq((const char*)bytes, "xy\n"), "newline wakes reader with canonical line");
+  } else if (streq(mode, "eof")) {
+    check(blocking_read(term, bytes, 4, 0) == 4 && streq((const char*)bytes, "tail") &&
+          blocking_read(term, bytes, 4, 0) == 0, "EOF commits pending input and then reads zero");
+  } else if (streq(mode, "hangup") || streq(mode, "controller")) {
+    check(blocking_read(term, bytes, 1, 0) == S_CLOSED, "session closure wakes blocked reader");
+  } else if (streq(mode, "foreground")) {
+    check(blocking_read(term, bytes, 1, 0) == S_DENIED, "foreground switch revokes blocked read");
+  } else if (streq(mode, "timeout")) {
+    bytes[0] = 0xa7;
+    u32 start = StreamTicks();
+    check(blocking_read(term, bytes, 1, 10) == S_TIMEOUT && StreamTicks() - start >= 10 &&
+          bytes[0] == 0xa7 && TerminalRead(term, bytes, 1) == S_AGAIN, "timeout preserves output and session");
+  } else if (streq(mode, "wire")) {
+    check(blocking_read(term, 0, 0, 0) == 0 &&
+          blocking_read(term, bytes, 1025, 1) == S_INVALID &&
+          blocking_read(term, bytes, 1, STREAM_WAIT_MAX + 1) == S_INVALID &&
+          blocking_read(term, (void*)USER_BASE, 1, 1) == S_INVALID &&
+          call(TERM_READ, term, bytes, 1, 0, 1) == S_INVALID &&
+          call(TERM_READ, term, bytes, 1, 2, 0) == S_INVALID &&
+          call(TERM_WRITE, term, bytes, 1, TERM_READ_BLOCK, 0) == S_INVALID,
+          "only flagged reads accept timeout with valid handle and buffer");
+  } else {
+    check(0, "unknown terminal blocking case");
+  }
+}
+static int blocking_parent(const char* args) {
+  const char* mode = args + 2;
+  int control = TerminalCreate(80, 25), child = start(args);
+  check(control > 0 && child > 0 && TerminalForeground(control, child) > 0, "attach blocking terminal child");
+  int result;
+  u32 begin = StreamTicks();
+  while ((result = TerminalDrain(control, bytes, 4)) == S_AGAIN && StreamTicks() - begin < 100) Yield(1);
+  check(result == 4 && streq((const char*)bytes, "wait"), "terminal child reached read checkpoint");
+  Yield(4);
+
+  int next = 0;
+  if (streq(mode, "raw")) {
+    check(TerminalFeed(control, TERM_TEXT, "a\0b", 3, 0) == S_OK, "feed raw bytes");
+  } else if (streq(mode, "canonical") || streq(mode, "eof")) {
+    int eof = streq(mode, "eof");
+    check(TerminalFeed(control, TERM_TEXT, eof ? "tail" : "xy", eof ? 4 : 2, 0) == S_OK,
+          "feed partial canonical line");
+    Yield(4);
+    RunResult pending;
+    check(GetRunResult(child, &pending) == S_AGAIN, "partial line does not finish a read");
+    check((eof ? TerminalFeed(control, TERM_EOF, 0, 0, 0) :
+                 TerminalFeed(control, TERM_TEXT, "\n", 1, 0)) == S_OK, "commit canonical input");
+  } else if (streq(mode, "hangup")) {
+    check(TerminalFeed(control, TERM_HANGUP, 0, 0, 0) == S_OK, "hang up session");
+  } else if (streq(mode, "controller")) {
+    int duplicate = api(SYS_DUP, control, 1, 0);
+    check(duplicate > 0 && Close(control) == S_OK, "close one controller reference");
+    Yield(4);
+    RunResult pending;
+    check(GetRunResult(child, &pending) == S_AGAIN && Close(duplicate) == S_OK, "last controller reference hangs up");
+    control = 0;
+  } else if (streq(mode, "foreground")) {
+    next = start("spin");
+    check(next > 0 && TerminalForeground(control, next) > 0, "switch foreground while read waits");
+  } else if (streq(mode, "snapshot") || streq(mode, "unmap")) {
+    check(TerminalFeed(control, TERM_TEXT, "data", 4, 0) == S_OK, "feed pending worker read");
+  } else if (streq(mode, "wire")) {
+    check(blocking_read(control, bytes, 1, 1) == S_BADHANDLE, "controller cannot read as a client");
+  }
+  done(child, PROCESS_EXITED);
+  if (next) {
+    check(CancelProcess(next) == S_OK, "cancel replacement foreground");
+    done(next, PROCESS_CANCELED);
+  }
+  check(!control || Close(control) == S_OK, "release controller");
+  Log("TERMINAL BLOCK PASS\n");
+  return 0;
+}
 int main(void){
+ if(Arguments()[0]=='b' && Arguments()[1]==':') return blocking_parent(Arguments());
  if(streq(Arguments(),"uaccess-parent")) return uaccess_terminal_parent();
  if(streq(Arguments(),"anon-fault-parent")) return anon_fault_parent();
  if(!streq(Arguments(),"suite")){
@@ -82,6 +222,7 @@ int main(void){
   check(call(6,t,0,0,0,0)==0,"raw mode");
   check(call(1,0,0,0,80,25)==S_DENIED&&call(3,t,0,0,0,0)==S_BADHANDLE&&call(6,t,0,0,4,0)==S_INVALID,"client cannot acquire control or invalid mode");
   const char* mode=cli.bytes+cli.offsets[0];
+  if(mode[0]=='b' && mode[1]==':'){blocking_child(t,mode+2);return 0;}
   if(streq(mode,"uaccess-child"))return uaccess_terminal_child(t);
   if(streq(mode,"flood")){
    for(u32 i=0;i<256;i++)bytes[i]=(u8)i;

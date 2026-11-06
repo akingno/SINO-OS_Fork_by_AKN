@@ -78,6 +78,7 @@ Shell 宿主测试参数：`-ExpectedExitCode 1` 断言预期失败，`-TimeoutS
 | 管道与标准流 | src32/pipe.c/.h、object.c、process.c:RunSpecV3；user/pipe_tests.c | stage2-test.ps1；契约 docs/stream-pipes.md |
 | 管道阻塞读写 | src32/process.c:transfer_pipe / retry_wait、src32/pipe.c:pipe_release | `test-stage4-pipes.js <ShellBridge 构建目录>`（11 项）；契约 docs/stream-pipes.md |
 | 文本会话后端 | src32/terminal.c/.h、process.c:SYS_TERMINAL；user/terminal_tests.c | stage2-test.ps1；契约 docs/terminal-sessions.md |
+| 终端阻塞读取 | src32/terminal.c:wake_readers、process.c:SYS_TERMINAL / retry_wait；user/terminal_tests.c | `test-stage4-terminal.js <ShellBridge 构建目录>`（14 项）；契约 docs/terminal-sessions.md |
 | 终端前端 | user/terminal_frontend.c、terminal_model.h | stage2-test.ps1；stage2-frontend.js |
 | 交互启动代理 | src32/interactive.h、process.c、terminal.c；user/interactive_tests.c | stage2-test.ps1；契约 docs/interactive-runs.md |
 | Shell | user/gsh.c、gsh_parse.h、gcmd.c；stage2-shell.js | stage2-test.ps1；契约 docs/user-shell.md |
@@ -107,8 +108,8 @@ Shell 宿主测试参数：`-ExpectedExitCode 1` 断言预期失败，`-TimeoutS
 - Feature 掩码 16383（14 个已实现机制），详见 docs/os-interface.md
 - 网络仅回环；宿主桥接和服务器通道是规划
 - 严格策略（caps=0）默认拒绝，按白名单授权；兼容策略保留旧应用访问
-- 管道读写和完成记录查询支持显式线程级阻塞，超时为 0 表示无限等待，有限等待最多 60000 tick
-- 通用子进程委托、cwd/env 继承、终端输入的线程级阻塞等待尚未实现
+- 管道读写、完成记录查询和终端字节读取支持显式线程级阻塞，超时为 0 表示无限等待，有限等待最多 60000 tick
+- 通用子进程委托、cwd/env 继承尚未实现
 
 ## 提交与推送
 

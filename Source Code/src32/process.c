@@ -30,6 +30,7 @@ typedef struct {
   u32 wait_op;
   u32 wait_deadline;
   int wait_timed; /* A finite deadline can wrap to zero. */
+  TerminalRequest wait_terminal;
   UserFrame saved;
 } Thread;
 typedef struct {
@@ -350,6 +351,9 @@ static void thread_unblock(u32 object, u32 op) {
 void process_pipe_wake(const Object* endpoint) {
   thread_unblock((u32)(endpoint - objects) + 1,
                  endpoint->type == OBJ_PIPE_WRITE ? WAIT_PIPE_READ : WAIT_PIPE_WRITE);
+}
+void process_terminal_wake(u32 object) {
+  thread_unblock(object, WAIT_TERM_READ);
 }
 int process_launch(const char* path, u32 caps) {
   return process_launch_args(path, caps, "");
@@ -865,6 +869,9 @@ static int retry_wait(Thread* t) {
     if (t->wait_op == WAIT_COMPLETION) {
       Object* object = handle_get(current->handles, f->ebx, OBJ_PROCESS, PROCESS_WAIT);
       result = user_completion_result(f, object);
+    } else if (t->wait_op == WAIT_TERM_READ) {
+      result = terminal_call(current->handles, current->pid, current->policy,
+                             &t->wait_terminal, current->pd);
     } else {
       int reading = t->wait_op == WAIT_PIPE_READ;
       Object* endpoint = pipe_handle(f->ebx, reading);
@@ -929,6 +936,20 @@ static int syscall(Frame* f) {
       if (b!=sizeof(TerminalRequest) || c) return S_INVALID;
       TerminalRequest request;
       UACCESS_TRY(uaccess_copy_in(user_pd, &request, a, sizeof(request)));
+      if (request.op == TERM_READ && request.value == TERM_READ_BLOCK) {
+        u32 timeout = request.extra;
+        if (timeout > STREAM_WAIT_MAX) return S_INVALID;
+        request.value = request.extra = 0;
+        r = terminal_call(current->handles, current->pid, current->policy, &request, user_pd);
+        if (r == S_AGAIN) {
+          o = handle_get(current->handles, request.handle, OBJ_TERM_CLIENT, 0);
+          Thread* t = &current->thread[current_thread];
+          t->wait_terminal = request;
+          thread_block(t, (u32)(o - objects) + 1, WAIT_TERM_READ, timeout);
+          leave(f);
+        }
+        return r;
+      }
       return terminal_call(current->handles,current->pid,current->policy,&request,user_pd);
     }
     case SYS_PIPE_CREATE: {
@@ -1368,7 +1389,8 @@ static int syscall(Frame* f) {
       if (r == S_OK)
         for (int i = 0; i < NT; i++) {
           Thread* t = &current->thread[i];
-          if (t->wait_op && t->saved.frame.ebx == a)
+          u32 handle = t->wait_op == WAIT_TERM_READ ? t->wait_terminal.handle : t->saved.frame.ebx;
+          if (t->wait_op && handle == a)
             thread_finish_wait(t, S_BADHANDLE, ticks);
         }
       return r;

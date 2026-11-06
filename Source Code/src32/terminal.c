@@ -6,6 +6,7 @@
 #include "process.h"
 typedef struct {
   u32 refs, width, height, mode, foreground, closed, eof;
+  u32 foreground_object; /* Client object index + 1. */
   u32 input_size, output_size, line_size, events;
   u8 input[1024], output[1024], line[256];
   TerminalEvent event[8];
@@ -21,10 +22,15 @@ typedef struct {
 } Client;
 _Static_assert(sizeof(Terminal) <= 4096, "terminal metadata fits page");
 static u32 count;
+static void wake_readers(Terminal* t) {
+  if (t->foreground_object)
+    process_terminal_wake(t->foreground_object);
+}
 static void reset(Terminal* t) {
+  wake_readers(t);
   t->edit_pending=t->editing=0;
   t->mode = TERM_LINE | TERM_ECHO;
-  t->foreground = 0;
+  t->foreground = t->foreground_object = 0;
   t->input_size = t->line_size = t->events = t->eof = 0;
 }
 static void unref(Terminal* t) {
@@ -46,6 +52,7 @@ void terminal_release(int value, int client) {
   } else {
     Terminal* t = (Terminal*)value;
     t->closed = 1;
+    wake_readers(t);
     if (t->shell)
       process_terminal_cancel(t->shell);
     if (t->task)
@@ -91,6 +98,7 @@ static int attach(Terminal* t, Handle* target, u32 pid) {
   if (t->closed)
     return S_CLOSED;
   int handle = 0;
+  u32 object = 0;
   for (u32 i = 0; i < HANDLES; i++)
     if (target[i].generation) {
       Object* o = &objects[target[i].object];
@@ -100,6 +108,7 @@ static int attach(Terminal* t, Handle* target, u32 pid) {
       if (c->terminal != t)
         return S_BUSY;
       handle = (int)((target[i].cookie << 8) | (i + 1));
+      object = target[i].object + 1;
       break;
     }
   if (!handle) {
@@ -119,9 +128,11 @@ static int attach(Terminal* t, Handle* target, u32 pid) {
       object_unref(o);
       return handle;
     }
+    object = (u32)o + 1;
   }
   reset(t);
   t->foreground = pid;
+  t->foreground_object = object;
   return handle;
 }
 static int pop(u8* from, u32* size, void* out, u32 bytes) {
@@ -158,6 +169,7 @@ static int feed(Terminal* t, const TerminalRequest* r) {
   if (r->value == TERM_HANGUP) {
     t->closed = 1;
     event(t, TERM_HANGUP, 0, 0, 0);
+    wake_readers(t);
     return 0;
   }
   if (r->value == TERM_RESIZE) {
@@ -187,6 +199,7 @@ static int feed(Terminal* t, const TerminalRequest* r) {
     t->input_size += t->line_size;
     t->line_size = 0;
     t->eof = 1;
+    wake_readers(t);
     return event(t, TERM_EOF, 0, 0, 0);
   }
   if (r->value != TERM_TEXT || r->extra)
@@ -241,6 +254,8 @@ static int feed(Terminal* t, const TerminalRequest* r) {
     memcpy(t->output + t->output_size, echo, echo_size);
     t->output_size += echo_size;
   }
+  if (n)
+    wake_readers(t);
   return 0;
 }
 int terminal_bind_interactive(void* session, Handle* handles, u32 pid,
@@ -277,6 +292,7 @@ int terminal_bind_interactive(void* session, Handle* handles, u32 pid,
   cli->err = h[3];
   reset(t);
   t->foreground = pid;
+  t->foreground_object = (u32)object + 1;
   return 0;
 }
 static int interactive_call(Terminal* t, Client* c, Object* control,
