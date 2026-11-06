@@ -95,6 +95,36 @@ static int paging_tests(u32 cookie) {
   Log(cookie == 1 ? "PAGING STRICT A PASS\n" : "PAGING STRICT B PASS\n");
   return 0;
 }
+static int paging_window_tests(int fault) {
+  u32 boundary = USER_DYNAMIC_BASE + 0x400000u;
+  u32 high = USER_DYNAMIC_END - 4096;
+  StartInfo* across = (StartInfo*)(boundary - 8);
+  require(QueryStartInfo(across) == 0 && across->policy == PROCESS_STRICT,
+          "writable buffer crosses a page directory boundary");
+
+  volatile u8* text = (volatile u8*)(boundary - 1);
+  text[0] = 'O';
+  text[1] = 'K';
+  text[2] = '\n';
+  require(api(SYS_LOG, (u32)text, 0, 3) == 3, "cross-PDE input readable");
+
+  volatile u32* last = (volatile u32*)(boundary + 4096 - 4);
+  *last = 0xabcdef01u;
+  require(api(QUERY_START, (u32)last, sizeof(StartInfo), 0) == S_INVALID &&
+          *last == 0xabcdef01u, "hole rejects full output before writing");
+  require(*(volatile u32*)high == 0 &&
+          api(QUERY_START, high, sizeof(StartInfo), 0) == S_INVALID &&
+          api(SYS_LOG, USER_DYNAMIC_END - 1, 0, 2) == S_INVALID &&
+          api(SYS_LOG, 0xfffffff0u, 0, 32) == S_INVALID,
+          "high read-only page, window end and overflow checks");
+  if (fault) {
+    Log("PAGING C EXPECT READONLY FAULT\n");
+    *(volatile u32*)high = 1;
+    require(0, "read-only high page accepted a user write");
+  }
+  Log("PAGING C WINDOW PASS\n");
+  return 0;
+}
 static void query_tests(int strict) {
   SystemInfo system;
   StartInfo launch;
@@ -136,6 +166,8 @@ static void query_tests(int strict) {
 int main(void) {
   if (streq(Arguments(), "paging-a")) return paging_tests(1);
   if (streq(Arguments(), "paging-b")) return paging_tests(2);
+  if (streq(Arguments(), "paging-c")) return paging_window_tests(0);
+  if (streq(Arguments(), "paging-c-fault")) return paging_window_tests(1);
   int strict=streq(Arguments(),"strict");
   query_tests(strict);
   if (!strict) {

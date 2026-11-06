@@ -291,6 +291,8 @@ typedef struct {
   u32 width, height;
 } WindowSize;
 #define USER_BASE 0x40000000u
+#define USER_DYNAMIC_BASE 0x40400000u
+#define USER_DYNAMIC_END 0x80000000u
 #define USER_BYTES 0x30000u
 #define USER_ARGUMENTS (USER_BASE + 0x30000u)
 #define USER_STACK(t) (USER_BASE + 0x40000u + (u32)(t) * 0x8000u)

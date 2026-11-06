@@ -119,7 +119,7 @@ static void release(Process* p) {
   handles_close(p->handles);
   if (p->interactive) page_free(p->interactive);
   if (p->pd)
-    paging_user_destroy(p->pd, USER_BASE);
+    paging_user_destroy(p->pd);
   if (p->kernel_stack)
     page_free(p->kernel_stack);
   /* Publish only after execution resources and owned handles are gone. */
@@ -160,6 +160,50 @@ static int alloc_user_stack(Process* p, int thread) {
     }
   return 1;
 }
+#ifdef SINO_SHELL_BRIDGE
+/* Test-only mappings for the strict paging probe on the read-only boot disk. */
+static int paging_probe_setup(Process* p, int exhaust) {
+  u32 cross = USER_DYNAMIC_BASE + 0x3ff000u;
+  u32 high = USER_DYNAMIC_END - 4096;
+  if (paging_user_find_gap(p->pd, cross, cross + 8192, 8192) != cross ||
+      !alloc_user_page(p, cross, 1) || !alloc_user_page(p, cross + 4096, 1) ||
+      paging_user_find_gap(p->pd, cross, cross + 12288, 4096) != cross + 8192)
+    return S_INVALID;
+
+  u32 before = free_pages;
+  if (alloc_user_page(p, cross, 0) || free_pages != before)
+    return S_INVALID;
+  if (!alloc_user_page(p, high, 0))
+    return S_NOMEM;
+  free_user_pages(p, high, high + 4096);
+  if (free_pages != before)
+    return S_INVALID;
+  if (!exhaust)
+    return alloc_user_page(p, high, 0) ? S_OK : S_NOMEM;
+
+  /* Leave exactly one free page: the data allocation can succeed, but the
+     new page table cannot. Keep the earlier mappings for launch rollback. */
+  void** held = 0;
+  while (free_pages > 1) {
+    void** page = page_alloc();
+    if (!page)
+      break;
+    *page = held;
+    held = page;
+  }
+  int failed_cleanly = free_pages == 1 && !alloc_user_page(p, high, 0) &&
+                       free_pages == 1 && !paging_user_flags(p->pd, high);
+  while (held) {
+    void** next = *held;
+    page_free(held);
+    held = next;
+  }
+  if (!failed_cleanly || free_pages != before)
+    return S_INVALID;
+  pr_debug("PAGING probe table OOM rollback passed\n");
+  return S_NOMEM;
+}
+#endif
 static void initial(Thread* t, u32 entry, u32 stack) {
   memset(t, 0, sizeof(*t));
   t->state = 1;
@@ -262,7 +306,7 @@ static int launch_policy(const char* path, u32 caps, const char* arguments,
   if (!p || next_pid >= 0x7fffffu || strlen(arguments) > 255)
     return S_LIMIT;
   memset(p, 0, sizeof(*p));
-  p->pd = paging_user_create(BOOT_KERNEL_PD, USER_BASE);
+  p->pd = paging_user_create(BOOT_KERNEL_PD);
   p->kernel_stack = page_alloc();
   if (!p->pd || !p->kernel_stack) {
     release(p);
@@ -293,6 +337,17 @@ static int launch_policy(const char* path, u32 caps, const char* arguments,
     release(p);
     return S_NOMEM;
   }
+#ifdef SINO_SHELL_BRIDGE
+  if (policy == PROCESS_STRICT && n == vfs_lookup("/boot/poltest.snx") &&
+      (streq(arguments, "paging-c") || streq(arguments, "paging-c-fault") ||
+       streq(arguments, "paging-c-oom"))) {
+    int status = paging_probe_setup(p, streq(arguments, "paging-c-oom"));
+    if (status != S_OK) {
+      release(p);
+      return status;
+    }
+  }
+#endif
   RunData* run = completion >= 0 ? completions[objects[completion].value].run : 0;
   if (run) {
     if (run->pending_directory) {
@@ -614,8 +669,9 @@ void process_message(u32 pid, UiEvent e) {
 }
 /* Checks current user pages only; capability checks remain separate. */
 static int user_access_ok(u32 address, u32 length, int write) {
-  if (address < USER_BASE || length > 0x60000u ||
-      address - USER_BASE > 0x60000u - length)
+  u32 end_limit = address >= USER_DYNAMIC_BASE ? USER_DYNAMIC_END : USER_BASE + 0x60000u;
+  if (address < USER_BASE || address > end_limit || length > end_limit - address ||
+      address == USER_DYNAMIC_END)
     return 0;
   if (!length)
     return 1;
@@ -1363,7 +1419,7 @@ int process_list(ProcessInfo* out, u32 cap) {
       for (int j = 0; j < NT; j++)
         if (p->thread[j].state)
           v->threads++;
-      v->pages = paging_user_count(p->pd, USER_BASE);
+      v->pages = paging_user_count(p->pd);
     }
   return (int)count;
 }
