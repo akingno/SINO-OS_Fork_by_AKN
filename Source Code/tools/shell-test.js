@@ -115,18 +115,19 @@ function scenarios(job) {
     ];
 }
 
-async function run(directory, {execute, seedDisk} = {}) {
+async function run(directory, {execute, seedDisk, memoryMiB = 64} = {}) {
     const job = readJSON(path.join(directory, 'shell-job.json'));
     const build = readJSON(path.join(directory, 'build.json'));
     const report = {version:1, build, result:'FAIL', stage:'identity', cases:[],
         outputMode:'combined Shell output; diagnostics separately in kernel.log',
-        startedAt:new Date().toISOString()};
+        memoryMiB, startedAt:new Date().toISOString()};
     const reportFile = path.join(directory, 'shell-report.json');
     const dataFile = path.join(directory, 'shell-data.img');
     const kernelLog = path.join(directory, 'kernel.log');
     let child, channel, qmp, server, childError;
     const guestLog = () => fs.existsSync(kernelLog) ? fs.readFileSync(kernelLog, 'utf8') : '';
     try {
+        if (![64, 128, 1024].includes(memoryMiB)) throw Error('Unsupported test VM memory size.');
         if (sources().sha256 !== build.sourceSha256 || hash(build.iso) !== build.isoSha256 ||
             path.resolve(build.iso) !== path.join(directory, 'SINO.iso')) throw Error('Build inputs or ISO identity changed.');
         if (seedDisk) {
@@ -156,7 +157,7 @@ async function run(directory, {execute, seedDisk} = {}) {
         let firmware = path.join(path.dirname(exe), 'share');
         if (fs.existsSync(path.join(firmware, 'qemu', 'bios-256k.bin'))) firmware = path.join(firmware, 'qemu');
         const args = ['-L', firmware, '-name', 'SINO Shell '+build.buildId,
-            '-machine','pc,vmport=on','-accel','tcg','-m','64M','-vga','std','-nic','none',
+            '-machine','pc,vmport=on','-accel','tcg','-m',`${memoryMiB}M`,'-vga','std','-nic','none',
             '-display','none','-monitor','none','-rtc','base=localtime',
             '-drive','file=SINO.iso,format=raw,media=cdrom,if=ide,index=2,readonly=on',
             '-drive','file=shell-data.img,format=raw,if=ide,index=0','-boot','order=d',

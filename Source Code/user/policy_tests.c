@@ -142,7 +142,7 @@ static void query_tests(int strict) {
   require(api(QUERY_SYSTEM,(u32)buffer,64,0)==0,"system query available");
   require(buffer[0]==48 && buffer[1]==1 && (buffer[2]&7)==7 && buffer[3]==100 &&
           buffer[4]==8 && buffer[5]==4 && buffer[6]==24 && buffer[7]==64 &&
-          buffer[8]==65536 && buffer[9]==196608 && buffer[10]==16384 &&
+          buffer[8]==65536 && buffer[9]==SNX_V2_IMAGE_BYTES && buffer[10]==16384 &&
           buffer[11]==0 && buffer[12]==0xccccccccu,"system wire layout and tail");
   for(u32 i=0;i<16;i++) buffer[i]=0xccccccccu;
   require(api(QUERY_START,(u32)buffer,23,0)==S_INVALID && buffer[0]==0xccccccccu,

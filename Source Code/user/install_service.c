@@ -162,11 +162,7 @@ int PackageValidate(const Package *p, u32 bytes) {
       if (!(f->component & 1) || f->size < sizeof(NativeHeader))
         return S_INVALID;
       const NativeHeader *h = (const NativeHeader *)((const u8 *)p + f->offset);
-      if (h->magic != NATIVE_MAGIC || h->abi != 1 ||
-          h->image_bytes != f->size || h->entry < 32 ||
-          h->entry >= h->data_offset || h->data_offset > h->image_bytes ||
-          (h->data_offset & 4095) || h->memory_bytes < h->image_bytes ||
-          h->memory_bytes > USER_BYTES || h->reserved[0] || h->reserved[1])
+      if (!native_header_valid(h, f->size))
         return S_INVALID;
       entry = 1;
     }

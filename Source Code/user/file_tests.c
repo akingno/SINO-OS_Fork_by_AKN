@@ -40,6 +40,7 @@ static void result(int h, u32 reason) {
 }
 static int anon_io_test(void);
 static int uaccess_io_test(void);
+static int anon_oom_test(int fault);
 static int child(void) {
   CliInfo info; char* argv[2];
   require(CliArguments(&info, argv, 2) == 1, "structured child arguments");
@@ -48,6 +49,14 @@ static int child(void) {
           "grant does not restore ambient caps");
   if (streq(argv[0], "anon-io")) return anon_io_test();
   if (streq(argv[0], "uaccess-io")) return uaccess_io_test();
+  if (streq(argv[0], "anon-fault-oom")) {
+    int terminal;
+    for (int i = 0; (terminal = TerminalCurrent()) == S_NOTFOUND && i < 100; i++)
+      Yield(1);
+    require(terminal > 0 && TerminalMode(terminal, 0) == S_OK,
+            "OOM probe owns the foreground in raw mode");
+    return anon_oom_test(1);
+  }
   int dir = StartDirectory();
   require(dir > 0, "child receives directory context");
   require(GrantDirectory("/home/user", FS_READ | FS_LOOKUP) == S_DENIED &&
@@ -204,24 +213,103 @@ static int uaccess_io_test(void) {
   Log("UACCESS FILE AND PIPE PASS\n");
   return 0;
 }
+static int anon_lazy_test(void) {
+  SystemInfo info;
+  require(QuerySystemInfo(&info) == S_OK && (info.features & FEATURE_ANON_LAZY),
+          "on-demand mapping is discoverable");
+  volatile u8* first = malloc(8192);
+  volatile u8* second = malloc(8192);
+  require(first && second && (u32)second >= (u32)first + 8192,
+          "untouched reservations cannot overlap");
+  require(QueryStartInfo((StartInfo*)((u32)second + 8188)) == S_INVALID,
+          "unreserved tail rejected before preparing the anonymous prefix");
+  Log("ANON LAZY RESERVED\n");
+  Yield(80);
+  require(first[0] == 0, "first direct read receives a zero page");
+  first[0] = 0x5a;
+  Log("ANON LAZY TOUCHED\n");
+  Yield(80);
+  require(second[0] == 0 && first[0] == 0x5a, "separate regions keep independent contents");
+  PipePair pipe;
+  require(PipeCreate(16, &pipe) == S_OK &&
+          StreamWrite(pipe.write, (const void*)(first + 4096), 2) == 2,
+          "syscall read materializes an untouched page");
+  u8 data[2] = {1, 1};
+  require(StreamRead(pipe.read, data, 2) == 2 && !data[0] && !data[1],
+          "syscall input receives the zero-filled contents");
+  Log("ANON LAZY PASS\n");
+  return 0;
+}
+
+static int anon_oom_test(int fault) {
+  u8* edge = malloc(3 * 4096);
+  u8* pressure = malloc(ANON_MAX_BYTES - 3 * 4096);
+  PipePair pipe;
+  require(edge && pressure && PipeCreate(16, &pipe) == S_OK &&
+          StreamWrite(pipe.write, "queued!!", 8) == 8, "prepare OOM fixtures");
+  u8* tail = edge + 4092;
+  memset(tail, 0x5a, 4);
+  int status = S_OK;
+  for (u32 i = 0; i < ANON_MAX_BYTES - 3 * 4096 && status == S_OK; i += 4096)
+    status = QueryStartInfo((StartInfo*)(pressure + i));
+  require(status == S_NOMEM, "64 MiB test VM reaches physical OOM");
+  /* A table allocation may have left one page free. Consume it in a PDE
+     already used by the mapped prefix, without preparing the target page. */
+  status = QueryStartInfo((StartInfo*)(edge + 8192));
+  require(status == S_OK || status == S_NOMEM, "exhaust final spare page");
+  if (fault) {
+    Log("ANON EXPECT FIRST-TOUCH OOM FAULT\n");
+    ((volatile u8*)edge)[4096] = 1;
+    require(0, "user fault returned after physical OOM");
+  }
+  require(StreamRead(pipe.read, tail, 8) == S_NOMEM && tail[0] == 0x5a && tail[3] == 0x5a,
+          "syscall OOM leaves mapped output prefix unchanged");
+  u8 data[8];
+  require(StreamRead(pipe.read, data, 8) == 8 && same(data, (const u8*)"queued!!", 8),
+          "syscall OOM consumes no queued bytes");
+  Log("ANON OOM PASS\n");
+  return 0;
+}
+
 int main(void) {
-  if (streq(Arguments(), "anon-map")) return anon_mapping_test();
-  if (streq(Arguments(), "anon-oom")) {
-    volatile u8* anchor = malloc(1);
-    require(anchor && (u32)anchor == USER_DYNAMIC_BASE, "preexisting mapping");
-    *anchor = 0x5a;
-    require(AnonMap(ANON_MAX_BYTES - 4096) == S_NOMEM && *anchor == 0x5a,
-            "64 MiB test VM reaches physical OOM without touching the live region");
-    void* page = malloc(1);
-    require(page && (u32)page == USER_DYNAMIC_BASE + 4096, "failed map leaves its entire gap free");
-    free(page);
-    free((void*)anchor);
-    Log("ANON OOM PASS\n");
+  if (streq(Arguments(), "stage3-save") || streq(Arguments(), "stage3-read")) {
+    static const u8 expected[] = {0, 0x7f, 0xff, '\n', 'G', 0, '3'};
+    const char* path = "/home/user/stage3-mm.bin";
+    if (streq(Arguments(), "stage3-save")) {
+      require(Write(path, expected, sizeof(expected)) == S_OK && Sync() == S_OK,
+              "commit Stage 3 fixture bytes");
+      Log("STAGE3 SAVE PASS\n");
+    } else {
+      u8 data[8];
+      require(Read(path, data, sizeof(data)) == sizeof(expected) &&
+              same(data, expected, sizeof(expected)), "cold boot bytes match");
+      Log("STAGE3 READ PASS\n");
+    }
     return 0;
   }
+  if (streq(Arguments(), "anon-d-quota")) {
+    int base = AnonMap(ANON_MAX_BYTES);
+    require(base > 0 && AnonMap(1) == S_LIMIT, "exact total quota and one-byte excess");
+    require(AnonUnmap((void*)((u32)base + 1)) == S_INVALID &&
+            AnonUnmap((void*)USER_V1_ARGUMENTS) == S_INVALID &&
+            AnonUnmap((void*)USER_DYNAMIC_END) == S_INVALID, "unaligned and external unmap rejected");
+    volatile u8* tail = (volatile u8*)((u32)base + ANON_MAX_BYTES - 1);
+    require(*tail == 0, "last byte of exact extent is accessible");
+    *tail = 0x83;
+    require(AnonUnmap((void*)(u32)base) == S_OK && AnonMap(1) == base,
+            "full release returns quota and virtual space");
+    Log("ANON D QUOTA PASS\n");
+    return 0;
+  }
+  if (streq(Arguments(), "anon-map")) return anon_mapping_test();
+  if (streq(Arguments(), "anon-lazy")) return anon_lazy_test();
+  if (streq(Arguments(), "anon-oom")) return anon_oom_test(0);
+  if (streq(Arguments(), "anon-fault-oom")) return anon_oom_test(1);
   if (streq(Arguments(), "anon-fault")) {
     int base = AnonMap(4096);
-    require(base > 0 && malloc(8192) && AnonUnmap((void*)(u32)base) == S_OK,
+    require(base > 0 && malloc(8192), "fault fixture has two regions");
+    *(volatile u8*)(u32)base = 0x5a;
+    require(AnonUnmap((void*)(u32)base) == S_OK,
             "release one region while keeping another live");
     Log("ANON EXPECT RELEASED PAGE FAULT\n");
     *(volatile u8*)(u32)base = 1;

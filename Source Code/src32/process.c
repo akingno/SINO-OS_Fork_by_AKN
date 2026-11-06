@@ -33,6 +33,7 @@ typedef struct {
   u32 pid, state, caps;
   int code;
   u32* pd;
+  u32 abi, code_end;
   void* kernel_stack;
   Thread thread[NT];
   Handle handles[HANDLES];
@@ -170,16 +171,25 @@ static int anon_map(Process* p, u32 bytes) {
   }
   if (!slot || bytes > ANON_MAX_BYTES - used)
     return S_LIMIT;
-  u32 base = paging_user_find_gap(p->pd, USER_DYNAMIC_BASE, USER_DYNAMIC_END, bytes);
-  if (!base)
-    return S_LIMIT;
-  for (u32 va = base; va < base + bytes; va += 4096)
-    if (!alloc_user_page(p, va, 1)) {
-      free_user_pages(p, base, va);
-      return S_NOMEM;
+  /* Reservations occupy virtual space even before there is a PTE. */
+  u32 start = USER_DYNAMIC_BASE;
+  for (;;) {
+    u32 base = paging_user_find_gap(p->pd, start, USER_DYNAMIC_END, bytes);
+    if (!base)
+      return S_LIMIT;
+    u32 next = base;
+    for (u32 i = 0; i < ANON_MAX_REGIONS; i++) {
+      const AnonRegion* region = &p->anon[i];
+      u32 end = region->base + region->bytes;
+      if (region->base < base + bytes && end > next)
+        next = end;
     }
-  *slot = (AnonRegion){base, bytes};
-  return (int)base;
+    if (next == base) {
+      *slot = (AnonRegion){base, bytes};
+      return (int)base;
+    }
+    start = next;
+  }
 }
 static int anon_unmap(Process* p, u32 base) {
   if (base < USER_DYNAMIC_BASE || base >= USER_DYNAMIC_END || (base & 4095u))
@@ -194,8 +204,42 @@ static int anon_unmap(Process* p, u32 base) {
   }
   return S_INVALID;
 }
+
+int process_anon_page(u32* pd, u32 page, int populate) {
+  if (!current || current->pd != pd || (page & 4095u) ||
+      page < USER_DYNAMIC_BASE || page >= USER_DYNAMIC_END)
+    return S_INVALID;
+  for (u32 i = 0; i < ANON_MAX_REGIONS; i++) {
+    const AnonRegion* region = &current->anon[i];
+    if (page >= region->base && page - region->base < region->bytes) {
+      if (!populate)
+        return S_OK;
+      if (paging_user_flags(pd, page) & PAGE_PRESENT)
+        return S_INVALID;
+      return alloc_user_page(current, page, 1) ? S_OK : S_NOMEM;
+    }
+  }
+  return S_INVALID;
+}
+
+u32 process_user_limit(const u32* pd, u32 address) {
+  if (!current || current->pd != pd || address < USER_BASE)
+    return 0;
+  if (current->abi == 2) {
+    if (address < USER_DYNAMIC_END)
+      return USER_DYNAMIC_END;
+    return address < USER_V2_END ? USER_V2_END : 0;
+  }
+  if (address <= USER_V1_END)
+    return USER_V1_END;
+  return address >= USER_DYNAMIC_BASE && address < USER_DYNAMIC_END ? USER_DYNAMIC_END : 0;
+}
+
+static u32 user_stack_top(const Process* p, int thread) {
+  return p->abi == 2 ? USER_V2_STACK(thread) : USER_V1_STACK(thread);
+}
 static int alloc_user_stack(Process* p, int thread) {
-  u32 top = USER_STACK(thread), start = top - USER_STACK_BYTES;
+  u32 top = user_stack_top(p, thread), start = top - USER_STACK_BYTES;
   for (u32 va = start; va < top; va += 4096)
     if (!alloc_user_page(p, va, 1)) {
       free_user_pages(p, start, va);
@@ -334,11 +378,7 @@ static int launch_policy(const char* path, u32 caps, const char* arguments,
   if (vfs_read(n, bytes, MAX_FILE) < 0)
     return S_IO;
   NativeHeader* h = (NativeHeader*)bytes;
-  if (h->magic != NATIVE_MAGIC || h->abi != 1 ||
-      h->image_bytes != nodes[n].size || h->entry < 32 ||
-      h->entry >= h->data_offset || h->data_offset > h->image_bytes ||
-      (h->data_offset & 4095) || h->memory_bytes < h->image_bytes ||
-      h->memory_bytes > USER_BYTES || h->reserved[0] || h->reserved[1])
+  if (!native_header_valid(h, nodes[n].size))
     return S_INVALID;
   Process* p = 0;
   for (int i = 0; i < NP; i++)
@@ -349,6 +389,8 @@ static int launch_policy(const char* path, u32 caps, const char* arguments,
   if (!p || next_pid >= 0x7fffffu || strlen(arguments) > 255)
     return S_LIMIT;
   memset(p, 0, sizeof(*p));
+  p->abi = h->abi;
+  p->code_end = USER_BASE + h->data_offset;
   p->pd = paging_user_create();
   p->kernel_stack = page_alloc();
   if (!p->pd || !p->kernel_stack) {
@@ -367,7 +409,7 @@ static int launch_policy(const char* path, u32 caps, const char* arguments,
     if (length)
       memcpy(page, bytes + offset, length);
   }
-  u8* params = alloc_user_page(p, USER_ARGUMENTS, 0);
+  u8* params = alloc_user_page(p, p->abi == 2 ? USER_V2_ARGUMENTS : USER_V1_ARGUMENTS, 0);
   if (!params) {
     release(p);
     return S_NOMEM;
@@ -440,7 +482,7 @@ static int launch_policy(const char* path, u32 caps, const char* arguments,
     p->name[j] = nodes[n].name[j];
     j++;
   }
-  initial(&p->thread[0], USER_BASE + h->entry, USER_STACK(0));
+  initial(&p->thread[0], USER_BASE + h->entry, user_stack_top(p, 0));
   pr_debug("PROCESS start ");
   pr_debug(p->name);
   pr_debug(" pid=");
@@ -940,7 +982,7 @@ static int syscall(Frame* f) {
       if (c || b < sizeof(SystemInfo)) return S_INVALID;
       UACCESS_TRY(uaccess_prepare(user_pd, a, sizeof(SystemInfo), USER_WRITE));
       SystemInfo info = {sizeof(SystemInfo), 1, SYSTEM_FEATURES, 100,
-                         NP, NT, HANDLES, OBJECTS, MAX_FILE, USER_BYTES, 16384, 0};
+                         NP, NT, HANDLES, OBJECTS, MAX_FILE, SNX_V2_IMAGE_BYTES, 16384, 0};
       memcpy((void*)a, &info, sizeof(info));
       return 0;
     }
@@ -1307,14 +1349,14 @@ static int syscall(Frame* f) {
       pr_debug("\n");
       return S_IO;
     case SYS_THREAD:
-      if (a < USER_BASE + 32 || a >= USER_BASE + USER_BYTES ||
+      if (a < USER_BASE + sizeof(NativeHeader) || a >= current->code_end ||
           paging_user_flags(current->pd, a) != (PAGE_PRESENT | PAGE_USER))
         return S_INVALID;
       for (int i = 1; i < NT; i++)
         if (!current->thread[i].state) {
           if (!alloc_user_stack(current, i))
             return S_NOMEM;
-          initial(&current->thread[i], a, USER_STACK(i));
+          initial(&current->thread[i], a, user_stack_top(current, i));
           return i;
         }
       return S_LIMIT;
@@ -1329,7 +1371,7 @@ static int syscall(Frame* f) {
         current->reason = PROCESS_EXITED;
         current->code = 0;
       }
-      u32 top = USER_STACK(current_thread);
+      u32 top = user_stack_top(current, current_thread);
       free_user_pages(current, top - USER_STACK_BYTES, top);
       leave(f);
       return 0;
@@ -1363,6 +1405,18 @@ int process_interrupt(Frame* f) {
   if (!current)
     panic("Orphan user frame", f->eip, 0);
   if (f->vector < 32) {
+    if (f->vector == 14 && (f->error & ~2u) == 4u) {
+      u32 address;
+      __asm__ volatile("mov %%cr2,%0" : "=r"(address));
+      int status = process_anon_page(current->pd, address & ~4095u, 1);
+      if (status == S_OK)
+        return 1;
+      if (status == S_NOMEM) {
+        pr_debug("USER anonymous page OOM address=");
+        pr_debug_hex(address);
+        pr_debug("\n");
+      }
+    }
     process_faults++;
     current->code = -(int)f->vector;
     current->reason = PROCESS_FAULTED;

@@ -63,12 +63,12 @@ Shell 宿主测试参数：`-ExpectedExitCode 1` 断言预期失败，`-TimeoutS
 | --- | --- | --- |
 | 构建、引导 | build32.ps1、build-image32.js、src32/loader.asm、src32/kernel.c:kmain | test-iso.js |
 | 物理页分配、启动页表 | src32/mm/page.c:page_init / page_alloc_run、src32/mm/paging.c:paging_bootstrap / paging_kernel_init | 普通镜像无窗口启动，核对启动日志 |
-| 用户页表、权限和线程栈 | src32/mm/paging.c、src32/process.c:launch_policy / user_access_ok / alloc_user_stack | ShellBridge 中 `run -s /boot/poltest.snx paging-a/b` |
+| 用户页表、权限和线程栈 | src32/mm/paging.c、src32/mm/uaccess.c:uaccess_prepare、src32/process.c:launch_policy / alloc_user_stack | ShellBridge 中 `run -s /boot/poltest.snx paging-a/b` |
 | 多用户页表与动态地址窗口 | src32/mm/paging.c:paging_user_map / paging_user_find_gap | ShellBridge 中 `run -s /boot/poltest.snx paging-c` 系列 |
 | 匿名内存与 SDK 堆 | src32/process.c:anon_map / anon_unmap、user/runtime.c | ShellBridge 中 `run -s /boot/fstest.snx anon-*` 系列 |
 | 用户缓冲区校验 | src32/mm/uaccess.c、src32/process.c | ShellBridge 中 fstest.snx / termtest.snx 的 uaccess 系列 |
 | 匿名页按需分配 | src32/process.c:anon_map / process_anon_page / process_interrupt | ShellBridge 中 anon-lazy / anon-oom / anon-fault |
-| 高页、SNX v2 | src32/mm/page.c、src32/mm/paging.c、user/linker.ld | test-stage3-mm.js |
+| 高页、SNX v2 与 Phase D 回归 | src32/mm/page.c、src32/mm/paging.c、user/linker.ld | `test-stage3-mm.js g <ShellBridge 构建目录> <G 前构建目录>`，随后 `test-stage3-mm.js d <同一构建目录>` |
 | 调度、故障回收 | src32/process.c:process_step / release、src32/entry.asm | 非 GUI Ring 3 探针；test-usermode.js 含 GUI |
 | 系统调用与权限 | src32/api.h → src32/process.c:syscall → src32/object.c；同步 user/sdk.h | stage2-test.ps1；契约 docs/os-interface.md |
 | 完成记录 | src32/process.c:release / SYS_SPAWN_TRACKED / SYS_PROCESS_RESULT | stage2-test.ps1；契约 docs/os-interface.md |
