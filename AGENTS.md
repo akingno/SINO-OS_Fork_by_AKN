@@ -80,6 +80,7 @@ Shell 宿主测试参数：`-ExpectedExitCode 1` 断言预期失败，`-TimeoutS
 | 文本会话后端 | src32/terminal.c/.h、process.c:SYS_TERMINAL；user/terminal_tests.c | stage2-test.ps1；契约 docs/terminal-sessions.md |
 | 终端阻塞读取 | src32/terminal.c:wake_readers、process.c:SYS_TERMINAL / retry_wait；user/terminal_tests.c | `test-stage4-terminal.js <ShellBridge 构建目录>`（14 项）；契约 docs/terminal-sessions.md |
 | 阻塞等待 SDK 与 Shell | user/stream.h、user/sdk.h、user/interactive.h、user/gsh.c:external | `test-stage4-sdk.js <ShellBridge 构建目录>`（15 项，目录须含同次构建的 kernel-normal.exe）；契约 docs/os-interface.md |
+| Stage 4 收尾回归 | tools/test-stage4-sdk.js、user/interactive_tests.c | `test-stage4-sdk.js <ShellBridge 构建目录> --closeout`（18 项，校验同次构建的 kernel-normal.exe） |
 | 终端前端 | user/terminal_frontend.c、terminal_model.h | stage2-test.ps1；stage2-frontend.js |
 | 交互启动代理 | src32/interactive.h、process.c、terminal.c；user/interactive_tests.c | stage2-test.ps1；契约 docs/interactive-runs.md |
 | Shell | user/gsh.c、gsh_parse.h、gcmd.c；stage2-shell.js | stage2-test.ps1；契约 docs/user-shell.md |

@@ -25,7 +25,8 @@ static void output(CliInfo* c, const char* text) {
   require(StreamWriteAllFor(c->out, text, strlen(text), 200, &n) == 0,
           "session output");
 }
-static int gsh_smoke(int hold, int reject_start) {
+enum { GSH_SMOKE, GSH_HOLD_RESULT, GSH_REJECT_START, GSH_HANGUP };
+static int gsh_smoke(int scenario) {
   int term = TerminalCreate(120, 25);
   u32 rights = FS_READ | FS_LOOKUP | FS_ENUM;
   int dir = GrantDirectory("/home/user", rights | FS_DELEGATE);
@@ -34,10 +35,10 @@ static int gsh_smoke(int hold, int reject_start) {
   int shell = InteractiveStart(term, &root, dir, 0);
   require(term > 0 && dir > 0 && shell > 0, "headless gsh launch");
   const char command[] = "echo stage3-g\n";
-  const char* marker = reject_start ? "start failed " : "stage3-g\n";
+  const char* marker = scenario == GSH_REJECT_START ? "start failed " : "stage3-g\n";
   u32 marker_bytes = strlen(marker);
   u32 sent = 0, matched = 0, begin = StreamTicks();
-  int ready = 0, child = 0, finished = 0, prompt_after = 0;
+  int ready = 0, child = 0, finished = 0, prompt_after = 0, hangup_observed = 0;
   while (StreamTicks() - begin < 500 && !prompt_after) {
     char bytes[128];
     int n = TerminalDrain(term, bytes, sizeof(bytes));
@@ -58,14 +59,14 @@ static int gsh_smoke(int hold, int reject_start) {
       else require(status == S_AGAIN, "headless input backpressure");
     }
     if (child > 0) {
-      if (hold) {
+      if (scenario == GSH_HOLD_RESULT) {
         ProcessCompletion completed;
         require(ProcessWaitFor(child, &completed, 300) == S_OK &&
                 completed.reason == PROCESS_EXITED && !completed.code, "wait for echo worker");
         Log("STAGE4 GSH HOLD\n");
         Yield(100);
         Log("STAGE4 GSH RELEASE\n");
-        hold = 0;
+        scenario = GSH_SMOKE;
       }
       status = InteractiveFinish(term, child);
       if (status == S_OK) {
@@ -79,8 +80,18 @@ static int gsh_smoke(int hold, int reject_start) {
       if (status == S_OK) {
         require(request.program == IX_COMMAND && request.argc == 2 && !request.rights,
                 "headless gsh routes echo to strict worker");
-        child = InteractiveStart(term, &request, reject_start ? dir : 0, 1);
-        if (reject_start) {
+        if (scenario == GSH_HANGUP) {
+          Yield(4);
+          require(TerminalFeed(term, TERM_HANGUP, 0, 0, 0) == S_OK, "hang up a pending broker request");
+          ProcessCompletion completed;
+          require(ProcessWaitFor(shell, &completed, 100) == S_OK &&
+                  completed.reason == PROCESS_EXITED && completed.code == 1,
+                  "hangup wakes the Shell and returns its error exit");
+          hangup_observed = 1;
+          break;
+        }
+        child = InteractiveStart(term, &request, scenario == GSH_REJECT_START ? dir : 0, 1);
+        if (scenario == GSH_REJECT_START) {
           require(child == S_DENIED, "headless broker rejects unauthorized grant");
           finished = 1;
         } else {
@@ -90,21 +101,23 @@ static int gsh_smoke(int hold, int reject_start) {
     }
     Yield(1);
   }
-  require(prompt_after, "gsh output and prompt restored");
+  require(hangup_observed || prompt_after, "gsh reaches the expected final state");
   require(Close(term) == S_OK && Close(shell) == S_OK && Close(dir) == S_OK,
           "headless gsh resources released");
-  Log("STAGE3 GSH PASS\n");
+  Log(scenario == GSH_HANGUP ? "STAGE4 GSH HANGUP PASS\n" : "STAGE3 GSH PASS\n");
   return 0;
 }
 int main(void) {
   StartInfo start;
   require(QueryStartInfo(&start) == 0, "startup policy");
   if (start.policy == PROCESS_COMPAT && streq(Arguments(), "stage3-shell"))
-    return gsh_smoke(0, 0);
+    return gsh_smoke(GSH_SMOKE);
   if (start.policy == PROCESS_COMPAT && streq(Arguments(), "stage4-shell"))
-    return gsh_smoke(1, 0);
+    return gsh_smoke(GSH_HOLD_RESULT);
   if (start.policy == PROCESS_COMPAT && streq(Arguments(), "stage4-shell-error"))
-    return gsh_smoke(0, 1);
+    return gsh_smoke(GSH_REJECT_START);
+  if (start.policy == PROCESS_COMPAT && streq(Arguments(), "stage4-shell-hangup"))
+    return gsh_smoke(GSH_HANGUP);
   if (start.policy == PROCESS_STRICT) {
     CliInfo cli;
     require(QueryCliInfo(&cli) == 0, "atomic cli before first instruction");

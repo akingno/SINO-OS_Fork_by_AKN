@@ -85,13 +85,13 @@ async function main(source, phase, cases, pipeCases, shellCases) {
     return success ? 0 : 1;
 }
 
-function runPhase(phase, cases, pipeCases, shellCases = []) {
-    if (process.argv.length !== 3) {
+function runPhase(phase, cases, pipeCases, shellCases = [], args = process.argv.slice(2)) {
+    if (args.length !== 1) {
         console.error('Usage: node ' + path.basename(process.argv[1]) + ' <ShellBridge build directory>');
         process.exitCode = 2;
         return;
     }
-    main(path.resolve(process.argv[2]), phase, cases, pipeCases, shellCases)
+    main(path.resolve(args[0]), phase, cases, pipeCases, shellCases)
         .then(code => {process.exitCode = code;})
         .catch(error => {console.error(error.message); process.exitCode = 1;});
 }
