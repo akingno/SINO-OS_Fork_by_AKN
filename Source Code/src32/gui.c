@@ -13,9 +13,7 @@
 #include "lib/kstring.h"
 #include "mm/page.h"
 #include "panic.h"
-#define BG 0xd6d7dbu
-#define INK 0x24252au
-#define BLUE 0x355e9au
+#include "theme.h"
 #define EDIT_CAP 16384
 #define NW 8
 #define DIALOG_X ((GUI_WIDTH - 474) / 2)
@@ -255,15 +253,15 @@ static int read_clock(void) {
 }
 static void icon(int x, int y, int kind, int small) {
   int s = small ? 20 : 36;
-  u32 body = kind == 1   ? 0x95b4cf
+  u32 body = kind == 1   ? FOLDER_BODY
              : kind == 2 ? 0xe8e9ec
              : kind == 3 ? 0xc5c9ce
              : kind == 4 ? 0xd1d4d9
                          : 0xf9f8f3;
   if (kind == 1) {
-    g_box(x, y + 4, s, s * 2 / 3, 0x4c6377, body);
-    g_box(x + 2, y, s / 2, 7, 0x4c6377, body);
-    g_line(x + 1, y + 7, x + s - 2, y + 7, 0xdbe7f0);
+    g_box(x, y + 4, s, s * 2 / 3, FOLDER_BORDER, body);
+    g_box(x + 2, y, s / 2, 7, FOLDER_BORDER, body);
+    g_line(x + 1, y + 7, x + s - 2, y + 7, FOLDER_DIVIDER);
   } else if (kind == 3) {
     g_box(x, y, s, s * 3 / 4, 0x4d535b, body);
     g_line(x + 2, y + 2, x + s - 3, y + 2, 0xffffff);
@@ -316,13 +314,13 @@ static void desktop_icon(int x, int y, int kind, const char* name,
 static void desktop_draw(void) {
   g_target(DESKTOP_CACHE, GUI_WIDTH, GUI_HEIGHT);
   for (int y = 0; y < GUI_HEIGHT; y++)
-    g_fill(0, y, GUI_WIDTH, 1, 0x718b9a + (u32)(y / 64) * 0x010101);
+    g_fill(0, y, GUI_WIDTH, 1, DESKTOP_BASE + (u32)(y / 64) * 0x010101);
   for (int y = 35; y < GUI_HEIGHT; y += 4)
     for (int x = (y & 4) ? 0 : 2; x < GUI_WIDTH; x += 4)
-      g_fill(x, y, 1, 1, 0x7892a0);
-  g_text(1, 35, GUI_HEIGHT - 76, "SINO", 0xb4c8d0);
+      g_fill(x, y, 1, 1, DESKTOP_DOT);
+  g_text(1, 35, GUI_HEIGHT - 76, "SINO", DESKTOP_WATERMARK);
   g_text(0, 37, GUI_HEIGHT - 42, locale_text(GUI_LABEL_PLATINUM_DESKTOP_0_10),
-         0xd0dce0);
+         DESKTOP_VERSION);
   desktop_icon(GUI_WIDTH - 124, 57, 3, locale_text(GUI_LABEL_HOME),
                desk_selected == -2);
   desktop_icon(GUI_WIDTH - 124, 159, 3, locale_text(GUI_LABEL_STARTUP_DISK),
@@ -1347,9 +1345,9 @@ static void window_draw(int id) {
   gui_window_renders++;
   Window* w = &windows[id];
   g_target(WINDOW_CACHE(id), w->w, w->h);
-  g_box(0, 0, w->w, w->h, 0x383b42, 0xfafbfcu);
+  g_box(0, 0, w->w, w->h, WINDOW_BORDER, WINDOW_BODY);
   g_line(1, 1, w->w - 2, 1, 0xffffff);
-  g_fill(2, 2, w->w - 4, 27, id == gui_focus ? 0xd3d4d9 : 0xe2e3e7);
+  g_fill(2, 2, w->w - 4, 27, id == gui_focus ? TITLEBAR_FOCUS : TITLEBAR_BLUR);
   if (id == gui_focus)
     for (int y = 7; y < 26; y += 4) {
       g_line(28, y, w->w - 57, y, 0x91959e);
@@ -1357,9 +1355,9 @@ static void window_draw(int id) {
     }
   int width = g_width(3, w->title) + (w->modified ? 20 : 0) + 18;
   g_fill((w->w - width) / 2, 3, width, 24,
-         id == gui_focus ? 0xd3d4d9 : 0xe2e3e7);
+         id == gui_focus ? TITLEBAR_FOCUS : TITLEBAR_BLUR);
   g_text(3, (w->w - g_width(3, w->title)) / 2, 5, w->title,
-         id == gui_focus ? INK : 0x878c96);
+         id == gui_focus ? INK : TITLE_TEXT_BLUR);
   if (w->modified)
     g_round((w->w + width) / 2 - 9, 13, 4, 4, 2, BLUE);
   g_box(9, 9, 13, 13, 0x626771, BG);
@@ -1368,7 +1366,7 @@ static void window_draw(int id) {
   g_line(w->w - 43, 18, w->w - 35, 18, 0x545b65);
   g_box(w->w - 25, 9, 13, 13, 0x626771, BG);
   g_box(w->w - 23, 11, 9, 9, 0x737984, 0xeeeeef);
-  g_line(1, 29, w->w - 2, 29, 0x818690);
+  g_line(1, 29, w->w - 2, 29, TITLEBAR_LINE);
   switch (w->app) {
     case USERAPP:
       user_draw(id);
@@ -1452,9 +1450,9 @@ static const char* menu_label(int m, int row) {
   return windows[order[row]].title;
 }
 static void topbar(void) {
-  g_fill(0, 0, GUI_WIDTH, 30, 0xe8e9ed);
+  g_fill(0, 0, GUI_WIDTH, 30, MENUBAR_BG);
   g_line(0, 0, (GUI_WIDTH - 1), 0, 0xffffff);
-  g_line(0, 29, (GUI_WIDTH - 1), 29, 0x343a44);
+  g_line(0, 29, (GUI_WIDTH - 1), 29, MENUBAR_LINE);
   g_text(3, 57, 5,
          gui_focus >= 0 ? locale_text(appnames[windows[gui_focus].app])
                         : locale_text(GUI_LABEL_DESKTOP),
@@ -1549,8 +1547,8 @@ static void compose(Rect area, int p) {
     compose((Rect){area.x, top, left - area.x, bottom - top}, p - 1);
     compose((Rect){right, top, area.x + area.w - right, bottom - top}, p - 1);
     g_clip((Rect){left, top, right - left, bottom - top});
-    g_fill(w->x + w->w, w->y, 5, w->h + 5, 0x4b5c69);
-    g_fill(w->x, w->y + w->h, w->w, 5, 0x4b5c69);
+    g_fill(w->x + w->w, w->y, 5, w->h + 5, WINDOW_SHADOW);
+    g_fill(w->x, w->y + w->h, w->w, 5, WINDOW_SHADOW);
     g_blit(WINDOW_CACHE(id), w->w, w->x, w->y, w->w, w->h, 0, 0);
     return;
   }

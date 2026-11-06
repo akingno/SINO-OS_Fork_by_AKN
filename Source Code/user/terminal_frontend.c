@@ -7,6 +7,7 @@
 #include "terminal_model.h"
 #include "terminal_edit_model.h"
 #include "line_edit.h"
+#include "../src32/theme.h"
 static char paste_text[256];
 static u32 paste_size, paste_position;
 static TerminalEditView edit_view;
@@ -34,7 +35,7 @@ static u32 width, height, resize_width, resize_height;
 
 static int draw(void) {
   ui_canvas_begin(&canvas);
-  ui_canvas_fill(&canvas, 2, 30, (int)width - 4, (int)height - 32, 0x171c25);
+  ui_canvas_fill(&canvas, 2, 30, (int)width - 4, (int)height - 32, TERM_BG);
   u32 shown = model.used < model.rows ? model.used : model.rows;
   for (u32 y = 0; y < shown; y++) {
     u32 column = 0, row = terminal_model_row(&model, y);
@@ -46,7 +47,7 @@ static int draw(void) {
         c->kind = UI_CELL_TEXT;
         c->x = 16 + (int)column * 7;
         c->y = 40 + (int)y * 18;
-        c->color = 0xd6dce6;
+        c->color = TERM_TEXT;
         canvas.count++;
       }
       column = next;
@@ -59,8 +60,8 @@ static int draw(void) {
   int caret_row = (int)shown - 1 - (int)distance + (int)model.scroll;
   if (caret_row >= 0 && caret_row < (int)shown && caret_column < model.columns)
     ui_canvas_fill(&canvas, 16 + (int)caret_column * 7, 56 + caret_row * 18, 6,
-                   1, 0xd6dce6);
-  ui_canvas_text(&canvas, 16, (int)height - 26, 2, notice, 0x94ade3);
+                   1, TERM_TEXT);
+  ui_canvas_text(&canvas, 16, (int)height - 26, 2, notice, TERM_HINT);
   return Scene(window, (const UiScene *)&canvas);
 }
 static void size(void) {
