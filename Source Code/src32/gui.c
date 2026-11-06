@@ -216,9 +216,9 @@ static void notice(const char* s) {
   invalidate((Rect){DIALOG_X, DIALOG_Y, 474, 224});
 }
 static void button(int x, int y, int w, const char* s) {
-  g_box(x, y, w, 26, 0x545860, BG);
+  g_box(x, y, w, 26, 0x545860, THEME_BG);
   g_bevel(x + 1, y + 1, w - 2, 24, 0);
-  g_text(3, x + (w - g_width(3, s)) / 2, y + 2, s, INK);
+  g_text(3, x + (w - g_width(3, s)) / 2, y + 2, s, THEME_INK);
 }
 static int path_join(int folder, const char* name, char* out) {
   vfs_path(folder, out);
@@ -253,15 +253,15 @@ static int read_clock(void) {
 }
 static void icon(int x, int y, int kind, int small) {
   int s = small ? 20 : 36;
-  u32 body = kind == 1   ? FOLDER_BODY
+  u32 body = kind == 1   ? THEME_FOLDER_BODY
              : kind == 2 ? 0xe8e9ec
              : kind == 3 ? 0xc5c9ce
              : kind == 4 ? 0xd1d4d9
                          : 0xf9f8f3;
   if (kind == 1) {
-    g_box(x, y + 4, s, s * 2 / 3, FOLDER_BORDER, body);
-    g_box(x + 2, y, s / 2, 7, FOLDER_BORDER, body);
-    g_line(x + 1, y + 7, x + s - 2, y + 7, FOLDER_DIVIDER);
+    g_box(x, y + 4, s, s * 2 / 3, THEME_FOLDER_BORDER, body);
+    g_box(x + 2, y, s / 2, 7, THEME_FOLDER_BORDER, body);
+    g_line(x + 1, y + 7, x + s - 2, y + 7, THEME_FOLDER_DIVIDER);
   } else if (kind == 3) {
     g_box(x, y, s, s * 3 / 4, 0x4d535b, body);
     g_line(x + 2, y + 2, x + s - 3, y + 2, 0xffffff);
@@ -276,7 +276,7 @@ static void icon(int x, int y, int kind, int small) {
     g_box(x + 4, y, s - 8, s, 0x626773, body);
     g_line(x + 7, y + 4, x + s - 8, y + 4, 0xffffff);
     if (kind == 2) {
-      g_box(x + 8, y + 8, s - 16, s - 16, BLUE, 0xa4b8d8);
+      g_box(x + 8, y + 8, s - 16, s - 16, THEME_BLUE, 0xa4b8d8);
       g_line(x + 10, y + s - 11, x + s - 11, y + 11, 0xffffff);
     } else
       for (int j = 9; j < s - 3; j += 5)
@@ -308,19 +308,19 @@ static void desktop_icon(int x, int y, int kind, const char* name,
   icon(x + 30, y, kind, 0);
   int wid = min(114, g_width(0, name) + 10);
   if (selected)
-    g_round(x + 48 - wid / 2, y + 42, wid, 23, 3, BLUE);
+    g_round(x + 48 - wid / 2, y + 42, wid, 23, 3, THEME_BLUE);
   g_center(x - 10, y + 43, 116, name, selected ? 0xffffff : 0xf6f8fa);
 }
 static void desktop_draw(void) {
   g_target(DESKTOP_CACHE, GUI_WIDTH, GUI_HEIGHT);
   for (int y = 0; y < GUI_HEIGHT; y++)
-    g_fill(0, y, GUI_WIDTH, 1, DESKTOP_BASE + (u32)(y / 64) * 0x010101);
+    g_fill(0, y, GUI_WIDTH, 1, THEME_DESKTOP_BASE + (u32)(y / 64) * 0x010101);
   for (int y = 35; y < GUI_HEIGHT; y += 4)
     for (int x = (y & 4) ? 0 : 2; x < GUI_WIDTH; x += 4)
-      g_fill(x, y, 1, 1, DESKTOP_DOT);
-  g_text(1, 35, GUI_HEIGHT - 76, "SINO", DESKTOP_WATERMARK);
+      g_fill(x, y, 1, 1, THEME_DESKTOP_DOT);
+  g_text(1, 35, GUI_HEIGHT - 76, "SINO", THEME_DESKTOP_WATERMARK);
   g_text(0, 37, GUI_HEIGHT - 42, locale_text(GUI_LABEL_PLATINUM_DESKTOP_0_10),
-         DESKTOP_VERSION);
+         THEME_DESKTOP_VERSION);
   desktop_icon(GUI_WIDTH - 124, 57, 3, locale_text(GUI_LABEL_HOME),
                desk_selected == -2);
   desktop_icon(GUI_WIDTH - 124, 159, 3, locale_text(GUI_LABEL_STARTUP_DISK),
@@ -1014,29 +1014,29 @@ static void edit_draw(Window* w) {
     if (i >= lo && i < hi)
       g_fill(x, y + 2, a, 18, 0xc6d9f2);
     if (i == w->caret && gui_focus == (int)(w - windows))
-      g_fill(x, y + 4, 1, 14, BLUE);
+      g_fill(x, y + 4, 1, 14, THEME_BLUE);
     if (i == w->len)
       break;
     if (c == '\n') {
       row++;
       x = 20 - w->hscroll;
     } else {
-      g_glyph(0, x, y, c, INK);
+      g_glyph(0, x, y, c, THEME_INK);
       x += a;
     }
     i = next;
   }
   g_clip((Rect){0, 0, w->w, w->h});
-  g_fill(2, w->h - 27, w->w - 4, 25, BG);
+  g_fill(2, w->h - 27, w->w - 4, 25, THEME_BG);
   char b[12];
   int l, c;
   edit_position(w, w->caret, &l, &c);
   g_text(0, 12, w->h - 25, locale_text(GUI_LABEL_LN), 0x646a74);
   number((u32)l + 1, b);
-  g_text(0, 34, w->h - 25, b, INK);
+  g_text(0, 34, w->h - 25, b, THEME_INK);
   g_text(0, 78, w->h - 25, locale_text(GUI_LABEL_COL), 0x646a74);
   number((u32)c + 1, b);
-  g_text(0, 109, w->h - 25, b, INK);
+  g_text(0, 109, w->h - 25, b, THEME_INK);
   g_cliptext(167, w->h - 25, w->w - 200,
              w->path[0] ? w->path : locale_text(GUI_LABEL_UNSAVED_DOCUMENT),
              0x646a74);
@@ -1272,9 +1272,9 @@ static void paint_draw(Window* w) {
         g_fill(36 + x * 2, 84 + y * 2, 2, 2, colors[paint_get(w, x, y) & 15]);
   for (int j = 0; j < 16; j++) {
     int x = 16 + j * 34;
-    g_box(x, 420, 27, 27, w->color == j ? BLUE : 0x8b919b, colors[j]);
+    g_box(x, 420, 27, 27, w->color == j ? THEME_BLUE : 0x8b919b, colors[j]);
     if (w->color == j)
-      g_box(x - 2, 418, 31, 31, INK, colors[j]);
+      g_box(x - 2, 418, 31, 31, THEME_INK, colors[j]);
   }
 }
 static void user_draw(int id) {
@@ -1345,9 +1345,9 @@ static void window_draw(int id) {
   gui_window_renders++;
   Window* w = &windows[id];
   g_target(WINDOW_CACHE(id), w->w, w->h);
-  g_box(0, 0, w->w, w->h, WINDOW_BORDER, WINDOW_BODY);
+  g_box(0, 0, w->w, w->h, THEME_WINDOW_BORDER, THEME_WINDOW_BODY);
   g_line(1, 1, w->w - 2, 1, 0xffffff);
-  g_fill(2, 2, w->w - 4, 27, id == gui_focus ? TITLEBAR_FOCUS : TITLEBAR_BLUR);
+  g_fill(2, 2, w->w - 4, 27, id == gui_focus ? THEME_TITLEBAR_FOCUS : THEME_TITLEBAR_BLUR);
   if (id == gui_focus)
     for (int y = 7; y < 26; y += 4) {
       g_line(28, y, w->w - 57, y, 0x91959e);
@@ -1355,18 +1355,18 @@ static void window_draw(int id) {
     }
   int width = g_width(3, w->title) + (w->modified ? 20 : 0) + 18;
   g_fill((w->w - width) / 2, 3, width, 24,
-         id == gui_focus ? TITLEBAR_FOCUS : TITLEBAR_BLUR);
+         id == gui_focus ? THEME_TITLEBAR_FOCUS : THEME_TITLEBAR_BLUR);
   g_text(3, (w->w - g_width(3, w->title)) / 2, 5, w->title,
-         id == gui_focus ? INK : TITLE_TEXT_BLUR);
+         id == gui_focus ? THEME_INK : THEME_TITLE_TEXT_BLUR);
   if (w->modified)
-    g_round((w->w + width) / 2 - 9, 13, 4, 4, 2, BLUE);
-  g_box(9, 9, 13, 13, 0x626771, BG);
+    g_round((w->w + width) / 2 - 9, 13, 4, 4, 2, THEME_BLUE);
+  g_box(9, 9, 13, 13, 0x626771, THEME_BG);
   g_bevel(10, 10, 11, 11, 0);
-  g_box(w->w - 45, 9, 13, 13, 0x626771, BG);
+  g_box(w->w - 45, 9, 13, 13, 0x626771, THEME_BG);
   g_line(w->w - 43, 18, w->w - 35, 18, 0x545b65);
-  g_box(w->w - 25, 9, 13, 13, 0x626771, BG);
+  g_box(w->w - 25, 9, 13, 13, 0x626771, THEME_BG);
   g_box(w->w - 23, 11, 9, 9, 0x737984, 0xeeeeef);
-  g_line(1, 29, w->w - 2, 29, TITLEBAR_LINE);
+  g_line(1, 29, w->w - 2, 29, THEME_TITLEBAR_LINE);
   switch (w->app) {
     case USERAPP:
       user_draw(id);
@@ -1450,22 +1450,22 @@ static const char* menu_label(int m, int row) {
   return windows[order[row]].title;
 }
 static void topbar(void) {
-  g_fill(0, 0, GUI_WIDTH, 30, MENUBAR_BG);
+  g_fill(0, 0, GUI_WIDTH, 30, THEME_MENUBAR_BG);
   g_line(0, 0, (GUI_WIDTH - 1), 0, 0xffffff);
-  g_line(0, 29, (GUI_WIDTH - 1), 29, MENUBAR_LINE);
+  g_line(0, 29, (GUI_WIDTH - 1), 29, THEME_MENUBAR_LINE);
   g_text(3, 57, 5,
          gui_focus >= 0 ? locale_text(appnames[windows[gui_focus].app])
                         : locale_text(GUI_LABEL_DESKTOP),
-         INK);
+         THEME_INK);
   for (int i = 0; i < 6; i++) {
     int wid = g_width(3, locale_text(menus[i])) + 12;
     if (menu == i)
-      g_fill(menux[i] - 4, 1, wid, 28, BLUE);
-    g_text(3, menux[i], 5, locale_text(menus[i]), menu == i ? 0xffffff : INK);
+      g_fill(menux[i] - 4, 1, wid, 28, THEME_BLUE);
+    g_text(3, menux[i], 5, locale_text(menus[i]), menu == i ? 0xffffff : THEME_INK);
   }
   g_text(0, GUI_WIDTH - 206, 5, ime_on ? locale_text(GUI_LABEL_PINYIN) : "EN",
-         BLUE);
-  g_text(0, GUI_WIDTH - 108, 5, clock_text, INK);
+         THEME_BLUE);
+  g_text(0, GUI_WIDTH - 108, 5, clock_text, THEME_INK);
   g_fill(GUI_WIDTH - 129, 11, 6, 6,
          storage_dirty   ? 0xbd9554
          : storage_ready ? 0x629175
@@ -1482,29 +1482,29 @@ static void popup_draw(void) {
   g_box(x, 30, width, n * 28 + 10, 0x454b55, 0xf0f0f2);
   for (int row = 0; row < n; row++) {
     if (row == menu_row)
-      g_fill(x + 3, 35 + row * 28, width - 6, 28, BLUE);
+      g_fill(x + 3, 35 + row * 28, width - 6, 28, THEME_BLUE);
     g_cliptext(x + 12, 38 + row * 28, width - 25, menu_label(menu, row),
-               row == menu_row ? 0xffffff : INK);
+               row == menu_row ? 0xffffff : THEME_INK);
     if (menu == 4 && count && windows[order[row]].minimized)
       g_text(0, x + width - 27, 38 + row * 28, "_",
-             row == menu_row ? 0xffffff : INK);
+             row == menu_row ? 0xffffff : THEME_INK);
   }
 }
 static void dialog_draw(void) {
   g_fill((DIALOG_X + 7), (DIALOG_Y + 8), 468, 218, 0x46505a);
-  g_box(DIALOG_X, DIALOG_Y, 474, 224, 0x414650, BG);
+  g_box(DIALOG_X, DIALOG_Y, 474, 224, 0x414650, THEME_BG);
   g_bevel((DIALOG_X + 2), (DIALOG_Y + 2), 470, 220, 0);
-  g_text(1, (DIALOG_X + 21), (DIALOG_Y + 20), dialog_title, INK);
+  g_text(1, (DIALOG_X + 21), (DIALOG_Y + 20), dialog_title, THEME_INK);
   if (modal == 1) {
     g_box((DIALOG_X + 21), (DIALOG_Y + 68), 430, 35, 0x757e8c, 0xffffff);
     if (dialog_selected)
       g_fill((DIALOG_X + 27), (DIALOG_Y + 73), min(417, g_width(0, dialog) + 3),
-             25, BLUE);
+             25, THEME_BLUE);
     g_cliptext((DIALOG_X + 27), (DIALOG_Y + 75), 417, dialog,
-               dialog_selected ? 0xffffff : INK);
+               dialog_selected ? 0xffffff : THEME_INK);
     if (!dialog_selected)
       g_fill((DIALOG_X + 27) + min(415, g_width(0, dialog)), (DIALOG_Y + 75), 1,
-             23, BLUE);
+             23, THEME_BLUE);
     g_cliptext((DIALOG_X + 21), (DIALOG_Y + 116), 430, message, 0xa43d43);
     button((DIALOG_X + 231), (DIALOG_Y + 170), 100,
            locale_text(GUI_LABEL_CANCEL));
@@ -1512,7 +1512,7 @@ static void dialog_draw(void) {
         (DIALOG_X + 343), (DIALOG_Y + 170), 108,
         action == 4 ? locale_text(GUI_LABEL_SAVE) : locale_text(GUI_LABEL_OK));
   } else if (modal == 3) {
-    g_cliptext((DIALOG_X + 21), (DIALOG_Y + 73), 430, message, INK);
+    g_cliptext((DIALOG_X + 21), (DIALOG_Y + 73), 430, message, THEME_INK);
     g_text(0, (DIALOG_X + 21), (DIALOG_Y + 111),
            locale_text(GUI_LABEL_DISCARDING_LOSES_YOUR_UNSAVED_CHANGES),
            0x626a76);
@@ -1523,7 +1523,7 @@ static void dialog_draw(void) {
     button((DIALOG_X + 334), (DIALOG_Y + 170), 117,
            locale_text(GUI_LABEL_SAVE));
   } else {
-    g_cliptext((DIALOG_X + 21), (DIALOG_Y + 73), 430, message, INK);
+    g_cliptext((DIALOG_X + 21), (DIALOG_Y + 73), 430, message, THEME_INK);
     button((DIALOG_X + 343), (DIALOG_Y + 170), 108, locale_text(GUI_LABEL_OK));
   }
 }
@@ -1547,8 +1547,8 @@ static void compose(Rect area, int p) {
     compose((Rect){area.x, top, left - area.x, bottom - top}, p - 1);
     compose((Rect){right, top, area.x + area.w - right, bottom - top}, p - 1);
     g_clip((Rect){left, top, right - left, bottom - top});
-    g_fill(w->x + w->w, w->y, 5, w->h + 5, WINDOW_SHADOW);
-    g_fill(w->x, w->y + w->h, w->w, 5, WINDOW_SHADOW);
+    g_fill(w->x + w->w, w->y, 5, w->h + 5, THEME_WINDOW_SHADOW);
+    g_fill(w->x, w->y + w->h, w->w, 5, THEME_WINDOW_SHADOW);
     g_blit(WINDOW_CACHE(id), w->w, w->x, w->y, w->w, w->h, 0, 0);
     return;
   }
@@ -1806,19 +1806,19 @@ static void context_draw(void) {
   for (int row = 0; row < context_count(); row++) {
     int y = context_y + 4 + row * 28;
     if (row == context_row)
-      g_fill(context_x + 3, y, 214, 28, BLUE);
+      g_fill(context_x + 3, y, 214, 28, THEME_BLUE);
     g_text(0, context_x + 12, y + 4, context_label(row),
-           row == context_row ? 0xffffff : INK);
+           row == context_row ? 0xffffff : THEME_INK);
   }
 }
 static void drop_draw(void) {
   if (!dnd || press_node < 0)
     return;
   g_box(dnd_x + 10, dnd_y + 14, 135, 57,
-        dnd_target >= 0 && !nodes[dnd_target].readonly ? BLUE : 0xa43d43,
+        dnd_target >= 0 && !nodes[dnd_target].readonly ? THEME_BLUE : 0xa43d43,
         0xf0f3f6);
   icon(dnd_x + 15, dnd_y + 21, node_kind(press_node), 1);
-  g_cliptext(dnd_x + 41, dnd_y + 20, 97, nodes[press_node].name, INK);
+  g_cliptext(dnd_x + 41, dnd_y + 20, 97, nodes[press_node].name, THEME_INK);
   g_text(0, dnd_x + 17, dnd_y + 45,
          dnd_target >= 0 && !nodes[dnd_target].readonly
              ? locale_text(GUI_LABEL_RELEASE_TO_MOVE)
@@ -2035,14 +2035,14 @@ static void ime_draw(void) {
   int x = rect.x, y = rect.y;
   g_fill(x + 3, y + 3, 450, 64, 0x4d5c68);
   g_box(x, y, 450, 64, 0x6b819c, 0xfcfcfa);
-  g_text(0, x + 12, y + 6, ime_text, BLUE);
+  g_text(0, x + 12, y + 6, ime_text, THEME_BLUE);
   g_text(0, x + 110, y + 6, locale_text(GUI_LABEL_PINYIN_SPACE_SELECTS_PAGE),
          0x737984);
   const char* phrase = ime_phrase();
   if (phrase) {
     g_fill(x + 8, y + 31, min(430, g_width(0, phrase) + 35), 26, 0xdce6f3);
     g_text(0, x + 12, y + 35, "1", 0x777f89);
-    g_text(0, x + 30, y + 35, phrase, INK);
+    g_text(0, x + 30, y + 35, phrase, THEME_INK);
     return;
   }
   u16 chars[7];
@@ -2053,7 +2053,7 @@ static void ime_draw(void) {
     if (!i)
       g_fill(xx - 3, y + 31, 53, 26, 0xdce6f3);
     g_text(0, xx, y + 35, b, 0x777f89);
-    g_glyph(0, xx + 15, y + 35, chars[i], INK);
+    g_glyph(0, xx + 15, y + 35, chars[i], THEME_INK);
   }
   if (!n)
     g_text(

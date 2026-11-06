@@ -35,7 +35,7 @@ static u32 width, height, resize_width, resize_height;
 
 static int draw(void) {
   ui_canvas_begin(&canvas);
-  ui_canvas_fill(&canvas, 2, 30, (int)width - 4, (int)height - 32, TERM_BG);
+  ui_canvas_fill(&canvas, 2, 30, (int)width - 4, (int)height - 32, THEME_TERM_BG);
   u32 shown = model.used < model.rows ? model.used : model.rows;
   for (u32 y = 0; y < shown; y++) {
     u32 column = 0, row = terminal_model_row(&model, y);
@@ -47,7 +47,7 @@ static int draw(void) {
         c->kind = UI_CELL_TEXT;
         c->x = 16 + (int)column * 7;
         c->y = 40 + (int)y * 18;
-        c->color = TERM_TEXT;
+        c->color = THEME_TERM_INK;
         canvas.count++;
       }
       column = next;
@@ -60,8 +60,8 @@ static int draw(void) {
   int caret_row = (int)shown - 1 - (int)distance + (int)model.scroll;
   if (caret_row >= 0 && caret_row < (int)shown && caret_column < model.columns)
     ui_canvas_fill(&canvas, 16 + (int)caret_column * 7, 56 + caret_row * 18, 6,
-                   1, TERM_TEXT);
-  ui_canvas_text(&canvas, 16, (int)height - 26, 2, notice, TERM_HINT);
+                   1, THEME_TERM_INK);
+  ui_canvas_text(&canvas, 16, (int)height - 26, 2, notice, THEME_TERM_HINT);
   return Scene(window, (const UiScene *)&canvas);
 }
 static void size(void) {
