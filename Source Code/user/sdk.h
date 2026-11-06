@@ -15,6 +15,12 @@ static inline int api(u32 n, u32 a, u32 b, u32 c) {
                    : "memory", "cc");
   return (int)n;
 }
+static inline int api_wait(u32 call, int handle, const void* buffer, u32 selector, u32 timeout) {
+  __asm__ volatile("int $0x80" : "+a"(call)
+                   : "b"(handle), "c"(buffer), "d"(selector), "S"(timeout)
+                   : "memory", "cc");
+  return (int)call;
+}
 static inline void Exit(int n) {
   api(SYS_EXIT, (u32)n, 0, 0);
   for (;;) {
@@ -26,6 +32,10 @@ static inline void Yield(u32 ticks) {
 /* Query output is unchanged on failure; older kernels return S_INVALID. */
 static inline int QuerySystemInfo(SystemInfo *out) {
   return api(SYS_SYSTEM_INFO, (u32)out, sizeof(*out), 0);
+}
+static inline int ThreadWaitAvailable(void) {
+  SystemInfo info;
+  return QuerySystemInfo(&info) == S_OK && (info.features & FEATURE_THREAD_WAIT);
 }
 static inline int QueryStartInfo(StartInfo *out) {
   return api(SYS_START_INFO, (u32)out, sizeof(*out), 0);
@@ -43,6 +53,10 @@ static inline int SpawnTracked(const char *path, const char *args) {
 }
 static inline int GetProcessResult(int handle, ProcessCompletion *out) {
   return api(SYS_PROCESS_RESULT, (u32)handle, (u32)out, sizeof(*out));
+}
+/* Explicit blocking calls use zero for an indefinite wait. */
+static inline int WaitProcess(int handle, ProcessCompletion* out, u32 timeout) {
+  return api_wait(SYS_PROCESS_RESULT, handle, out, RESULT_BLOCK_FLAG, timeout);
 }
 static inline int CancelProcess(int handle) {
   return api(SYS_PROCESS_CANCEL, (u32)handle, 0, 0);
@@ -76,6 +90,9 @@ static inline int TerminalForeground(int t,int task){return TerminalCall(TERM_FO
 static inline int TerminalGetInfo(int t,TerminalInfo* out){return TerminalCall(TERM_INFO,t,out,sizeof(*out),0,0);}
 static inline int TerminalMode(int t,u32 flags){return TerminalCall(TERM_MODE,t,0,0,flags,0);}
 static inline int TerminalRead(int t,void* b,u32 n){return TerminalCall(TERM_READ,t,b,n,0,0);}
+static inline int TerminalReadBlocking(int t, void* out, u32 bytes, u32 timeout) {
+  return TerminalCall(TERM_READ, t, out, bytes, TERM_READ_BLOCK, timeout);
+}
 static inline int TerminalWrite(int t,const void* b,u32 n){return TerminalCall(TERM_WRITE,t,(void*)b,n,0,0);}
 static inline int TerminalDrain(int t,void* b,u32 n){return TerminalCall(TERM_DRAIN,t,b,n,0,0);}
 static inline int TerminalNextEvent(int t,TerminalEvent* e){return TerminalCall(TERM_EVENT,t,e,sizeof(*e),0,0);}
@@ -134,13 +151,27 @@ static inline int QueryCliInfo(CliInfo *out) {
   return api(SYS_CLI_INFO, (u32)out, sizeof(*out), 0);
 }
 static inline int StreamRead(int handle, void *out, u32 capacity) {
+  if (capacity & STREAM_BLOCK_FLAG) return S_INVALID;
   return api(SYS_STREAM_READ, (u32)handle, (u32)out, capacity);
 }
 static inline int StreamWrite(int handle, const void *data, u32 bytes) {
+  if (bytes & STREAM_BLOCK_FLAG) return S_INVALID;
   return api(SYS_STREAM_WRITE, (u32)handle, (u32)data, bytes);
+}
+/* The flagged stream ABI accepts pipe endpoints. */
+static inline int StreamReadBlocking(int handle, void* out, u32 bytes, u32 timeout) {
+  if (bytes > RUN_IO_MAX) return S_INVALID;
+  return api_wait(SYS_STREAM_READ, handle, out, STREAM_BLOCK_FLAG | bytes, timeout);
+}
+static inline int StreamWriteBlocking(int handle, const void* data, u32 bytes, u32 timeout) {
+  if (bytes > RUN_IO_MAX) return S_INVALID;
+  return api_wait(SYS_STREAM_WRITE, handle, data, STREAM_BLOCK_FLAG | bytes, timeout);
 }
 static inline int GetRunResult(int handle, RunResult *out) {
   return api(SYS_RUN_RESULT, (u32)handle, (u32)out, sizeof(*out));
+}
+static inline int WaitRun(int handle, RunResult* out, u32 timeout) {
+  return api_wait(SYS_RUN_RESULT, handle, out, RESULT_BLOCK_FLAG, timeout);
 }
 static inline int ReadRunOutput(int handle, const RunRead *request) {
   return api(SYS_RUN_READ, (u32)handle, (u32)request, sizeof(*request));

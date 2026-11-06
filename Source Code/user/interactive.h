@@ -15,6 +15,14 @@ static inline int InteractiveRequest(int t, InteractiveSpec *s) {
 static inline int InteractiveResultRead(int t, u32 id, InteractiveResult *s) {
   return TerminalCall(IX_RESULT, t, s, sizeof(*s), id, 0);
 }
+static inline int InteractiveResultWait(int t, u32 id, InteractiveResult* result) {
+  if (ThreadWaitAvailable())
+    return TerminalCall(IX_RESULT, t, result, sizeof(*result), id, IX_RESULT_BLOCK);
+  int status;
+  while ((status = InteractiveResultRead(t, id, result)) == S_AGAIN)
+    Yield(1);
+  return status;
+}
 static inline int InteractiveFinish(int t, int task) {
   return TerminalCall(IX_FINISH, t, 0, 0, task, 0);
 }

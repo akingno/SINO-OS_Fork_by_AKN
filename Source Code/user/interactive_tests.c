@@ -25,7 +25,7 @@ static void output(CliInfo* c, const char* text) {
   require(StreamWriteAllFor(c->out, text, strlen(text), 200, &n) == 0,
           "session output");
 }
-static int gsh_smoke(void) {
+static int gsh_smoke(int hold, int reject_start) {
   int term = TerminalCreate(120, 25);
   u32 rights = FS_READ | FS_LOOKUP | FS_ENUM;
   int dir = GrantDirectory("/home/user", rights | FS_DELEGATE);
@@ -33,14 +33,16 @@ static int gsh_smoke(void) {
   root.rights = rights;
   int shell = InteractiveStart(term, &root, dir, 0);
   require(term > 0 && dir > 0 && shell > 0, "headless gsh launch");
-  const char command[] = "echo stage3-g\n", marker[] = "stage3-g\n";
+  const char command[] = "echo stage3-g\n";
+  const char* marker = reject_start ? "start failed " : "stage3-g\n";
+  u32 marker_bytes = strlen(marker);
   u32 sent = 0, matched = 0, begin = StreamTicks();
   int ready = 0, child = 0, finished = 0, prompt_after = 0;
   while (StreamTicks() - begin < 500 && !prompt_after) {
     char bytes[128];
     int n = TerminalDrain(term, bytes, sizeof(bytes));
     require(n >= 0 || n == S_AGAIN, "headless drain");
-    for (int i = 0; i < n && matched < sizeof(marker) - 1; i++)
+    for (int i = 0; i < n && matched < marker_bytes; i++)
       matched = bytes[i] == marker[matched] ? matched + 1 : (bytes[i] == marker[0]);
     TerminalEdit edit;
     int status = TerminalCall(TERM_EDIT_VIEW, term, &edit, sizeof(edit), 0, 0);
@@ -48,7 +50,7 @@ static int gsh_smoke(void) {
       require(TerminalCall(TERM_EDIT_ACK, term, 0, 0, edit.serial, 0) == S_OK,
               "headless edit acknowledgement");
       ready = 1;
-      prompt_after = finished && matched == sizeof(marker) - 1 && streq(edit.text, "gsh:/ $ ");
+      prompt_after = finished && matched == marker_bytes && streq(edit.text, "gsh:/ $ ");
     } else require(status == S_AGAIN, "headless edit query");
     if (ready && sent < sizeof(command) - 1) {
       status = TerminalFeed(term, TERM_TEXT, command + sent, 1, 0);
@@ -56,6 +58,15 @@ static int gsh_smoke(void) {
       else require(status == S_AGAIN, "headless input backpressure");
     }
     if (child > 0) {
+      if (hold) {
+        ProcessCompletion completed;
+        require(ProcessWaitFor(child, &completed, 300) == S_OK &&
+                completed.reason == PROCESS_EXITED && !completed.code, "wait for echo worker");
+        Log("STAGE4 GSH HOLD\n");
+        Yield(100);
+        Log("STAGE4 GSH RELEASE\n");
+        hold = 0;
+      }
       status = InteractiveFinish(term, child);
       if (status == S_OK) {
         require(Close(child) == S_OK, "headless worker cleanup");
@@ -68,8 +79,13 @@ static int gsh_smoke(void) {
       if (status == S_OK) {
         require(request.program == IX_COMMAND && request.argc == 2 && !request.rights,
                 "headless gsh routes echo to strict worker");
-        child = InteractiveStart(term, &request, 0, 1);
-        require(child > 0, "headless echo worker launch");
+        child = InteractiveStart(term, &request, reject_start ? dir : 0, 1);
+        if (reject_start) {
+          require(child == S_DENIED, "headless broker rejects unauthorized grant");
+          finished = 1;
+        } else {
+          require(child > 0, "headless echo worker launch");
+        }
       } else require(status == S_AGAIN, "headless worker request");
     }
     Yield(1);
@@ -84,7 +100,11 @@ int main(void) {
   StartInfo start;
   require(QueryStartInfo(&start) == 0, "startup policy");
   if (start.policy == PROCESS_COMPAT && streq(Arguments(), "stage3-shell"))
-    return gsh_smoke();
+    return gsh_smoke(0, 0);
+  if (start.policy == PROCESS_COMPAT && streq(Arguments(), "stage4-shell"))
+    return gsh_smoke(1, 0);
+  if (start.policy == PROCESS_COMPAT && streq(Arguments(), "stage4-shell-error"))
+    return gsh_smoke(0, 1);
   if (start.policy == PROCESS_STRICT) {
     CliInfo cli;
     require(QueryCliInfo(&cli) == 0, "atomic cli before first instruction");

@@ -59,8 +59,15 @@ status. A completed task has status=0 and its typed exit/fault/cancel reason.
 | IX_START=12 | Controller, exact Spec in buffer; value=directory handle, extra=0 root or 1 worker | Owned WAIT/CANCEL observer handle |
 | IX_REQUEST=13 | Controller, Spec output buffer; value/extra zero | Peek at pending typed intent, or S_AGAIN |
 | IX_SUBMIT=14 | Foreground root's primary client, exact Spec; value/extra zero | One pending intent accepted |
-| IX_RESULT=15 | Root primary client, Result output; value=request id, extra zero | Consume one ready result, S_AGAIN while running, S_NOTFOUND after consumption |
+| IX_RESULT=15 | Root primary client, Result output, value=request id, extra=0 or IX_RESULT_BLOCK \| timeout | Consume one ready result, S_AGAIN while running in nonblocking mode, S_NOTFOUND after consumption |
 | IX_FINISH=16 | Controller; value=owned completed worker handle, other fields zero | Restore root foreground, then publish its result |
+
+Stage 4 uses bit 31 of IX_RESULT's extra field to select blocking. The low bits
+hold 0..60000 guest ticks, with zero selecting indefinite waiting. Publication
+of a finished command or a rejected start wakes the root client. Session hangup
+also wakes the root, which receives S_CLOSED if the session has closed. The Shell
+uses this path while an external command is outstanding. Each result remains
+single-consumer, and expiry leaves the result available for a later query.
 
 The boot catalog permits root ID1 and worker ID2, both resolved to the read-only
 boot brokerqa.snx probe. G3 adds root ID3 (gsh.snx) and worker ID4 (gcmd.snx).

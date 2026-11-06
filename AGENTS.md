@@ -79,6 +79,7 @@ Shell 宿主测试参数：`-ExpectedExitCode 1` 断言预期失败，`-TimeoutS
 | 管道阻塞读写 | src32/process.c:transfer_pipe / retry_wait、src32/pipe.c:pipe_release | `test-stage4-pipes.js <ShellBridge 构建目录>`（11 项）；契约 docs/stream-pipes.md |
 | 文本会话后端 | src32/terminal.c/.h、process.c:SYS_TERMINAL；user/terminal_tests.c | stage2-test.ps1；契约 docs/terminal-sessions.md |
 | 终端阻塞读取 | src32/terminal.c:wake_readers、process.c:SYS_TERMINAL / retry_wait；user/terminal_tests.c | `test-stage4-terminal.js <ShellBridge 构建目录>`（14 项）；契约 docs/terminal-sessions.md |
+| 阻塞等待 SDK 与 Shell | user/stream.h、user/sdk.h、user/interactive.h、user/gsh.c:external | `test-stage4-sdk.js <ShellBridge 构建目录>`（15 项，目录须含同次构建的 kernel-normal.exe）；契约 docs/os-interface.md |
 | 终端前端 | user/terminal_frontend.c、terminal_model.h | stage2-test.ps1；stage2-frontend.js |
 | 交互启动代理 | src32/interactive.h、process.c、terminal.c；user/interactive_tests.c | stage2-test.ps1；契约 docs/interactive-runs.md |
 | Shell | user/gsh.c、gsh_parse.h、gcmd.c；stage2-shell.js | stage2-test.ps1；契约 docs/user-shell.md |
@@ -105,10 +106,10 @@ Shell 宿主测试参数：`-ExpectedExitCode 1` 断言预期失败，`-TimeoutS
 - 8 进程，每进程 4 线程，24 句柄
 - Write 更新内存，Sync 提交用户目录快照；`/boot` 只读
 - 启动镜像 2.88 MB，布局入口 `src32/boot-layout.h`
-- Feature 掩码 16383（14 个已实现机制），详见 docs/os-interface.md
+- Feature 掩码 32767（15 个已实现机制），详见 docs/os-interface.md
 - 网络仅回环；宿主桥接和服务器通道是规划
 - 严格策略（caps=0）默认拒绝，按白名单授权；兼容策略保留旧应用访问
-- 管道读写、完成记录查询和终端字节读取支持显式线程级阻塞，超时为 0 表示无限等待，有限等待最多 60000 tick
+- 管道读写、完成记录查询、终端字节读取和交互命令结果支持显式线程级阻塞，超时为 0 表示无限等待，有限等待最多 60000 tick
 - 通用子进程委托、cwd/env 继承尚未实现
 
 ## 提交与推送

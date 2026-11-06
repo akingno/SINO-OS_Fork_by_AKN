@@ -6,6 +6,7 @@ enum { IX_SHELL = 3, IX_COMMAND = 4, IX_READTOOLS = 5, IX_WRITETOOLS = 6 };
 #define IX_BOOTTOOLS 7u
 #define IX_BOOTCOPY 8u
 enum { IX_START = 12, IX_REQUEST, IX_SUBMIT, IX_RESULT, IX_FINISH };
+#define IX_RESULT_BLOCK 0x80000000u /* extra: flag | timeout ticks */
 typedef struct {
   u32 size, version, program, id, argc, bytes, rights;
   u32 offsets[16];

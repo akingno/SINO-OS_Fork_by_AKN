@@ -42,14 +42,14 @@ INT 0x80 提供有界的文件、进程、线程、事件、句柄、窗口和�
 
 ## 系统调用接口
 
-通过 feature 位逐步启用，当前掩码 16383（14 个已实现机制）：
+通过 feature 位逐步启用，当前掩码为 32767，共 15 个已实现机制。
 
 | Feature 位 | 值 | 说明 |
 | --- | --- | --- |
 | SYSTEM_INFO | 1 | 只读系统查询 |
 | STRICT_POLICY | 2 | 严格进程策略 |
 | START_INFO | 4 | 启动信息查询 |
-| COMPLETION | 8 | 非阻塞进程完成记录 |
+| COMPLETION | 8 | 进程完成记录 |
 | BOUNDED_RUN | 16 | 有限 CLI（参数、标准流、超时） |
 | FILE_OBJECTS | 32 | 目录授权、文件对象、区间 I/O |
 | PIPES | 64 | 管道（全局 8 个） |
@@ -60,6 +60,7 @@ INT 0x80 提供有界的文件、进程、线程、事件、句柄、窗口和�
 | ANON_MEMORY | 2048 | 匿名内存映射 |
 | ANON_LAZY | 4096 | 按需分配 |
 | SNX_V2 | 8192 | 16 MiB 用户程序格式 |
+| THREAD_WAIT | 16384 | 管道、完成记录、终端字节和交互结果的线程级阻塞等待 |
 
 详细契约见 [os-interface.md](os-interface.md)。
 

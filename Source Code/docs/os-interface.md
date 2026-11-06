@@ -7,8 +7,7 @@ directory grants, range I/O and private publication/commit; see
 [file-objects.md](file-objects.md). Stage D's minimum version passed compilation
 and the 8-group Stage 2 text gate; remaining failure-injection limits are listed
 there. Stage E adds bounded streaming and user runtime waiting; see
-[stream-pipes.md](stream-pipes.md). General delegation and event-driven blocking
-wait remain future work.
+[stream-pipes.md](stream-pipes.md). Stage 4 adds thread-level blocking waits.
 Stage F adds the [text session backend](terminal-sessions.md), with frontend
 integration still pending. SYS_TERMINAL=0x14a is allowed by strict policy; its
 control/client authority checks still apply, including denial of strict CREATE.
@@ -45,12 +44,29 @@ Stage C provides structured arguments through a separate CliInfo query.
 
 Feature bits: SYSTEM_INFO=1, STRICT_POLICY=2, START_INFO=4, COMPLETION=8,
 BOUNDED_RUN=16, FILE_OBJECTS=32, PIPES=64, TERMINALS=128, CALENDAR=256,
-WORKSPACE=512, LINE_EDIT=1024, ANON_MEMORY=2048, ANON_LAZY=4096, SNX_V2=8192.
-The current feature mask is 16383. Clients detect features by testing individual bits.
+WORKSPACE=512, LINE_EDIT=1024, ANON_MEMORY=2048, ANON_LAZY=4096, SNX_V2=8192,
+THREAD_WAIT=16384.
+The current feature mask is 32767. Clients detect features by testing individual bits.
 These indicate implemented mechanisms, not grants to use every mechanism.
 Unknown feature bits must not be interpreted as authority. Unknown syscalls
 return S_INVALID. Add future syscall IDs before SYS_CALL_END; the sentinel is not
 a callable interface. Strict policy remains a default-deny allowlist.
+
+## Thread-level waiting (Stage 4)
+
+`FEATURE_THREAD_WAIT` advertises opt-in blocking for pipe transfer, terminal
+byte reads, owned completion results and the interactive broker result. The
+SDK exposes `StreamReadBlocking` and `StreamWriteBlocking` for pipes,
+`TerminalReadBlocking` for terminal input, and `WaitProcess` and `WaitRun`
+for completion records. The timeout range is 0..60000 guest ticks. Explicit
+blocking calls use zero for an indefinite wait. The `stream.h` bounded helpers
+use zero for an immediate attempt and can still run on kernels without this bit.
+
+The scheduler parks the calling thread and retries a signaled operation under
+that thread's address space. Finite waits retain their deadline across retries.
+See the [pipe](stream-pipes.md#opt-in-blocking-pipe-calls),
+[terminal](terminal-sessions.md#blocking-byte-reads), and
+[broker](interactive-runs.md) contracts for their selectors and wake conditions.
 
 ## Anonymous memory (Stage 3 Phases D through F)
 

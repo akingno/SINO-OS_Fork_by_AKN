@@ -114,9 +114,10 @@ Finite stdin is always READABLE and sets EOF when consumed; finite captures are
 WRITABLE with space and LIMIT when full. Readiness queries never consume data
 or terminate a capture-overflowing run.
 
-`user/stream.h` supplies user-side helpers, using monotonic ticks and Yield(1):
+`user/stream.h` supplies bounded helpers. On kernels advertising THREAD_WAIT,
+pipe transfers, terminal byte reads and completion waits can suspend the caller.
 
-- StreamWaitFor(handle, READABLE or WRITABLE, timeout) returns readiness flags,
+- StreamWaitFor(handle, READABLE or WRITABLE, timeout) polls readiness flags and returns them,
   S_CLOSED for a hung-up writer, S_LIMIT for full finite capture, or S_TIMEOUT.
 - StreamReadFor/StreamWriteFor retry only S_AGAIN, returning the first actual
   transfer/EOF/error, including short positive progress.
@@ -124,14 +125,15 @@ or terminate a capture-overflowing run.
   across the whole bounded operation. It returns 0 only after every byte is
   accepted, and always records accepted progress even on error/timeout. Retry
   only the remaining suffix. It accepts total bytes <=65536.
-- RunWaitFor and ProcessWaitFor poll owned completion objects; they preserve
+- RunWaitFor and ProcessWaitFor wait on owned completion objects and preserve
   the output on S_TIMEOUT. A wait timeout does not automatically cancel a run;
   use CancelProcess explicitly when required, then wait for its final result.
 
 Timeouts are 0..60000 guest ticks at the current 100 Hz. Zero permits an immediate
 attempt; it is not an infinite wait. Unsigned elapsed differences handle tick
-wrap within this bound. Persistent errors/closure return immediately. Retry after
-S_AGAIN yields to other work. Readiness is only a hint: another reader/writer
+wrap within this bound. Persistent errors and closure return immediately.
+Terminal output backpressure and older kernels use the bounded Yield(1) retry.
+Readiness is a hint. Another reader or writer
 can consume the opportunity before the next syscall. Helpers do not reserve it.
 The older CliWriteAll remains a finite-backend helper and may return S_AGAIN on
 pipes; use stream.h when waiting is intended.
@@ -158,8 +160,8 @@ normal drain/EOF and S_CLOSED rules.
 
 The kernel retains the saved user registers and wait metadata across suspension.
 Process teardown discards the wait and releases the normal handle references.
-The `stream.h` helper deadlines above still use the polling path and treat
-zero as a single immediate attempt.
+The `stream.h` helpers use the remaining deadline for blocking and treat zero
+as a single immediate attempt.
 
 ## Validation boundary
 

@@ -26,6 +26,23 @@ static void wake_readers(Terminal* t) {
   if (t->foreground_object)
     process_terminal_wake(t->foreground_object);
 }
+static void wake_shell(Terminal* t) {
+  if (!t->shell)
+    return;
+  for (u32 i = 0; i < OBJECTS; i++) {
+    if (!objects[i].refs || objects[i].type != OBJ_TERM_CLIENT)
+      continue;
+    const Client* client = (const Client*)objects[i].value;
+    if (client->terminal == t && client->pid == t->shell) {
+      process_interactive_wake(i + 1);
+      return;
+    }
+  }
+}
+static void publish_result(Terminal* t) {
+  t->phase = 3;
+  wake_shell(t);
+}
 static void reset(Terminal* t) {
   wake_readers(t);
   t->edit_pending=t->editing=0;
@@ -53,6 +70,7 @@ void terminal_release(int value, int client) {
     Terminal* t = (Terminal*)value;
     t->closed = 1;
     wake_readers(t);
+    wake_shell(t);
     if (t->shell)
       process_terminal_cancel(t->shell);
     if (t->task)
@@ -170,6 +188,7 @@ static int feed(Terminal* t, const TerminalRequest* r) {
     t->closed = 1;
     event(t, TERM_HANGUP, 0, 0, 0);
     wake_readers(t);
+    wake_shell(t);
     return 0;
   }
   if (r->value == TERM_RESIZE) {
@@ -377,7 +396,7 @@ static int interactive_call(Terminal* t, Client* c, Object* control,
     t->task = 0;
     t->result = (InteractiveResult){sizeof(InteractiveResult), 1, t->request_id,
                                     0, result};
-    t->phase = 3;
+    publish_result(t);
     return 0;
   }
   if (r->op != IX_START || r->extra > 1 || r->bytes != sizeof(InteractiveSpec)) return S_INVALID;
@@ -390,7 +409,7 @@ static int interactive_call(Terminal* t, Client* c, Object* control,
       t->result.version = 1;
       t->result.id = t->request_id;
       t->result.status = S_NOMEM;
-      t->phase = 3;
+      publish_result(t);
     }
     return S_NOMEM;
   }
@@ -442,7 +461,7 @@ static int interactive_call(Terminal* t, Client* c, Object* control,
     t->result.version = 1;
     t->result.id = t->request_id;
     t->result.status = status;
-    t->phase = 3;
+    publish_result(t);
   }
   page_free(q);
   return status;

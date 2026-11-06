@@ -132,8 +132,10 @@ static void blocking_child(int term, const char* mode) {
     check(TerminalMode(term, TERM_LINE) == S_OK, "canonical mode without echo");
   check(TerminalRead(term, bytes, 1) == S_AGAIN, "legacy read returns immediately when empty");
   check(TerminalWrite(term, "wait", 4) == 4, "reader checkpoint");
-  if (streq(mode, "raw")) {
-    check(blocking_read(term, bytes, 4, 0) == 3 && bytes[0] == 'a' &&
+  if (streq(mode, "raw") || streq(mode, "sdk-read")) {
+    int status = streq(mode, "sdk-read") ? StreamReadFor(term, bytes, 4, 200)
+                                        : blocking_read(term, bytes, 4, 0);
+    check(status == 3 && bytes[0] == 'a' &&
           bytes[1] == 0 && bytes[2] == 'b', "feed wakes reader with raw binary input");
   } else if (streq(mode, "canonical")) {
     check(blocking_read(term, bytes, 4, 0) == 3 &&
@@ -174,7 +176,7 @@ static int blocking_parent(const char* args) {
   Yield(4);
 
   int next = 0;
-  if (streq(mode, "raw")) {
+  if (streq(mode, "raw") || streq(mode, "sdk-read")) {
     check(TerminalFeed(control, TERM_TEXT, "a\0b", 3, 0) == S_OK, "feed raw bytes");
   } else if (streq(mode, "canonical") || streq(mode, "eof")) {
     int eof = streq(mode, "eof");
@@ -227,7 +229,8 @@ int main(void){
   if(streq(mode,"flood")){
    for(u32 i=0;i<256;i++)bytes[i]=(u8)i;
    for(int i=0;i<4;i++)check(call(8,t,bytes,256,0,0)==256,"bounded output fill");
-   check(call(8,t,bytes,1,0,0)==S_AGAIN,"output backpressure");return 0;
+   check(call(8,t,bytes,1,0,0)==S_AGAIN &&
+         StreamWriteFor(t, bytes, 1, 3) == S_TIMEOUT, "output backpressure and bounded fallback");return 0;
   }
   check((StreamReady(t)&STREAM_WRITABLE)&&StreamWriteFor(t,"ready",5,10)==5,"shared stream terminal output");
   if(streq(mode,"hangup")||streq(mode,"lost-controller")){

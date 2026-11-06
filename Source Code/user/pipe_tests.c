@@ -261,6 +261,11 @@ int main(void) {
           limits[5] == 60000 && !limits[7] && limits[8] == 0xccccccccu, "pipe limits wire contract");
   SystemInfo system;
   require(QuerySystemInfo(&system) == 0 && (system.features & 64), "pipe feature advertised");
+#ifdef FEATURE_THREAD_WAIT
+  StartInfo startup;
+  require(ThreadWaitAvailable() && QueryStartInfo(&startup) == 0 &&
+          (startup.features & FEATURE_THREAD_WAIT), "blocking wait discovery from both queries");
+#endif
   Pair pair = {0xccccccccu, 0xccccccccu};
   require(make(0, &pair) == S_INVALID && make(4097, &pair) == S_INVALID && pair.read == 0xccccccccu,
           "capacity errors preserve output");
@@ -388,6 +393,15 @@ int main(void) {
           StreamReadFor((int)pair.read, output, 1, 60001) == S_INVALID &&
           Close((int)pair.read) == 0 && StreamWriteAllFor((int)pair.write, "x", 1, 5, &written) == PEER_CLOSED &&
           !written && Close((int)pair.write) == 0, "runtime errors and readiness");
+#ifdef FEATURE_THREAD_WAIT
+  require(make(1, &pair) == S_OK, "blocked write-all setup");
+  u32 begin = StreamTicks();
+  require(StreamWriteAllFor((int)pair.write, "ab", 2, 8, &written) == S_TIMEOUT &&
+          written == 1 && StreamTicks() - begin >= 8 &&
+          StreamReadFor((int)pair.read, output, 2, 0) == 1 && output[0] == 'a' &&
+          Close((int)pair.read) == S_OK && Close((int)pair.write) == S_OK,
+          "write-all blocks for the remaining deadline and reports partial progress");
+#endif
 #endif
   Log("PIPE SUITE PASS checks="); char text[16]; number(checks, text); Log(text); Log("\n");
   return 0;

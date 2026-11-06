@@ -17,6 +17,7 @@ void process_completion_release(int);
 void process_stream_release(int);
 void process_pipe_wake(const Object*);
 void process_terminal_wake(u32 object);
+void process_interactive_wake(u32 object);
 /* Trusted kernel entry points; the user syscall validates all pointers first. */
 int process_run_start(Handle *, const RunSpec *);
 int process_run_start_directory(Handle *, const RunSpec *, u32, u32);

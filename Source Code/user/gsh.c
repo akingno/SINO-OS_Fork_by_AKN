@@ -112,9 +112,7 @@ static void external(u32 program, u32 rights) {
   request_id++;
   position = available; /* Foreground transfer discards queued typeahead. */
   InteractiveResult result;
-  while ((error = InteractiveResultRead(terminal, request_id, &result)) ==
-         S_AGAIN)
-    Yield(1);
+  error = InteractiveResultWait(terminal, request_id, &result);
   if (error < 0)
     Exit(1);
   if (result.status < 0) {
