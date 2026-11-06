@@ -38,12 +38,16 @@ static void result(int h, u32 reason) {
           "child completed with expected typed result");
   require(Close(h) == 0, "close child observation");
 }
+static int anon_io_test(void);
+static int uaccess_io_test(void);
 static int child(void) {
   CliInfo info; char* argv[2];
   require(CliArguments(&info, argv, 2) == 1, "structured child arguments");
   StartInfo start;
   require(QueryStartInfo(&start) == 0 && start.policy == PROCESS_STRICT && !start.caps,
           "grant does not restore ambient caps");
+  if (streq(argv[0], "anon-io")) return anon_io_test();
+  if (streq(argv[0], "uaccess-io")) return uaccess_io_test();
   int dir = StartDirectory();
   require(dir > 0, "child receives directory context");
   require(GrantDirectory("/home/user", FS_READ | FS_LOOKUP) == S_DENIED &&
@@ -67,7 +71,173 @@ static int child(void) {
           "closed startup grant is not recreated");
   return 0;
 }
+static int anon_mapping_test(void) {
+  _Static_assert(SYS_ANON_MAP == 0x14e && SYS_ANON_UNMAP == 0x14f,
+                 "anonymous memory wire IDs");
+  SystemInfo system;
+  StartInfo start;
+  require(QuerySystemInfo(&system) == S_OK &&
+          (system.features & FEATURE_ANON_MEMORY) &&
+          QueryStartInfo(&start) == S_OK && start.policy == PROCESS_STRICT,
+          "anonymous memory advertised to strict processes");
+  require(AnonMap(0) == S_INVALID && AnonMap(0xffffffffu) == S_INVALID &&
+          AnonMap(ANON_MAX_BYTES + 1) == S_LIMIT &&
+          api(SYS_ANON_MAP, 1, 1, 0) == S_INVALID && !malloc(0),
+          "invalid sizes, overflow, quota and reserved map arguments");
+
+  u8* first = malloc(8193);
+  int second_base = AnonMap(1);
+  require(first && !((u32)first & 4095) && (u32)first >= USER_DYNAMIC_BASE &&
+          second_base > 0 && (u32)second_base >= (u32)first + 12288,
+          "independent aligned regions and rounded extent");
+  volatile u8* second = (volatile u8*)(u32)second_base;
+  require(!first[0] && !first[4095] && !first[4096] && !first[8192] && !*second,
+          "all three pages and second region start zeroed");
+  first[4095] = 0x56;
+  first[4096] = 0x78;
+  *second = 0x91;
+  require(AnonMap(ANON_MAX_BYTES - 4096) == S_LIMIT &&
+          AnonUnmap(first + 4096) == S_INVALID &&
+          api(SYS_ANON_UNMAP, (u32)first, 1, 0) == S_INVALID &&
+          first[4095] == 0x56 && first[4096] == 0x78 && *second == 0x91,
+          "partial or malformed unmap leaves both regions intact");
+  u32 first_base = (u32)first;
+  free(first);
+  free(0);
+  require(api(SYS_LOG, first_base, 0, 1) == S_INVALID &&
+          AnonUnmap((void*)first_base) == S_INVALID && *second == 0x91,
+          "released address rejects access and double unmap");
+  u8* replacement = malloc(8193);
+  require((u32)replacement == first_base && !replacement[4095] &&
+          !replacement[4096] && *second == 0x91, "hole reused with clean pages");
+  free(replacement);
+  require(AnonUnmap((void*)(u32)second_base) == S_OK, "release independent region");
+
+  u32 regions[ANON_MAX_REGIONS];
+  u32 i = 0;
+  for (; i < ANON_MAX_REGIONS; i++) {
+    int base = AnonMap(1);
+    if (base <= 0) break;
+    regions[i] = (u32)base;
+  }
+  require(i == ANON_MAX_REGIONS && AnonMap(1) == S_LIMIT &&
+          AnonUnmap((void*)regions[0]) == S_OK &&
+          AnonMap(1) == (int)regions[0], "region limit and slot reuse");
+  /* Exit with the regions still mapped to exercise process-wide reclamation. */
+  Log("ANON MAPPING PASS\n");
+  return 0;
+}
+static int anon_io_test(void) {
+  int dir = StartDirectory();
+  int file = OpenAt(dir, "phase-d-anon.bin", FS_READ | FS_WRITE, OPEN_CREATE | OPEN_EXCLUSIVE);
+  u8* in = malloc(8192);
+  u8* out = malloc(8192);
+  require(dir > 0 && file > 0 && in && out, "explicit grant and anonymous buffers");
+  for (u32 i = 0; i < 32; i++) in[4080 + i] = (u8)(i * 13);
+  require(FileWriteAt(file, 0, in + 4080, 32) == 32 &&
+          FileReadAt(file, 0, out + 4080, 32) == 32 &&
+          same(in + 4080, out + 4080, 32), "cross-page anonymous file I/O");
+  PipePair pipe;
+  require(PipeCreate(32, &pipe) == S_OK &&
+          StreamWrite(pipe.write, out + 4080, 32) == 32 &&
+          StreamRead(pipe.read, out + 4112, 32) == 32 &&
+          same(in + 4080, out + 4112, 32), "anonymous buffers work with streams");
+  require(Close(pipe.read) == S_OK && Close(pipe.write) == S_OK &&
+          Close(file) == S_OK && RemoveAt(dir, "phase-d-anon.bin", 0) == S_OK &&
+          Close(dir) == S_OK, "file and pipe resources released");
+  free(out);
+  free(in);
+  Log("ANON I/O PASS\n");
+  return 0;
+}
+static int uaccess_io_test(void) {
+  int dir = StartDirectory();
+  u8* buffer = malloc(8192);
+  u8* edge = malloc(4096);
+  require(dir > 0 && buffer && edge, "uaccess workspace and test pages");
+
+  StartInfo* cross = (StartInfo*)(buffer + 4092);
+  require(QueryStartInfo(cross) == S_OK && cross->policy == PROCESS_STRICT,
+          "query writes across mapped pages");
+  u8* tail = edge + 4092;
+  memset(tail, 0x9b, 4);
+  require(QueryStartInfo((StartInfo*)tail) == S_INVALID && tail[0] == 0x9b &&
+          QueryStartInfo((StartInfo*)USER_ARGUMENTS) == S_INVALID &&
+          QueryStartInfo((StartInfo*)0xfffffff8u) == S_INVALID,
+          "bad tail, read-only output and overflow rejected before writing");
+
+  OpenRequest* request = (OpenRequest*)(buffer + 4092);
+  memcpy(tail, "uae", 4);
+  *request = (OpenRequest){(u32)tail, FS_READ | FS_WRITE, OPEN_CREATE | OPEN_EXCLUSIVE};
+  int file = api(SYS_OPEN_AT, dir, (u32)request, sizeof(*request));
+  require(file > 0, "cross-page request with path NUL at page end");
+  tail[3] = 'x';
+  require(api(SYS_OPEN_AT, dir, (u32)request, sizeof(*request)) == S_INVALID &&
+          OpenAt(dir, "uaex", FS_READ, 0) == S_NOTFOUND,
+          "unterminated nested path stops at the unmapped page");
+
+  require(FileWriteAt(file, 0, "seed", 4) == 4 &&
+          FileWriteAt(file, 0, tail, 8) == S_INVALID &&
+          FileReadAt(file, 0, buffer + 4094, 4) == 4 &&
+          same(buffer + 4094, (const u8*)"seed", 4),
+          "bad nested write leaves file intact and cross-page read works");
+  tail[0] = 0x7a;
+  require(FileReadAt(file, 0, tail, 8) == S_INVALID && tail[0] == 0x7a,
+          "bad nested read preserves destination even for a short file");
+  DirPage page = {0, 0, (u32)tail, 1, 0x1234, 0x5678};
+  require(DirectoryRead(dir, &page) == S_INVALID && !page.cursor &&
+          page.count == 0x1234 && page.done == 0x5678,
+          "directory output failure leaves cursor and response intact");
+
+  PipePair pipe;
+  require(PipeCreate(16, &pipe) == S_OK && StreamWrite(pipe.write, "pipe", 4) == 4 &&
+          StreamRead(pipe.read, tail, 8) == S_INVALID && tail[0] == 0x7a &&
+          StreamRead(pipe.read, buffer + 4094, 4) == 4 &&
+          same(buffer + 4094, (const u8*)"pipe", 4), "bad pipe read consumes no input");
+  require(StreamWrite(pipe.write, tail, 8) == S_INVALID &&
+          StreamRead(pipe.read, buffer, 8) == S_AGAIN,
+          "bad pipe write produces no output");
+  require(Close(pipe.read) == S_OK && Close(pipe.write) == S_OK && Close(file) == S_OK &&
+          RemoveAt(dir, "uae", 0) == S_OK && Close(dir) == S_OK, "uaccess fixture cleanup");
+  free(edge);
+  free(buffer);
+  Log("UACCESS FILE AND PIPE PASS\n");
+  return 0;
+}
 int main(void) {
+  if (streq(Arguments(), "anon-map")) return anon_mapping_test();
+  if (streq(Arguments(), "anon-oom")) {
+    volatile u8* anchor = malloc(1);
+    require(anchor && (u32)anchor == USER_DYNAMIC_BASE, "preexisting mapping");
+    *anchor = 0x5a;
+    require(AnonMap(ANON_MAX_BYTES - 4096) == S_NOMEM && *anchor == 0x5a,
+            "64 MiB test VM reaches physical OOM without touching the live region");
+    void* page = malloc(1);
+    require(page && (u32)page == USER_DYNAMIC_BASE + 4096, "failed map leaves its entire gap free");
+    free(page);
+    free((void*)anchor);
+    Log("ANON OOM PASS\n");
+    return 0;
+  }
+  if (streq(Arguments(), "anon-fault")) {
+    int base = AnonMap(4096);
+    require(base > 0 && malloc(8192) && AnonUnmap((void*)(u32)base) == S_OK,
+            "release one region while keeping another live");
+    Log("ANON EXPECT RELEASED PAGE FAULT\n");
+    *(volatile u8*)(u32)base = 1;
+    require(0, "released mapping still writable");
+  }
+  if (streq(Arguments(), "anon-parent") || streq(Arguments(), "uaccess-parent")) {
+    int uaccess = streq(Arguments(), "uaccess-parent");
+    int dir = GrantDirectory("/home/user", FS_RIGHTS);
+    require(dir > 0, "grant private test workspace");
+    u32 rights = FS_READ | FS_WRITE | FS_LOOKUP | FS_CREATE | FS_REMOVE;
+    result(child_run(dir, rights | (uaccess ? FS_ENUM : 0),
+                     uaccess ? "uaccess-io" : "anon-io", "/boot/fstest.snx"), PROCESS_EXITED);
+    require(Close(dir) == S_OK, "parent closes directory grant");
+    Log(uaccess ? "UACCESS FILE PARENT PASS\n" : "ANON PARENT PASS\n");
+    return 0;
+  }
   if (streq(Arguments(), "reboot")) {
     int home = GrantDirectory("/home/user", FS_READ | FS_LOOKUP);
     int file = OpenAt(home, "stage2-file-save.bin", FS_READ, 0);

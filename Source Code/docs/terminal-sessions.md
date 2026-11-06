@@ -82,7 +82,7 @@ automatically rebound: applications explicitly use TerminalCurrent's handle.
 
 ## Wire ABI
 
-FEATURE_TERMINALS=128, current feature mask=2047. SYS_TERMINAL=0x14a:
+FEATURE_TERMINALS=128. See [os-interface.md](os-interface.md) for the feature mask. SYS_TERMINAL=0x14a:
 EBX=TerminalRequest*, ECX=24, EDX=0. Six u32 fields: op, handle, buffer, bytes,
 value, extra. All unused request fields must be zero, except zero-length I/O
 ignores its data pointer and queries ignore capacity beyond the defined output.

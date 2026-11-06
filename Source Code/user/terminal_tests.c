@@ -6,7 +6,57 @@ static u8 bytes[256];
 static u32 info[8];
 static int start(const char* mode){u32 offset=0;RunSpec s={48,1,0,(u32)"/boot/termtest.snx",1,strlen(mode)+1,(u32)mode,(u32)&offset,0,0,500,0};return StartRun(&s);}
 static void done(int h,u32 reason){RunResult r;check(RunWaitFor(h,&r,600)==0&&r.completion.reason==reason&&!r.completion.code,"typed child result");check(Close(h)==0,"close observer");}
+static int uaccess_terminal_parent(void) {
+  u8* edge = malloc(4096);
+  check(edge != 0, "terminal test page");
+  u8* tail = edge + 4092;
+  check(api(SYS_TERMINAL, (u32)tail, sizeof(Request), 0) == S_INVALID,
+        "bad outer terminal request stops before dispatch");
+  u32 offset = 0;
+  RunSpec bad = {48, 1, 0, (u32)"/boot/termtest.snx", 1, 8,
+                 (u32)tail, (u32)&offset, 0, 0, 100, 0};
+  check(StartRun(&bad) == S_INVALID, "bad nested argv cannot start a process");
+  int control = call(TERM_CREATE, 0, 0, 0, 80, 25);
+  int child = start("uaccess-child");
+  check(control > 0 && child > 0 && call(TERM_FOREGROUND, control, 0, 0, child, 0) > 0,
+        "terminal probe foreground");
+  memset(tail, 0x78, 4);
+  check(call(TERM_INFO, control, tail, sizeof(TerminalInfo), 0, 0) == S_INVALID &&
+        tail[0] == 0x78, "terminal info bad tail preserves output");
+  check(call(TERM_DRAIN, control, tail, 8, 0, 0) == S_INVALID,
+        "terminal drain rejects bad destination");
+  u32 begin = StreamTicks();
+  int n;
+  while ((n = call(TERM_DRAIN, control, bytes, 4, 0, 0)) == S_AGAIN &&
+         StreamTicks() - begin < 100) Yield(1);
+  check(n == 4 && streq((const char*)bytes, "okay"), "valid drain reads the whole queued output");
+  check(call(TERM_FEED, control, tail, 8, TERM_TEXT, 0) == S_INVALID &&
+        call(TERM_FEED, control, "data", 4, TERM_TEXT, 0) == S_OK,
+        "bad nested feed cannot enqueue its mapped prefix");
+  done(child, PROCESS_EXITED);
+  check(Close(control) == S_OK, "terminal control released");
+  free(edge);
+  Log("UACCESS TERMINAL PASS\n");
+  return 0;
+}
+static int uaccess_terminal_child(int term) {
+  u8* edge = malloc(4096);
+  check(edge != 0, "terminal child test page");
+  u8* tail = edge + 4092;
+  tail[0] = 0xa7;
+  check(StreamWrite(term, "okay", 4) == 4, "terminal child ready");
+  u32 begin = StreamTicks();
+  while (!(StreamReady(term) & STREAM_READABLE) && StreamTicks() - begin < 100)
+    Yield(1);
+  check(StreamRead(term, tail, 8) == S_INVALID && tail[0] == 0xa7 &&
+        StreamRead(term, bytes, 4) == 4 && streq((const char*)bytes, "data") &&
+        StreamRead(term, bytes, 1) == S_AGAIN,
+        "bad terminal read preserves input and invalid feed enqueues nothing");
+  free(edge);
+  return 0;
+}
 int main(void){
+ if(streq(Arguments(),"uaccess-parent")) return uaccess_terminal_parent();
  if(!streq(Arguments(),"suite")){
   CliInfo cli;check(QueryCliInfo(&cli)==0,"cli");int t;
   u32 begin=StreamTicks();while((t=call(2,0,0,0,0,0))==S_NOTFOUND && StreamTicks()-begin<100)Yield(1);
@@ -14,6 +64,7 @@ int main(void){
   check(call(6,t,0,0,0,0)==0,"raw mode");
   check(call(1,0,0,0,80,25)==S_DENIED&&call(3,t,0,0,0,0)==S_BADHANDLE&&call(6,t,0,0,4,0)==S_INVALID,"client cannot acquire control or invalid mode");
   const char* mode=cli.bytes+cli.offsets[0];
+  if(streq(mode,"uaccess-child"))return uaccess_terminal_child(t);
   if(streq(mode,"flood")){
    for(u32 i=0;i<256;i++)bytes[i]=(u8)i;
    for(int i=0;i<4;i++)check(call(8,t,bytes,256,0,0)==256,"bounded output fill");

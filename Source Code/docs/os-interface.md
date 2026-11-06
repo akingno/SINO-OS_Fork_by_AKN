@@ -44,11 +44,44 @@ Arguments()/Executable() still use the original immutable startup strings.
 Stage C provides structured arguments through a separate CliInfo query.
 
 Feature bits: SYSTEM_INFO=1, STRICT_POLICY=2, START_INFO=4, COMPLETION=8,
-BOUNDED_RUN=16, FILE_OBJECTS=32, PIPES=64, TERMINALS=128, CALENDAR=256, WORKSPACE=512, LINE_EDIT=1024; currently features=2047. Old clients mask known bits, not equality.
+BOUNDED_RUN=16, FILE_OBJECTS=32, PIPES=64, TERMINALS=128, CALENDAR=256,
+WORKSPACE=512, LINE_EDIT=1024, ANON_MEMORY=2048. The current feature mask is
+4095. Clients detect features by testing individual bits.
 These indicate implemented mechanisms, not grants to use every mechanism.
 Unknown feature bits must not be interpreted as authority. Unknown syscalls
 return S_INVALID. Add future syscall IDs before SYS_CALL_END; the sentinel is not
 a callable interface. Strict policy remains a default-deny allowlist.
+
+## Anonymous memory (Stage 3 Phase D)
+
+`FEATURE_ANON_MEMORY` advertises the initial eager mapping contract. Both strict
+and compatibility processes may use it for their own address space.
+
+- `SYS_ANON_MAP` (`0x14e`) takes the requested byte count in EBX. The kernel
+  rounds up to 4096 bytes and chooses a page-aligned base in
+  `[0x40400000, 0x80000000)`. It allocates and zeroes all data pages before
+  returning the positive base. A failure releases every page acquired by the call.
+- `SYS_ANON_UNMAP` (`0x14f`) takes the exact live base in EBX and releases the
+  entire region, returning `S_OK`. A released base may be reused by a later map.
+- Both calls require ECX and EDX to be zero. Invalid inputs, including zero
+  map size, rounding overflow, and unknown or interior unmap addresses, return
+  `S_INVALID`. Each process can hold up to 32 regions and 16 MiB in total after
+  rounding. Quota or address-space exhaustion returns `S_LIMIT`. A failure to
+  allocate a physical page or page table returns `S_NOMEM`.
+
+SDK `AnonMap` and `AnonUnmap` preserve the syscall status. `malloc` maps one
+region per allocation and returns null on failure. `free(NULL)` is a no-op.
+Valid non-null pointers passed to `free` must come from a live `malloc` in the
+same process. Process teardown reclaims outstanding regions on exit or fault.
+
+Phase E centralizes syscall user-buffer preparation. The kernel checks the
+entire requested range for read or write permission before reading or writing
+it. Nested request pointers are prepared before operations consume input, write
+files, or publish handles or results. Bounded strings are read through their
+first NUL, including a NUL at the end of a mapped page. An invalid range returns
+`S_INVALID`. The internal preparation interface returns a status so later
+on-demand allocation can propagate `S_NOMEM`. Phase E uses existing eager
+mappings for every successful access.
 
 ## Trusted selection and old application compatibility
 
@@ -78,6 +111,7 @@ Stage E adds local PIPE_CREATE, STREAM_READY and PIPE_LIMITS; StreamRead/Write
 accept owned pipe endpoints as well as run-bound finite streams. RunSpecV3 lets
 a compatibility launcher bind explicit pipe endpoints to strict child stdio.
 Strict RUN_START/Spawn remain denied, and other handles are not inherited.
+Stage 3 also allows ANON_MAP and ANON_UNMAP for the calling process.
 Existing pointer, object-type, rights and resource checks still
 apply. LOG remains diagnostics, not stdout; time and language are public data.
 

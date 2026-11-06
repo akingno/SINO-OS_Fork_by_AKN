@@ -6,6 +6,8 @@ void *memset(void *, int, u32);
 u32 strlen(const char *);
 int streq(const char *, const char *);
 void number(u32, char *);
+void *malloc(u32 bytes);
+void free(void *pointer);
 static inline int api(u32 n, u32 a, u32 b, u32 c) {
   __asm__ volatile("int $0x80"
                    : "+a"(n)
@@ -27,6 +29,13 @@ static inline int QuerySystemInfo(SystemInfo *out) {
 }
 static inline int QueryStartInfo(StartInfo *out) {
   return api(SYS_START_INFO, (u32)out, sizeof(*out), 0);
+}
+/* Map returns a positive base or an S_* error. Unmap takes the exact base. */
+static inline int AnonMap(u32 bytes) {
+  return api(SYS_ANON_MAP, bytes, 0, 0);
+}
+static inline int AnonUnmap(void *base) {
+  return api(SYS_ANON_UNMAP, (u32)base, 0, 0);
 }
 /* The child is strict; this call returns an owned observation/cancel handle. */
 static inline int SpawnTracked(const char *path, const char *args) {

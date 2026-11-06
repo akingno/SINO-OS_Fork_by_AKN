@@ -49,7 +49,7 @@ the Shell waits for the acknowledgment before writing command output or
 starting a worker. Stale acknowledgments are rejected. Foreground changes and
 cleanup reset pending edits. The frame fits the existing single metadata page;
 no new retained-run or capture slots are used. FEATURE_LINE_EDIT=1024 makes
-the current feature mask2047; earlier API layouts and operation numbers remain.
+the Stage G5c feature mask 2047; earlier API layouts and operation numbers remain.
 
 The frontend uses a small edit anchor plus the existing text ring. Repainting
 rolls back the prior preview and rebuilds it using the same one-cell ASCII and

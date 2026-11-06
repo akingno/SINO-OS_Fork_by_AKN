@@ -2,6 +2,14 @@
 /* GCC's MinGW C entry hook: no host CRT or C++ constructors in native ABI 1. */
 void __main(void) {
 }
+void *malloc(u32 bytes) {
+  int base = AnonMap(bytes);
+  return base > 0 ? (void*)(u32)base : 0;
+}
+void free(void *pointer) {
+  if (pointer)
+    AnonUnmap(pointer);
+}
 void *memcpy(void *d, const void *s, u32 n) {
   u8 *a = d;
   const u8 *b = s;

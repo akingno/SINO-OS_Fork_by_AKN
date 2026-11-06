@@ -1,10 +1,8 @@
 #ifndef SINO_FILESYS_H
 #define SINO_FILESYS_H
 #include "object.h"
-/* User memory is checked by the process layer; policy is checked before dispatch. */
-typedef int (*FileAccess)(u32, u32, int);
-typedef int (*FileString)(u32, char*, u32);
-int filesys_call(Handle*, u32, u32, u32, u32, u32, FileAccess, FileString);
+/* Policy is checked before dispatch. The caller's address space stays active. */
+int filesys_call(Handle*, u32, u32, u32, u32, u32, u32* user_pd);
 int filesys_acquire_directory(Handle*, u32, u32);
 int filesys_is_boot_directory(Object*);
 int filesys_boot_reader(Handle*);

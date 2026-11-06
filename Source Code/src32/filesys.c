@@ -1,6 +1,7 @@
 /* Stage D: explicit directory authority and private, version-checked saves.
    All operations run synchronously in the non-preemptible kernel. */
 #include "filesys.h"
+#include "mm/uaccess.h"
 #include "vfs.h"
 #include "storage.h"
 #include "gui.h"
@@ -278,11 +279,12 @@ int filesys_workspace(Handle* owner) {
   return grant(owner,CAP_HOME,"/home/user",FS_RIGHTS);
 }
 int filesys_call(Handle* owner, u32 caps, u32 call, u32 a, u32 b, u32 c,
-                 FileAccess access, FileString string) {
+                 u32* user_pd) {
   char path[VFS_PATH];
   switch (call) {
     case SYS_DIRECTORY_COMMIT: {
-      if(c < sizeof(CommitInfo) || !access(b,sizeof(CommitInfo),1))return S_INVALID;
+      if (c < sizeof(CommitInfo)) return S_INVALID;
+      UACCESS_TRY(uaccess_prepare(user_pd, b, sizeof(CommitInfo), USER_WRITE));
       FileObject* f=get(owner,a,OBJ_DIRECTORY,FS_COMMIT);
       if(!f)return S_BADHANDLE;
       int home=vfs_lookup("/home/user");
@@ -292,21 +294,24 @@ int filesys_call(Handle* owner, u32 caps, u32 call, u32 a, u32 b, u32 c,
       memcpy((void*)b,&report,sizeof(report));return status;
     }
     case SYS_DIR_GRANT:
-      if (c || !string(a, path, sizeof(path))) return S_INVALID;
+      if (c) return S_INVALID;
+      UACCESS_TRY(uaccess_copy_string(user_pd, path, a, sizeof(path)));
       return grant(owner, caps, path, b);
     case SYS_OPEN_AT: {
-      if (c != sizeof(OpenRequest) || !access(b, sizeof(OpenRequest), 0)) return S_INVALID;
-      OpenRequest request; memcpy(&request, (void*)b, sizeof(request));
-      if (!string(request.path, path, sizeof(path))) return S_INVALID;
+      if (c != sizeof(OpenRequest)) return S_INVALID;
+      OpenRequest request;
+      UACCESS_TRY(uaccess_copy_in(user_pd, &request, b, sizeof(request)));
+      UACCESS_TRY(uaccess_copy_string(user_pd, path, request.path, sizeof(path)));
       return open_at(owner, a, path, &request);
     }
     case SYS_FILE_READ_AT:
     case SYS_FILE_WRITE_AT: {
-      if (c != sizeof(FileIo) || !access(b, sizeof(FileIo), 0)) return S_INVALID;
-      FileIo io; memcpy(&io, (void*)b, sizeof(io));
+      if (c != sizeof(FileIo)) return S_INVALID;
+      FileIo io;
+      UACCESS_TRY(uaccess_copy_in(user_pd, &io, b, sizeof(io)));
       int read = call == SYS_FILE_READ_AT;
-      if (io.offset > MAX_FILE || io.bytes > MAX_FILE - io.offset ||
-          (io.bytes && !access(io.buffer, io.bytes, read))) return S_INVALID;
+      if (io.offset > MAX_FILE || io.bytes > MAX_FILE - io.offset) return S_INVALID;
+      if (io.bytes) UACCESS_TRY(uaccess_prepare(user_pd, io.buffer, io.bytes, (read) ? USER_WRITE : USER_READ));
       FileObject* f = get(owner, a, OBJ_FILE, read ? FS_READ : FS_WRITE);
       if (f) {
         int result = read ? vfs_read_at(f->node, io.offset, (u8*)io.buffer, io.bytes)
@@ -325,16 +330,18 @@ int filesys_call(Handle* owner, u32 caps, u32 call, u32 a, u32 b, u32 c,
       return (int)length;
     }
     case SYS_FILE_STAT: {
-      if (c < sizeof(FileStat) || !access(b, sizeof(FileStat), 1)) return S_INVALID;
+      if (c < sizeof(FileStat)) return S_INVALID;
+      UACCESS_TRY(uaccess_prepare(user_pd, b, sizeof(FileStat), USER_WRITE));
       FileStat result; int status = stat(owner, a, &result);
       if (!status) memcpy((void*)b, &result, sizeof(result));
       return status;
     }
     case SYS_DIR_READ: {
-      if (c != sizeof(DirPage) || !access(b, sizeof(DirPage), 1)) return S_INVALID;
+      if (c != sizeof(DirPage)) return S_INVALID;
+      UACCESS_TRY(uaccess_prepare(user_pd, b, sizeof(DirPage), USER_WRITE));
       DirPage page; memcpy(&page, (void*)b, sizeof(page));
-      if (!page.capacity || page.capacity > VFS_NODES ||
-          !access(page.buffer, page.capacity * sizeof(DirEntry), 1)) return S_INVALID;
+      if (!page.capacity || page.capacity > VFS_NODES) return S_INVALID;
+      UACCESS_TRY(uaccess_prepare(user_pd, page.buffer, page.capacity * sizeof(DirEntry), USER_WRITE));
       /* Keep response header separate from the entry buffer. */
       if (page.buffer < b + sizeof(DirPage) && b < page.buffer + page.capacity * sizeof(DirEntry))
         return S_INVALID;
@@ -343,25 +350,28 @@ int filesys_call(Handle* owner, u32 caps, u32 call, u32 a, u32 b, u32 c,
       return status;
     }
     case SYS_REMOVE_AT:
-      if (!string(b, path, sizeof(path))) return S_INVALID;
+      UACCESS_TRY(uaccess_copy_string(user_pd, path, b, sizeof(path)));
       return remove_at(owner, a, path, c);
     case SYS_RENAME_AT: {
-      if (b != sizeof(RenameSpec) || c || !access(a, sizeof(RenameSpec), 0)) return S_INVALID;
-      RenameSpec spec; memcpy(&spec, (void*)a, sizeof(spec));
+      if (b != sizeof(RenameSpec) || c) return S_INVALID;
+      RenameSpec spec;
+      UACCESS_TRY(uaccess_copy_in(user_pd, &spec, a, sizeof(spec)));
       char dest[VFS_PATH];
-      if (!string(spec.source_path, path, sizeof(path)) ||
-          !string(spec.target_path, dest, sizeof(dest))) return S_INVALID;
+      UACCESS_TRY(uaccess_copy_string(user_pd, path, spec.source_path, sizeof(path)));
+      UACCESS_TRY(uaccess_copy_string(user_pd, dest, spec.target_path, sizeof(dest)));
       return rename_at(owner, spec.source_dir, path, spec.target_dir, dest);
     }
     case SYS_FILE_STAGE: {
-      if (c != sizeof(StageSpec) || !access(b, sizeof(StageSpec), 0)) return S_INVALID;
-      StageSpec spec; memcpy(&spec, (void*)b, sizeof(spec));
-      if (!string(spec.path, path, sizeof(path))) return S_INVALID;
+      if (c != sizeof(StageSpec)) return S_INVALID;
+      StageSpec spec;
+      UACCESS_TRY(uaccess_copy_in(user_pd, &spec, b, sizeof(spec)));
+      UACCESS_TRY(uaccess_copy_string(user_pd, path, spec.path, sizeof(path)));
       return stage(owner, a, path, spec.expected_revision);
     }
     case SYS_FILE_PUBLISH:
     case SYS_FILE_COMMIT: {
-      if (c < sizeof(CommitInfo) || !access(b, sizeof(CommitInfo), 1)) return S_INVALID;
+      if (c < sizeof(CommitInfo)) return S_INVALID;
+      UACCESS_TRY(uaccess_prepare(user_pd, b, sizeof(CommitInfo), USER_WRITE));
       CommitInfo result = {0};
       int status = finish(owner, a, call == SYS_FILE_COMMIT, &result);
       if (status != S_BADHANDLE) memcpy((void*)b, &result, sizeof(result));

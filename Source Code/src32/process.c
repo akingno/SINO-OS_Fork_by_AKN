@@ -2,6 +2,7 @@
 /* Preemption only at user boundaries. Kernel/desktop remain non-preemptible. */
 #include "process.h"
 #include "mm/paging.h"
+#include "mm/uaccess.h"
 #include "object.h"
 #include "vfs.h"
 #include "gui.h"
@@ -26,6 +27,9 @@ typedef struct {
   UserFrame saved;
 } Thread;
 typedef struct {
+  u32 base, bytes;
+} AnonRegion;
+typedef struct {
   u32 pid, state, caps;
   int code;
   u32* pd;
@@ -42,6 +46,7 @@ typedef struct {
   u32 directory; /* Explicit startup grant; never a global working directory. */
   u32 boot_directory;
   u32 desktop_owner;
+  AnonRegion anon[ANON_MAX_REGIONS];
 } Process;
 typedef struct {
   CliInfo cli;
@@ -150,6 +155,44 @@ static void free_user_pages(Process* p, u32 start, u32 end) {
     if (page)
       page_free(page);
   }
+}
+static int anon_map(Process* p, u32 bytes) {
+  if (!bytes || bytes > 0xffffffffu - 4095u)
+    return S_INVALID;
+  bytes = (bytes + 4095u) & ~4095u;
+  AnonRegion* slot = 0;
+  u32 used = 0;
+  for (u32 i = 0; i < ANON_MAX_REGIONS; i++) {
+    AnonRegion* region = &p->anon[i];
+    used += region->bytes;
+    if (!region->base && !slot)
+      slot = region;
+  }
+  if (!slot || bytes > ANON_MAX_BYTES - used)
+    return S_LIMIT;
+  u32 base = paging_user_find_gap(p->pd, USER_DYNAMIC_BASE, USER_DYNAMIC_END, bytes);
+  if (!base)
+    return S_LIMIT;
+  for (u32 va = base; va < base + bytes; va += 4096)
+    if (!alloc_user_page(p, va, 1)) {
+      free_user_pages(p, base, va);
+      return S_NOMEM;
+    }
+  *slot = (AnonRegion){base, bytes};
+  return (int)base;
+}
+static int anon_unmap(Process* p, u32 base) {
+  if (base < USER_DYNAMIC_BASE || base >= USER_DYNAMIC_END || (base & 4095u))
+    return S_INVALID;
+  for (u32 i = 0; i < ANON_MAX_REGIONS; i++) {
+    AnonRegion* region = &p->anon[i];
+    if (region->base == base) {
+      free_user_pages(p, base, base + region->bytes);
+      *region = (AnonRegion){0, 0};
+      return S_OK;
+    }
+  }
+  return S_INVALID;
 }
 static int alloc_user_stack(Process* p, int thread) {
   u32 top = USER_STACK(thread), start = top - USER_STACK_BYTES;
@@ -667,36 +710,11 @@ void process_message(u32 pid, UiEvent e) {
       ui_queue_push(&p->input_queue,e,p->input_frontend);
     }
 }
-/* Checks current user pages only; capability checks remain separate. */
-static int user_access_ok(u32 address, u32 length, int write) {
-  u32 end_limit = address >= USER_DYNAMIC_BASE ? USER_DYNAMIC_END : USER_BASE + 0x60000u;
-  if (address < USER_BASE || address > end_limit || length > end_limit - address ||
-      address == USER_DYNAMIC_END)
-    return 0;
-  if (!length)
-    return 1;
-  u32 needed = PAGE_PRESENT | PAGE_USER | (write ? PAGE_WRITE : 0);
-  u32 end = address + length - 1;
-  for (u32 page = address & ~4095u; page <= end; page += 4096)
-    if ((paging_user_flags(current->pd, page) & needed) != needed)
-      return 0;
-  return 1;
-}
-/* On failure dest may be partially written and need not be terminated. */
-static int copy_user_string(u32 address, char* dest, u32 size) {
-  for (u32 i = 0; i < size; i++) {
-    if (!user_access_ok(address + i, 1, 0))
-      return 0;
-    dest[i] = *(const char*)(address + i);
-    if (!dest[i])
-      return 1;
-  }
-  return 0;
-}
 static int homepath(u32 address, char* path, int writing) {
   char raw[VFS_PATH];
-  if (!copy_user_string(address, raw, sizeof(raw)) || raw[0] != '/')
-    return S_INVALID;
+  u32* user_pd = current->pd;
+  UACCESS_TRY(uaccess_copy_string(user_pd, raw, address, sizeof(raw)));
+  if (raw[0] != '/') return S_INVALID;
   if (vfs_canonical(raw, path) < 0)
     return S_INVALID;
   if (!writing)
@@ -733,12 +751,14 @@ static int strict_call(u32 call) {
     case SYS_FILE_STAGE: case SYS_FILE_PUBLISH: case SYS_FILE_COMMIT:
     case SYS_PIPE_CREATE: case SYS_STREAM_READY: case SYS_PIPE_LIMITS:
     case SYS_TERMINAL:
+    case SYS_ANON_MAP: case SYS_ANON_UNMAP:
       return 1;
     default: return 0;
   }
 }
 static int syscall(Frame* f) {
   u32 a = f->ebx, b = f->ecx, c = f->edx;
+  u32* user_pd = current->pd;
   char path[VFS_PATH];
   int n, r;
   Object* o;
@@ -749,31 +769,38 @@ static int syscall(Frame* f) {
     return S_DENIED;
   if ((f->eax >= SYS_DIR_GRANT && f->eax <= SYS_FILE_COMMIT && f->eax != SYS_START_DIRECTORY) || f->eax==SYS_DIRECTORY_COMMIT)
     return filesys_call(current->handles, current->caps, f->eax, a, b, c,
-                        user_access_ok, copy_user_string);
+                        user_pd);
   switch (f->eax) {
+    case SYS_ANON_MAP:
+      return b || c ? S_INVALID : anon_map(current, a);
+    case SYS_ANON_UNMAP:
+      return b || c ? S_INVALID : anon_unmap(current, a);
     case SYS_WORKSPACE:
       if(!current->workspace_frontend || a || b || c)return S_DENIED;
       return filesys_workspace(current->handles);
     case SYS_TERMINAL: {
-      if(b!=sizeof(TerminalRequest)||c||!user_access_ok(a,sizeof(TerminalRequest),0))return S_INVALID;
-      TerminalRequest request;memcpy(&request,(void*)a,sizeof(request));
-      return terminal_call(current->handles,current->pid,current->policy,&request,user_access_ok);
+      if (b!=sizeof(TerminalRequest) || c) return S_INVALID;
+      TerminalRequest request;
+      UACCESS_TRY(uaccess_copy_in(user_pd, &request, a, sizeof(request)));
+      return terminal_call(current->handles,current->pid,current->policy,&request,user_pd);
     }
     case SYS_PIPE_CREATE: {
-      if (c < sizeof(PipePair) || !user_access_ok(b, sizeof(PipePair), 1)) return S_INVALID;
+      if (c < sizeof(PipePair)) return S_INVALID;
+      UACCESS_TRY(uaccess_prepare(user_pd, b, sizeof(PipePair), USER_WRITE));
       PipePair pair; r = pipe_create(current->handles, a, &pair);
       if (!r) memcpy((void*)b, &pair, sizeof(pair));
       return r;
     }
     case SYS_PIPE_LIMITS: {
-      if (c || b < sizeof(PipeLimits) || !user_access_ok(a, sizeof(PipeLimits), 1)) return S_INVALID;
+      if (c || b < sizeof(PipeLimits)) return S_INVALID;
+      UACCESS_TRY(uaccess_prepare(user_pd, a, sizeof(PipeLimits), USER_WRITE));
       PipeLimits limits; pipe_limits(&limits); memcpy((void*)a, &limits, sizeof(limits)); return 0;
     }
     case SYS_STREAM_READY: {
       if (b || c) return S_INVALID;
       if(handle_get(current->handles,a,OBJ_TERM_CLIENT,0)){
         TerminalRequest q={TERM_READY,a,0,0,0,0};
-        return terminal_call(current->handles,current->pid,current->policy,&q,user_access_ok);
+        return terminal_call(current->handles,current->pid,current->policy,&q,user_pd);
       }
       o = handle_get(current->handles, a, OBJ_PIPE_READ, 1);
       if (!o) o = handle_get(current->handles, a, OBJ_PIPE_WRITE, 2);
@@ -794,8 +821,8 @@ static int syscall(Frame* f) {
                  ? (int)directory : S_BADHANDLE;
     }
     case SYS_RUN_START: {
-      if (c || (b != sizeof(RunSpec) && b != sizeof(RunSpecV2) && b != sizeof(RunSpecV3)) ||
-          !user_access_ok(a, b, 0)) return S_INVALID;
+      if (c || (b != sizeof(RunSpec) && b != sizeof(RunSpecV2) && b != sizeof(RunSpecV3))) return S_INVALID;
+      UACCESS_TRY(uaccess_prepare(user_pd, a, b, USER_READ));
       RunSpec spec; memcpy(&spec, (void*)a, sizeof(spec));
       u32 directory = 0, rights = 0, streams[3] = {0, 0, 0};
       if (b >= sizeof(RunSpecV2)) {
@@ -810,20 +837,22 @@ static int syscall(Frame* f) {
         if (extended.reserved) return S_INVALID;
         streams[0] = extended.in; streams[1] = extended.out; streams[2] = extended.err;
       }
-      if (spec.argc > RUN_ARGC || spec.argv_bytes > RUN_ARGS || spec.input_bytes > RUN_BYTES ||
-          !copy_user_string(spec.path, path, sizeof(path)) ||
-          (spec.argc && !user_access_ok(spec.offsets, spec.argc * 4, 0)) ||
-          (spec.argv_bytes && !user_access_ok(spec.argv, spec.argv_bytes, 0)) ||
-          (spec.input_bytes && !user_access_ok(spec.input, spec.input_bytes, 0))) return S_INVALID;
+      if (spec.argc > RUN_ARGC || spec.argv_bytes > RUN_ARGS || spec.input_bytes > RUN_BYTES) return S_INVALID;
+      UACCESS_TRY(uaccess_copy_string(user_pd, path, spec.path, sizeof(path)));
+      if (spec.argc) UACCESS_TRY(uaccess_prepare(user_pd, spec.offsets, spec.argc * 4, USER_READ));
+      if (spec.argv_bytes) UACCESS_TRY(uaccess_prepare(user_pd, spec.argv, spec.argv_bytes, USER_READ));
+      if (spec.input_bytes) UACCESS_TRY(uaccess_prepare(user_pd, spec.input, spec.input_bytes, USER_READ));
       spec.path = (u32)path;
       return process_run_start_bound(current->handles, &spec, directory, rights, streams);
     }
     case SYS_RUN_LIMITS: {
-      if (c || b < sizeof(RunLimits) || !user_access_ok(a, sizeof(RunLimits), 1)) return S_INVALID;
+      if (c || b < sizeof(RunLimits)) return S_INVALID;
+      UACCESS_TRY(uaccess_prepare(user_pd, a, sizeof(RunLimits), USER_WRITE));
       RunLimits limits; process_run_limits(&limits); memcpy((void*)a, &limits, sizeof(limits)); return 0;
     }
     case SYS_CLI_INFO: {
-      if (c || b < sizeof(CliInfo) || !user_access_ok(a, sizeof(CliInfo), 1)) return S_INVALID;
+      if (c || b < sizeof(CliInfo)) return S_INVALID;
+      UACCESS_TRY(uaccess_prepare(user_pd, a, sizeof(CliInfo), USER_WRITE));
       if (current->interactive) { memcpy((void*)a,current->interactive,sizeof(CliInfo)); return 0; }
       if (!current->completion_object) return S_NOTFOUND;
       RunData* run = completions[objects[current->completion_object - 1].value].run;
@@ -835,11 +864,12 @@ static int syscall(Frame* f) {
       int reading = f->eax == SYS_STREAM_READ;
       if(handle_get(current->handles,a,OBJ_TERM_CLIENT,0)){
         TerminalRequest q={reading?TERM_READ:TERM_WRITE,a,b,c,0,0};
-        return terminal_call(current->handles,current->pid,current->policy,&q,user_access_ok);
+        return terminal_call(current->handles,current->pid,current->policy,&q,user_pd);
       }
       o = handle_get(current->handles, a, reading ? OBJ_PIPE_READ : OBJ_PIPE_WRITE, reading ? 1 : 2);
       if (o) {
-        if (c > RUN_IO_MAX || (c && !user_access_ok(b, c, reading))) return S_INVALID;
+        if (c > RUN_IO_MAX) return S_INVALID;
+        if (c) UACCESS_TRY(uaccess_prepare(user_pd, b, c, (reading) ? USER_WRITE : USER_READ));
         return pipe_transfer(o, reading, (void*)b, c);
       }
       o = handle_get(current->handles, a, OBJ_STREAM, reading ? 1 : 2);
@@ -847,7 +877,8 @@ static int syscall(Frame* f) {
       u32 role = (u32)o->value % 3;
       if ((reading && role != 0) || (!reading && role == 0)) return S_BADHANDLE;
       if (!c) return 0;
-      if (c > RUN_IO_MAX || !user_access_ok(b, c, reading)) return S_INVALID;
+      if (c > RUN_IO_MAX) return S_INVALID;
+      UACCESS_TRY(uaccess_prepare(user_pd, b, c, (reading) ? USER_WRITE : USER_READ));
       RunData* run = completions[objects[o->value / 3].value].run;
       u32 bytes;
       if (reading) {
@@ -869,15 +900,17 @@ static int syscall(Frame* f) {
       return (int)bytes;
     }
     case SYS_RUN_RESULT: {
-      if (c < sizeof(RunResult) || !user_access_ok(b, sizeof(RunResult), 1)) return S_INVALID;
+      if (c < sizeof(RunResult)) return S_INVALID;
+      UACCESS_TRY(uaccess_prepare(user_pd, b, sizeof(RunResult), USER_WRITE));
       RunResult result; r = process_run_result(current->handles, a, &result);
       if (!r) memcpy((void*)b, &result, sizeof(result)); return r;
     }
     case SYS_RUN_READ: {
-      if (c != sizeof(RunRead) || !user_access_ok(b, sizeof(RunRead), 0)) return S_INVALID;
-      RunRead read; memcpy(&read, (void*)b, sizeof(read));
-      if (read.capacity > RUN_IO_MAX ||
-          (read.capacity && !user_access_ok(read.buffer, read.capacity, 1))) return S_INVALID;
+      if (c != sizeof(RunRead)) return S_INVALID;
+      RunRead read;
+      UACCESS_TRY(uaccess_copy_in(user_pd, &read, b, sizeof(read)));
+      if (read.capacity > RUN_IO_MAX) return S_INVALID;
+      if (read.capacity) UACCESS_TRY(uaccess_prepare(user_pd, read.buffer, read.capacity, USER_WRITE));
       return process_run_read(current->handles, a, read.role, read.offset, (void*)read.buffer, read.capacity);
     }
     case SYS_SPAWN_TRACKED: {
@@ -886,15 +919,15 @@ static int syscall(Frame* f) {
       r = homepath(a, path, 0);
       if (r) return r;
       if (b) {
-        if (!copy_user_string(b, args, sizeof(args))) return S_INVALID;
+        UACCESS_TRY(uaccess_copy_string(user_pd, args, b, sizeof(args)));
       } else args[0] = 0;
       return tracked_launch(current->handles, path, args, 0);
     }
     case SYS_PROCESS_RESULT:
       o = handle_get(current->handles, a, OBJ_PROCESS, PROCESS_WAIT);
       if (!o) return S_BADHANDLE;
-      if (c < sizeof(ProcessCompletion) || !user_access_ok(b, sizeof(ProcessCompletion), 1))
-        return S_INVALID;
+      if (c < sizeof(ProcessCompletion)) return S_INVALID;
+      UACCESS_TRY(uaccess_prepare(user_pd, b, sizeof(ProcessCompletion), USER_WRITE));
       if (!completions[o->value].complete) return S_AGAIN;
       memcpy((void*)b, &completions[o->value].result, sizeof(ProcessCompletion));
       return 0;
@@ -904,16 +937,16 @@ static int syscall(Frame* f) {
       if (b || c) return S_INVALID;
       return process_cancel_owned(current->handles, a);
     case SYS_SYSTEM_INFO: {
-      if (c || b < sizeof(SystemInfo) || !user_access_ok(a, sizeof(SystemInfo), 1))
-        return S_INVALID;
+      if (c || b < sizeof(SystemInfo)) return S_INVALID;
+      UACCESS_TRY(uaccess_prepare(user_pd, a, sizeof(SystemInfo), USER_WRITE));
       SystemInfo info = {sizeof(SystemInfo), 1, SYSTEM_FEATURES, 100,
                          NP, NT, HANDLES, OBJECTS, MAX_FILE, USER_BYTES, 16384, 0};
       memcpy((void*)a, &info, sizeof(info));
       return 0;
     }
     case SYS_START_INFO: {
-      if (c || b < sizeof(StartInfo) || !user_access_ok(a, sizeof(StartInfo), 1))
-        return S_INVALID;
+      if (c || b < sizeof(StartInfo)) return S_INVALID;
+      UACCESS_TRY(uaccess_prepare(user_pd, a, sizeof(StartInfo), USER_WRITE));
       StartInfo info = {sizeof(StartInfo), 1, current->policy, current->caps,
                         SYSTEM_FEATURES, 0};
       memcpy((void*)a, &info, sizeof(info));
@@ -921,8 +954,8 @@ static int syscall(Frame* f) {
     }
     case SYS_LEASE: {
       char name[64];
-      if (!copy_user_string(a, name, sizeof(name)) || !name[0])
-        return S_INVALID;
+      UACCESS_TRY(uaccess_copy_string(user_pd, name, a, sizeof(name)));
+      if (!name[0]) return S_INVALID;
       int free = -1;
       for (int i = 0; i < 8; i++) {
         if (!leases[i].pid)
@@ -945,17 +978,15 @@ static int syscall(Frame* f) {
     }
     case SYS_SENDTO:
     case SYS_RECVFROM:
-      if (!user_access_ok(b, sizeof(SockMessage), f->eax == SYS_RECVFROM))
-        return S_INVALID;
+      UACCESS_TRY(uaccess_prepare(user_pd, b, sizeof(SockMessage), (f->eax == SYS_RECVFROM) ? USER_WRITE : USER_READ));
       o = handle_get(current->handles, a, OBJ_SOCKET,
                      f->eax == SYS_SENDTO ? 2 : 1);
       if (!o)
         return S_BADHANDLE;
       {
         SockMessage* m = (SockMessage*)b;
-        if (m->size > 1024 ||
-            !user_access_ok(m->buffer, m->size, f->eax == SYS_RECVFROM))
-          return S_INVALID;
+        if (m->size > 1024) return S_INVALID;
+        UACCESS_TRY(uaccess_prepare(user_pd, m->buffer, m->size, (f->eax == SYS_RECVFROM) ? USER_WRITE : USER_READ));
         return f->eax == SYS_SENDTO ? net_sendto(o->value, (const u8*)m->buffer,
                                                  m->size, &m->address)
                                     : net_recvfrom(o->value, (u8*)m->buffer,
@@ -981,8 +1012,7 @@ static int syscall(Frame* f) {
       o = handle_get(current->handles, a, OBJ_SOCKET, 2);
       if (!o)
         return S_BADHANDLE;
-      if (!user_access_ok(b, sizeof(SockAddress), 0))
-        return S_INVALID;
+      UACCESS_TRY(uaccess_prepare(user_pd, b, sizeof(SockAddress), USER_READ));
       return f->eax == SYS_BIND ? net_bind(o->value, (const SockAddress*)b)
                                 : net_connect(o->value, (const SockAddress*)b);
     case SYS_LISTEN:
@@ -1012,29 +1042,29 @@ static int syscall(Frame* f) {
                      f->eax == SYS_SEND ? 2 : 1);
       if (!o)
         return S_BADHANDLE;
-      if (c > 1024 || !user_access_ok(b, c, f->eax == SYS_RECV))
-        return S_INVALID;
+      if (c > 1024) return S_INVALID;
+      UACCESS_TRY(uaccess_prepare(user_pd, b, c, (f->eax == SYS_RECV) ? USER_WRITE : USER_READ));
       return f->eax == SYS_SEND ? net_send(o->value, (const u8*)b, c)
                                 : net_recv(o->value, (u8*)b, c);
     case SYS_NET_READY:
       o = handle_get(current->handles, a, OBJ_SOCKET, 1);
       return o ? net_ready(o->value) : S_BADHANDLE;
     case SYS_NET_INFO:
-      if (!user_access_ok(a, sizeof(NetStats), 1))
-        return S_INVALID;
+      UACCESS_TRY(uaccess_prepare(user_pd, a, sizeof(NetStats), USER_WRITE));
       *(NetStats*)a = net_loop.stats;
       return 0;
     case SYS_PING:
       return net_ping(a, b);
     case SYS_CALENDAR: {
-      if(c || b < sizeof(CalendarTime) || !user_access_ok(a,sizeof(CalendarTime),1)) return S_INVALID;
+      if (c || b < sizeof(CalendarTime)) return S_INVALID;
+      UACCESS_TRY(uaccess_prepare(user_pd, a, sizeof(CalendarTime), USER_WRITE));
       RtcDateTime date; int result=rtc_read(&date);
       if(!result){CalendarTime out={sizeof(out),1,date.year,date.month,date.day,date.hour,date.minute,date.second};memcpy((void*)a,&out,sizeof(out));}
       return result;
     }
     case SYS_TIME:
-      if (b < sizeof(TimeOfDay) || !user_access_ok(a, sizeof(TimeOfDay), 1))
-        return S_INVALID;
+      if (b < sizeof(TimeOfDay)) return S_INVALID;
+      UACCESS_TRY(uaccess_prepare(user_pd, a, sizeof(TimeOfDay), USER_WRITE));
       {
         TimeOfDay value;
         int result = rtc_time(&value);
@@ -1054,13 +1084,11 @@ static int syscall(Frame* f) {
         return S_INVALID;
       if (a && !(current->caps & CAP_HOME))
         return S_DENIED;
-      if (!user_access_ok(b, sizeof(FileClipboard), a == 0))
-        return S_INVALID;
+      UACCESS_TRY(uaccess_prepare(user_pd, b, sizeof(FileClipboard), (a == 0) ? USER_WRITE : USER_READ));
       FileClipboard clip;
       memset(&clip, 0, sizeof(clip));
       if (a == 1) {
-        if (!copy_user_string(b, clip.path, sizeof(clip.path)))
-          return S_INVALID;
+        UACCESS_TRY(uaccess_copy_string(user_pd, clip.path, b, sizeof(clip.path)));
         clip.cut = ((const FileClipboard*)b)->cut;
         if (clip.cut > 1)
           return S_INVALID;
@@ -1080,15 +1108,15 @@ static int syscall(Frame* f) {
         return S_BADHANDLE;
       if (!(current->caps & CAP_HOME))
         return S_DENIED;
-      if (c > DROP_ZONES || !user_access_ok(b, c * sizeof(UiDropZone), 0))
-        return S_INVALID;
+      if (c > DROP_ZONES) return S_INVALID;
+      UACCESS_TRY(uaccess_prepare(user_pd, b, c * sizeof(UiDropZone), USER_READ));
       return gui_user_drop_zones(o->value, (const UiDropZone*)b, c);
     case SYS_WINDOW_SIZE:
       o = handle_get(current->handles, a, OBJ_WINDOW, 1);
       if (!o)
         return S_BADHANDLE;
-      if (c < sizeof(WindowSize) || !user_access_ok(b, sizeof(WindowSize), 1))
-        return S_INVALID;
+      if (c < sizeof(WindowSize)) return S_INVALID;
+      UACCESS_TRY(uaccess_prepare(user_pd, b, sizeof(WindowSize), USER_WRITE));
       return gui_user_size(o->value, (WindowSize*)b);
     case SYS_UI_LANGUAGE:
       return settings_language;
@@ -1098,8 +1126,7 @@ static int syscall(Frame* f) {
         return S_BADHANDLE;
       {
         char title[64];
-        if (!copy_user_string(b, title, sizeof(title)))
-          return S_INVALID;
+        UACCESS_TRY(uaccess_copy_string(user_pd, title, b, sizeof(title)));
         return gui_user_title(o->value, title);
       }
     case SYS_DUP:
@@ -1123,12 +1150,12 @@ static int syscall(Frame* f) {
         return 0;
       }
     case SYS_CLIP_GET:
-      if (b > 16384 || !user_access_ok(a, b, 1))
-        return S_INVALID;
+      if (b > 16384) return S_INVALID;
+      UACCESS_TRY(uaccess_prepare(user_pd, a, b, USER_WRITE));
       return gui_clip_read((u8*)a, b);
     case SYS_CLIP_SET:
-      if (b > 16384 || !user_access_ok(a, b, 0))
-        return S_INVALID;
+      if (b > 16384) return S_INVALID;
+      UACCESS_TRY(uaccess_prepare(user_pd, a, b, USER_READ));
       return gui_clip_write((const u8*)a, b);
     case SYS_EXIT:
       current->state = 2;
@@ -1144,15 +1171,14 @@ static int syscall(Frame* f) {
     case SYS_TICKS:
       return (int)ticks;
     case SYS_LOG:
-      if (c > 1024 || !user_access_ok(a, c, 0))
-        return S_INVALID;
+      if (c > 1024) return S_INVALID;
+      UACCESS_TRY(uaccess_prepare(user_pd, a, c, USER_READ));
       klog_write_bytes((const void*)a, c);
       return (int)c;
     case SYS_WINDOW: {
       char title[64];
-      if (!copy_user_string(a, title, sizeof(title)) || b < 200 || b > 1000 ||
-          c < 120 || c > 714)
-        return S_INVALID;
+      UACCESS_TRY(uaccess_copy_string(user_pd, title, a, sizeof(title)));
+      if (b < 200 || b > 1000 || c < 120 || c > 714) return S_INVALID;
       int slot = -1;
       for (int i = 0; i < HANDLES; i++)
         if (!current->handles[i].generation) {
@@ -1176,18 +1202,15 @@ static int syscall(Frame* f) {
       o = handle_get(current->handles, a, OBJ_WINDOW, 2);
       if (!o)
         return S_BADHANDLE;
-      if (!user_access_ok(b, 4, 0))
-        return S_INVALID;
+      UACCESS_TRY(uaccess_prepare(user_pd, b, 4, USER_READ));
       {
         u32 count = *(const u32*)b;
-        if (count > UI_CANVAS_COMMANDS ||
-            !user_access_ok(b, 4 + count * sizeof(UiCommand), 0))
-          return S_INVALID;
+        if (count > UI_CANVAS_COMMANDS) return S_INVALID;
+        UACCESS_TRY(uaccess_prepare(user_pd, b, 4 + count * sizeof(UiCommand), USER_READ));
       }
       return gui_user_scene(o->value, (const UiScene*)b);
     case SYS_EVENT:
-      if (!user_access_ok(a, sizeof(UiEvent), 1))
-        return S_INVALID;
+      UACCESS_TRY(uaccess_prepare(user_pd, a, sizeof(UiEvent), USER_WRITE));
       return ui_queue_pop(&current->input_queue,(UiEvent*)a);
     case SYS_CLOSE:
       return handle_close(current->handles, a);
@@ -1198,8 +1221,8 @@ static int syscall(Frame* f) {
       n = vfs_lookup(path);
       if (n < 0)
         return S_NOTFOUND;
-      if (c > MAX_FILE || !user_access_ok(b, c, 1))
-        return S_INVALID;
+      if (c > MAX_FILE) return S_INVALID;
+      UACCESS_TRY(uaccess_prepare(user_pd, b, c, USER_WRITE));
       if (nodes[n].size > c)
         return S_LIMIT;
       return vfs_read(n, (u8*)b, c) < 0 ? S_IO : (int)nodes[n].size;
@@ -1207,8 +1230,8 @@ static int syscall(Frame* f) {
       r = homepath(a, path, 1);
       if (r)
         return r;
-      if (c > MAX_FILE || !user_access_ok(b, c, 0))
-        return S_INVALID;
+      if (c > MAX_FILE) return S_INVALID;
+      UACCESS_TRY(uaccess_prepare(user_pd, b, c, USER_READ));
       n = vfs_lookup(path);
       if (n >= 0 && nodes[n].dir)
         return S_INVALID;
@@ -1225,16 +1248,16 @@ static int syscall(Frame* f) {
       gui_files_changed();
       return 0;
     case SYS_MKDIR:
-      gui_files_changed();
       r = homepath(a, path, 1);
       if (r)
         return r;
+      gui_files_changed();
       return vfs_create(path, 1, 1) < 0 ? S_IO : 0;
     case SYS_REMOVE:
-      gui_files_changed();
       r = homepath(a, path, 1);
       if (r)
         return r;
+      gui_files_changed();
       r = vfs_remove(path, (int)b);
       return r < 0 ? (r == S_BUSY ? S_BUSY : S_IO) : 0;
     case SYS_LIST:
@@ -1244,8 +1267,8 @@ static int syscall(Frame* f) {
       n = vfs_lookup(path);
       if (n < 0 || !nodes[n].dir)
         return S_NOTFOUND;
-      if (c > VFS_NODES || !user_access_ok(b, c * sizeof(FileInfo), 1))
-        return S_INVALID;
+      if (c > VFS_NODES) return S_INVALID;
+      UACCESS_TRY(uaccess_prepare(user_pd, b, c * sizeof(FileInfo), USER_WRITE));
       {
         u32 count = 0;
         FileInfo* out = (FileInfo*)b;
@@ -1263,8 +1286,7 @@ static int syscall(Frame* f) {
         return r;
       char args[256];
       if (b) {
-        if (!copy_user_string(b, args, sizeof(args)))
-          return S_INVALID;
+        UACCESS_TRY(uaccess_copy_string(user_pd, args, b, sizeof(args)));
       } else
         args[0] = 0;
       return process_launch_args(path, current->caps & CAP_HOME,
@@ -1274,8 +1296,8 @@ static int syscall(Frame* f) {
         return S_DENIED;
       return process_kill(a, (int)b);
     case SYS_PROCESSES:
-      if (c > NP || !user_access_ok(b, c * sizeof(ProcessInfo), 1))
-        return S_INVALID;
+      if (c > NP) return S_INVALID;
+      UACCESS_TRY(uaccess_prepare(user_pd, b, c * sizeof(ProcessInfo), USER_WRITE));
       return process_list((ProcessInfo*)b, c);
     case SYS_SYNC:
       if (storage_sync())
