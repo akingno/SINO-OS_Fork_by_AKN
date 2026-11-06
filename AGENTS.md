@@ -11,6 +11,7 @@
 | `Source Code/src32/mm/` | 独立内存管理子系统（page.c、paging.c、uaccess.c） |
 | `Source Code/user/` | Ring 3 用户态程序（gsh、files、calculator、clock 等） |
 | `Source Code/tools/` | 构建、测试与开发工具 |
+| `Source Code/tests/` | 宿主测试与测试辅助模块，现有用例按阶段迁入 |
 | `Source Code/docs/` | 技术契约文档 |
 | `Source Code/disk32/` | 启动盘内容与字体资源 |
 | `Documentation/` | 项目文档、许可与截图 |
@@ -33,7 +34,8 @@
 | 确认基线 | `git status -sb`、`git log -1 --oneline` | 编辑前先看；保留已有改动 |
 | 运行系统 | `.\启动开发版.cmd` | 重新构建并打开可见 QEMU；先关闭旧开发窗口 |
 | 只编译 | `powershell -NoProfile -ExecutionPolicy Bypass -File .\dev.ps1 -BuildOnly` | 生成 ISO，不启动 VM |
-| 编译并验证 | `powershell -NoProfile -ExecutionPolicy Bypass -File .\dev.ps1 -VerifyOnly` | 无窗口启动、运行 probe、退出 |
+| 无界面启动检查 | `node 'Source Code/tests/host/test-boot.js' 'Build Output/dev/runs/<本轮构建编号>'` | 使用 BuildOnly 目录，核对 ISO 和启动日志 |
+| 编译并验证 Ring 3 | `powershell -NoProfile -ExecutionPolicy Bypass -File .\dev.ps1 -VerifyOnly` | 无窗口启动，通过键盘运行 probe 并保存截图 |
 | 执行客户机命令 | `powershell -NoProfile -ExecutionPolicy Bypass -File .\test.ps1 -Command 'echo hello'` | 在私有无窗口 VM 中执行 |
 | Shell 通道自测 | `powershell -NoProfile -ExecutionPolicy Bypass -File .\test.ps1 -SelfTest` | 验证文本、文件、管道、状态及协议 |
 | Shell 命令检查 | `powershell -NoProfile -ExecutionPolicy Bypass -File .\test.ps1 -SelfTest -Suite commands` | 112 项命令与语法检查 |
@@ -42,13 +44,12 @@
 | 运行独立 CLI | `.\run.ps1 -Program /boot/clitest.snx -Arguments echo` | 严格进程，独立 stdout/stderr |
 | 找接口 | `rg -n 'SYS_READ' 'Source Code/src32/process.c' 'Source Code/user/sdk.h'` | 替换符号和文件 |
 
-专项测试示例：先 BuildOnly，用该次输出目录设置环境（不要猜最后一次构建是哪次）：
+日常启动检查先执行 `-BuildOnly`，再把该次输出目录传给 `tests/host/test-boot.js`。其他接受 `SINO_ISO` 的套件可用同次构建的显式路径：
 
 ```powershell
 $env:SINO_ISO = (Resolve-Path 'Build Output/dev/runs/<编号>/SINO.iso').Path
 $env:SINO_TOOLCHAIN = Split-Path (Get-Command gcc.exe).Source
 $env:SINO_QEMU_DIR = 'C:\Program Files\qemu'
-node 'Source Code/tools/test-iso.js'
 ```
 
 完整回归（23 组）：`node 'Source Code/verify-system.js'`，按 `docs/testing.md` 准备镜像。
@@ -61,7 +62,7 @@ Shell 宿主测试参数：`-ExpectedExitCode 1` 断言预期失败，`-TimeoutS
 
 | 任务 | 起读文件 / 符号 | 对应验证入口（tools/） |
 | --- | --- | --- |
-| 构建、引导 | build32.ps1、build-image32.js、src32/loader.asm、src32/kernel.c:kmain | test-iso.js |
+| 构建、引导 | build32.ps1、build-image32.js、src32/loader.asm、src32/kernel.c:kmain | `tests/host/test-boot.js <BuildOnly 构建目录>` |
 | 物理页分配、启动页表 | src32/mm/page.c:page_init / page_alloc_run、src32/mm/paging.c:paging_bootstrap / paging_kernel_init | 普通镜像无窗口启动，核对启动日志 |
 | 用户页表、权限和线程栈 | src32/mm/paging.c、src32/mm/uaccess.c:uaccess_prepare、src32/process.c:launch_policy / alloc_user_stack | ShellBridge 中 `run -s /boot/poltest.snx paging-a/b` |
 | 多用户页表与动态地址窗口 | src32/mm/paging.c:paging_user_map / paging_user_find_gap | ShellBridge 中 `run -s /boot/poltest.snx paging-c` 系列 |

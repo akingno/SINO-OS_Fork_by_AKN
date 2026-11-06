@@ -8,9 +8,19 @@
 | --- | --- | --- |
 | 编译并启动 | `.\启动开发版.cmd` | 重新构建并打开 QEMU 窗口；先关闭旧开发窗口 |
 | 只编译 | `dev.ps1 -BuildOnly` | 生成 ISO，不启动 VM |
-| 编译并验证 Ring 3 | `dev.ps1 -VerifyOnly` | 无窗口启动、运行 probe、退出 |
+| 编译并验证 Ring 3 | `dev.ps1 -VerifyOnly` | 无窗口启动，通过键盘运行 probe 并保存截图 |
 
 构建产物在 `Build Output/dev/runs/<构建编号>/`。
+
+## 无界面启动检查
+
+从仓库根目录运行 `dev.ps1 -BuildOnly` 后，把该次输出的构建目录传给：
+
+```powershell
+node 'Source Code/tests/host/test-boot.js' 'Build Output/dev/runs/<本轮构建编号>'
+```
+
+检查该目录内 ISO 的哈希、El Torito 启动目录和内嵌启动镜像。随后从只读 CD 启动私有 VM，通过内核日志确认构建编号、FAT12 挂载、计时器中断和启动完成。检查普通镜像的 ShellBridge 隔离。每次执行使用新的空白数据盘，日志保存在构建目录下的 `boot-*`。此入口仅使用日志，无键鼠和截图操作。
 
 ## 环境要求
 
@@ -82,7 +92,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\run.ps1 -Program /boot/cli
 node 'Source Code/verify-system.js'
 ```
 
-需要按 testing.md 准备普通和 SELFTEST 两种镜像。23 组覆盖：启动/应用、指针/键盘、文件/拖放、中文/拼音、设置/模式、安装/包管理、网络、IDE/断点、计算器/时钟/画板隐藏/文件管理器、桌面终端替换。单次启动通过不等于全通过，GUI 相关用例需要 QEMU 实际帧缓冲和 QMP 事件。
+需要按 testing.md 准备普通和 SELFTEST 两种镜像。23 组覆盖：启动/应用、指针/键盘、文件/拖放、中文/拼音、设置/模式、安装/包管理、网络、IDE/断点、计算器/时钟/画板隐藏/文件管理器、桌面终端替换。其中 `tools/test-iso.js` 还通过 QMP 操作计算器并保存截图。
 
 ## src32 基础设施契约测试
 
