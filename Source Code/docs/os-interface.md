@@ -182,6 +182,19 @@ While running or awaiting cleanup, S_AGAIN leaves output unchanged. Success
 copies exactly 32 bytes and leaves any tail untouched. Results are repeatable,
 not consumed by one reader; duplicated WAIT handles observe the same result.
 
+Stage 4 adds opt-in blocking to SYS_PROCESS_RESULT and SYS_RUN_RESULT. Keep the
+handle in EBX and the output address in ECX, set EDX to `RESULT_BLOCK_FLAG` (1),
+and put the timeout in ESI. This selector implies the fixed v1 output size
+(32 bytes for SYS_PROCESS_RESULT or 48 bytes for SYS_RUN_RESULT). All valid
+capacities continue to select the nonblocking mode.
+
+The timeout accepts 0..60000 guest ticks, with zero selecting an indefinite
+wait. If the result is pending, the calling thread sleeps until publication or
+its deadline. On wake the kernel revalidates the handle and output range before
+copying. Wait expiry returns S_TIMEOUT and leaves the output and child intact.
+Closing the exact local handle from a sibling thread returns S_BADHANDLE to the
+waiter. A duplicate handle remains a separate observer.
+
 ProcessCompletion contains eight 32-bit fields, in order: size=32, version=1,
 pid, reason, signed code, vector, reserved[0]=0, reserved[1]=0. Reasons:
 

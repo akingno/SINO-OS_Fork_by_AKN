@@ -28,8 +28,154 @@ static void normal(const char *arg,u32 reason,int code,u32 vector) {
   wait_result(h,reason,code,vector); require(Close(h)==0,"close completion");
   require(poll(h,&output)==S_BADHANDLE,"stale completion rejected");
 }
+#ifdef RESULT_BLOCK_FLAG
+static int blocking_result(u32 call, int handle, void* out, u32 timeout) {
+  __asm__ volatile("int $0x80" : "+a"(call)
+                   : "b"(handle), "c"(out), "d"(RESULT_BLOCK_FLAG), "S"(timeout)
+                   : "memory", "cc");
+  return (int)call;
+}
+static u32 ticks(void) { return (u32)api(SYS_TICKS, 0, 0, 0); }
+typedef struct {
+  int handle;
+  ProcessCompletion* out;
+  volatile int entered, done, status;
+} WaitProbe;
+static WaitProbe probes[2];
+static void completion_worker(WaitProbe* probe) {
+  probe->entered = 1;
+  probe->status = blocking_result(SYS_PROCESS_RESULT, probe->handle, probe->out, 0);
+  probe->done = 1;
+  api(SYS_THREAD_EXIT, 0, 0, 0);
+}
+static void first_waiter(void) { completion_worker(&probes[0]); }
+static void second_waiter(void) { completion_worker(&probes[1]); }
+static void begin_wait(int index, int handle, ProcessCompletion* out) {
+  WaitProbe* probe = &probes[index];
+  *probe = (WaitProbe){.handle=handle, .out=out};
+  require(api(SYS_THREAD, (u32)(index ? second_waiter : first_waiter), 0, 0) > 0, "start completion waiter");
+  u32 start = ticks();
+  while (!probe->entered && ticks() - start < 30) Yield(1);
+  Yield(4);
+  require(probe->entered && !probe->done, "completion call stays pending");
+}
+static void finish_wait(int index, int status) {
+  WaitProbe* probe = &probes[index];
+  u32 start = ticks();
+  while (!probe->done && ticks() - start < 100) Yield(1);
+  require(probe->done && probe->status == status, "waiter receives expected status");
+}
+static void blocking_run_case(int timed) {
+  const char* mode = timed ? "spin" : "wait-echo";
+  const char payload[] = "abc";
+  u32 offset = 0;
+  RunSpec spec = {sizeof(spec), 1, 0, (u32)"/boot/clitest.snx", 1, strlen(mode) + 1,
+                  (u32)mode, (u32)&offset, timed ? 0 : sizeof(payload), (u32)payload,
+                  timed ? 20 : 0, 0};
+  int handle = StartRun(&spec);
+  require(handle > 0, "start bounded run");
+  struct { RunResult result; u32 tail; } reply;
+  memset(&reply, 0xcc, sizeof(reply));
+  require(api(SYS_RUN_RESULT, handle, (u32)&reply, 0xffffffffu) == S_AGAIN &&
+          reply.result.completion.size == 0xccccccccu, "legacy run query remains nonblocking");
+  require(blocking_result(SYS_RUN_RESULT, handle, &reply, 200) == 0 &&
+          reply.result.completion.size == 32 && reply.result.completion.pid &&
+          reply.result.completion.code == 0 && reply.tail == 0xccccccccu, "fixed run result layout");
+  if (timed) {
+    require(reply.result.completion.reason == PROCESS_TIMEOUT && reply.result.incomplete &&
+            !reply.result.out_bytes && !reply.result.err_bytes, "child timeout publishes incomplete result");
+  } else {
+    char readback[sizeof(payload)];
+    RunRead request = {1, 0, (u32)readback, sizeof(readback)};
+    require(reply.result.completion.reason == PROCESS_EXITED && !reply.result.incomplete &&
+            reply.result.input_bytes == sizeof(payload) && reply.result.out_bytes == sizeof(payload) &&
+            reply.result.err_bytes == 4 && ReadRunOutput(handle, &request) == sizeof(payload) &&
+            streq(readback, payload), "run exit wakes with final capture");
+  }
+  require(Close(handle) == 0, "release bounded run result");
+}
+static void blocking_case(const char* mode) {
+  if (streq(mode, "run-exit") || streq(mode, "run-timeout")) {
+    blocking_run_case(streq(mode, "run-timeout"));
+    return;
+  }
+  int exiting = streq(mode, "exit");
+  int handle = spawn(exiting ? "linger" : "spin");
+  require(handle > 0, "start tracked wait target");
+  struct { ProcessCompletion result; u32 tail; } reply;
+  memset(&reply, 0xcc, sizeof(reply));
+  if (exiting) {
+    require(api(SYS_PROCESS_RESULT, handle, (u32)&reply, 0xffffffffu) == S_AGAIN &&
+            reply.result.size == 0xccccccccu, "legacy process query remains nonblocking");
+    require(blocking_result(SYS_PROCESS_RESULT, handle, &reply, 0) == 0 &&
+            reply.result.size == 32 && reply.result.version == 1 && reply.result.pid &&
+            reply.result.reason == PROCESS_EXITED && reply.result.code == 7 &&
+            reply.tail == 0xccccccccu, "exit wakes waiter with typed result");
+    ProcessCompletion again;
+    require(GetProcessResult(handle, &again) == 0 && again.pid == reply.result.pid &&
+            again.reason == PROCESS_EXITED && again.code == 7, "result stays repeatable");
+  } else if (streq(mode, "timeout")) {
+    u32 start = ticks();
+    require(blocking_result(SYS_PROCESS_RESULT, handle, &reply, 5) == S_TIMEOUT &&
+            ticks() - start >= 5 && reply.result.size == 0xccccccccu &&
+            GetProcessResult(handle, &reply.result) == S_AGAIN, "wait timeout preserves output and child");
+  } else if (streq(mode, "multi-cancel")) {
+    ProcessCompletion other;
+    int observer = api(SYS_DUP, handle, PROCESS_WAIT, 0);
+    require(observer > 0, "duplicate completion observer");
+    begin_wait(0, handle, &reply.result);
+    begin_wait(1, observer, &other);
+    require(CancelProcess(handle) == 0, "cancel target with two waiters");
+    finish_wait(0, S_OK);
+    finish_wait(1, S_OK);
+    require(reply.result.reason == PROCESS_CANCELED && other.reason == PROCESS_CANCELED &&
+            reply.result.pid && other.pid == reply.result.pid && Close(observer) == 0,
+            "both waiters observe the same cancellation");
+  } else if (streq(mode, "local-close")) {
+    int observer = api(SYS_DUP, handle, PROCESS_WAIT | PROCESS_CANCEL, 0);
+    require(observer > 0, "retain alternate observer");
+    begin_wait(0, handle, &reply.result);
+    require(Close(handle) == 0, "close exact waited handle");
+    int replacement = api(SYS_DUP, observer, PROCESS_WAIT, 0);
+    require(replacement > 0 && (replacement & 255) == (handle & 255), "reuse closed handle slot");
+    finish_wait(0, S_BADHANDLE);
+    require(reply.result.size == 0xccccccccu && Close(replacement) == 0, "closed wait leaves output untouched");
+    handle = observer;
+  } else if (streq(mode, "unmap")) {
+    u32 address = (u32)AnonMap(4096);
+    require(address >= USER_DYNAMIC_BASE && address < USER_DYNAMIC_END, "map result output");
+    begin_wait(0, handle, (ProcessCompletion*)address);
+    require(AnonUnmap((void*)address) == 0 && CancelProcess(handle) == 0, "unmap before result publication");
+    finish_wait(0, S_INVALID);
+  } else if (streq(mode, "wire")) {
+    int cancel_only = api(SYS_DUP, handle, PROCESS_CANCEL, 0);
+    require(cancel_only > 0 &&
+            blocking_result(SYS_PROCESS_RESULT, cancel_only, &reply, 1) == S_BADHANDLE &&
+            blocking_result(SYS_PROCESS_RESULT, handle, (void*)USER_BASE, 1) == S_INVALID &&
+            blocking_result(SYS_PROCESS_RESULT, handle, &reply, STREAM_WAIT_MAX + 1) == S_INVALID &&
+            api(SYS_PROCESS_RESULT, handle, (u32)&reply, 31) == S_INVALID &&
+            blocking_result(SYS_RUN_RESULT, handle, &(RunResult){0}, 1) == S_INVALID &&
+            reply.result.size == 0xccccccccu && Close(cancel_only) == 0, "blocking query validates its arguments");
+  } else {
+    require(0, "unknown blocking result case");
+  }
+  if (!exiting) {
+    require(CancelProcess(handle) == 0 &&
+            blocking_result(SYS_PROCESS_RESULT, handle, &reply, 100) == 0 &&
+            reply.result.reason == PROCESS_CANCELED, "reap canceled wait target");
+  }
+  require(Close(handle) == 0, "release tracked result");
+}
+#endif
 int main(void) {
   const char *arg=Arguments();
+#ifdef RESULT_BLOCK_FLAG
+  if (arg[0] == 'w' && arg[1] == ':') {
+    blocking_case(arg + 2);
+    Log("COMPLETION BLOCK PASS\n");
+    return 0;
+  }
+#endif
   if(!streq(arg,"suite") && !streq(arg,"orphan") && !streq(arg,"abandon") &&
      !streq(arg,"observer-fault") && !streq(arg,"external")) {
     StartInfo info;

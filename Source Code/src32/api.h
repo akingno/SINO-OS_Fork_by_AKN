@@ -197,6 +197,8 @@ typedef struct {
   u32 io_bytes, timeout_ticks;
 } RunLimits;
 #define PROCESS_COMPLETIONS 16
+/* RESULT calls select blocking with EDX=RESULT_BLOCK_FLAG and ESI=timeout. */
+#define RESULT_BLOCK_FLAG 1u
 enum { PROCESS_EXITED = 1, PROCESS_FAULTED, PROCESS_CANCELED, PROCESS_KILLED,
        PROCESS_OUTPUT_LIMIT, PROCESS_TIMEOUT };
 enum { PROCESS_WAIT = 1, PROCESS_CANCEL = 2 };

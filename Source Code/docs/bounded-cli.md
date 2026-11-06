@@ -116,7 +116,9 @@ successful bytes before termination remain available. Reason 6 is PROCESS_TIMEOU
 The first terminal event still wins; a late cancel cannot erase exit/fault status.
 
 GetRunResult requires WAIT rights and returns S_AGAIN, without output changes,
-until execution resources have been reclaimed. It is repeatable. ReadRunOutput
+until execution resources have been reclaimed. It is repeatable. Stage 4 also
+allows the raw SYS_RUN_RESULT call to opt into [blocking](os-interface.md#stage-b-completion-objects)
+with the fixed 48-byte RunResult. ReadRunOutput
 also requires WAIT rights and completion; it never drains a running program.
 RunRead is four words: role (1 stdout, 2 stderr), offset, buffer, capacity.
 It returns min(capacity, captured_length-offset) bytes, 0 at EOF, and S_INVALID

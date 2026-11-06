@@ -45,6 +45,7 @@ int main(void){
     require(CliArguments(&info,argv,17)==(int)cli.argc && !argv[cli.argc] &&
             info.in==cli.in && info.out==cli.out,"SDK argv and handles");
     if(streq(mode,"spin")){for(;;)__asm__ volatile("nop");}
+    if(streq(mode,"wait-echo"))Yield(20);
     if(streq(mode,"exit"))return -17;
     if(streq(mode,"args")){
       transfer(STREAM_WRITE,cli.out,&cli.argc,4);

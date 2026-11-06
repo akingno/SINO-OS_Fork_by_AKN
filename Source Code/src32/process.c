@@ -124,6 +124,7 @@ void process_init(void) {
   object_tests();
   pr_debug("USER GDT/TSS ready, CPL3 selectors 1B/23, I/O denied\n");
 }
+static void thread_unblock(u32 object, u32 op);
 static void release(Process* p) {
   for (int i = 0; i < 8; i++)
     if (leases[i].pid == p->pid)
@@ -144,6 +145,7 @@ static void release(Process* p) {
     completions[slot].complete = 1;
     if (completions[slot].run && p->reason != PROCESS_EXITED)
       completions[slot].run->incomplete = 1;
+    thread_unblock(p->completion_object, WAIT_COMPLETION);
     object_unref(object);
   }
   memset(p, 0, sizeof(*p));
@@ -727,9 +729,7 @@ int process_run_start_bound(Handle* owner, const RunSpec* spec, u32 directory, u
   }
   return tracked_launch(owner, run->path, "", run);
 }
-int process_run_result(Handle* owner, u32 handle, RunResult* out) {
-  Object* object = handle_get(owner, handle, OBJ_PROCESS, PROCESS_WAIT);
-  if (!object) return S_BADHANDLE;
+static int run_result(const Object* object, RunResult* out) {
   int slot = object->value;
   RunData* run = completions[slot].run;
   if (!run) return S_INVALID;
@@ -737,6 +737,10 @@ int process_run_result(Handle* owner, u32 handle, RunResult* out) {
   *out = (RunResult){completions[slot].result, run->input_position,
                      run->length[0], run->length[1], run->incomplete};
   return 0;
+}
+int process_run_result(Handle* owner, u32 handle, RunResult* out) {
+  Object* object = handle_get(owner, handle, OBJ_PROCESS, PROCESS_WAIT);
+  return object ? run_result(object, out) : S_BADHANDLE;
 }
 int process_run_read(Handle* owner, u32 handle, u32 role, u32 offset, void* out, u32 cap) {
   RunResult result;
@@ -835,15 +839,38 @@ static int transfer_pipe(Object* endpoint, int reading, u32 buffer, u32 bytes) {
     process_pipe_wake(endpoint);
   return result;
 }
-static int retry_pipe_wait(Thread* t) {
+static int user_completion_result(Frame* f, const Object* object) {
+  int run_query = f->eax == SYS_RUN_RESULT;
+  if (!run_query && !object) return S_BADHANDLE;
+  u32 bytes = run_query ? sizeof(RunResult) : sizeof(ProcessCompletion);
+  if (f->edx == RESULT_BLOCK_FLAG ? f->esi > STREAM_WAIT_MAX : f->edx < bytes)
+    return S_INVALID;
+  UACCESS_TRY(uaccess_prepare(current->pd, f->ecx, bytes, USER_WRITE));
+  if (!object) return S_BADHANDLE;
+  if (run_query) {
+    RunResult result;
+    int status = run_result(object, &result);
+    if (status == S_OK) memcpy((void*)f->ecx, &result, bytes);
+    return status;
+  }
+  if (!completions[object->value].complete) return S_AGAIN;
+  memcpy((void*)f->ecx, &completions[object->value].result, bytes);
+  return S_OK;
+}
+static int retry_wait(Thread* t) {
   u32 now = ticks;
   int result = S_TIMEOUT;
   if (!thread_wait_expired(t, now)) {
     Frame* f = &t->saved.frame;
-    int reading = t->wait_op == WAIT_PIPE_READ;
-    Object* endpoint = pipe_handle(f->ebx, reading);
-    result = endpoint ? transfer_pipe(endpoint, reading, f->ecx, f->edx & ~STREAM_BLOCK_FLAG)
-                      : S_BADHANDLE;
+    if (t->wait_op == WAIT_COMPLETION) {
+      Object* object = handle_get(current->handles, f->ebx, OBJ_PROCESS, PROCESS_WAIT);
+      result = user_completion_result(f, object);
+    } else {
+      int reading = t->wait_op == WAIT_PIPE_READ;
+      Object* endpoint = pipe_handle(f->ebx, reading);
+      result = endpoint ? transfer_pipe(endpoint, reading, f->ecx, f->edx & ~STREAM_BLOCK_FLAG)
+                        : S_BADHANDLE;
+    }
   }
   if (result == S_AGAIN) {
     /* Another waiter may have transferred first. Keep the original deadline. */
@@ -1026,11 +1053,16 @@ static int syscall(Frame* f) {
       }
       return (int)bytes;
     }
-    case SYS_RUN_RESULT: {
-      if (c < sizeof(RunResult)) return S_INVALID;
-      UACCESS_TRY(uaccess_prepare(user_pd, b, sizeof(RunResult), USER_WRITE));
-      RunResult result; r = process_run_result(current->handles, a, &result);
-      if (!r) memcpy((void*)b, &result, sizeof(result)); return r;
+    case SYS_RUN_RESULT:
+    case SYS_PROCESS_RESULT: {
+      o = handle_get(current->handles, a, OBJ_PROCESS, PROCESS_WAIT);
+      r = user_completion_result(f, o);
+      if (c == RESULT_BLOCK_FLAG && r == S_AGAIN) {
+        thread_block(&current->thread[current_thread], (u32)(o - objects) + 1,
+                     WAIT_COMPLETION, f->esi);
+        leave(f);
+      }
+      return r;
     }
     case SYS_RUN_READ: {
       if (c != sizeof(RunRead)) return S_INVALID;
@@ -1050,14 +1082,6 @@ static int syscall(Frame* f) {
       } else args[0] = 0;
       return tracked_launch(current->handles, path, args, 0);
     }
-    case SYS_PROCESS_RESULT:
-      o = handle_get(current->handles, a, OBJ_PROCESS, PROCESS_WAIT);
-      if (!o) return S_BADHANDLE;
-      if (c < sizeof(ProcessCompletion)) return S_INVALID;
-      UACCESS_TRY(uaccess_prepare(user_pd, b, sizeof(ProcessCompletion), USER_WRITE));
-      if (!completions[o->value].complete) return S_AGAIN;
-      memcpy((void*)b, &completions[o->value].result, sizeof(ProcessCompletion));
-      return 0;
     case SYS_PROCESS_CANCEL:
       o = handle_get(current->handles, a, OBJ_PROCESS, PROCESS_CANCEL);
       if (!o) return S_BADHANDLE;
@@ -1344,8 +1368,7 @@ static int syscall(Frame* f) {
       if (r == S_OK)
         for (int i = 0; i < NT; i++) {
           Thread* t = &current->thread[i];
-          if ((t->wait_op == WAIT_PIPE_READ || t->wait_op == WAIT_PIPE_WRITE) &&
-              t->saved.frame.ebx == a)
+          if (t->wait_op && t->saved.frame.ebx == a)
             thread_finish_wait(t, S_BADHANDLE, ticks);
         }
       return r;
@@ -1528,8 +1551,12 @@ int process_interrupt(Frame* f) {
       net_poll();
     int r = syscall(f);
     f->eax = (u32)r;
-    if (user_switch_out)
-      current->thread[current_thread].saved.frame.eax = (u32)r;
+    if (user_switch_out) {
+      Thread* t = &current->thread[current_thread];
+      /* A parked syscall keeps its number for the retry. */
+      if (t->state != THREAD_BLOCKED)
+        t->saved.frame.eax = (u32)r;
+    }
     return 1;
   }
   if (f->vector == 32 && (i32)(ticks - quantum_end) >= 0)
@@ -1571,7 +1598,7 @@ void process_step(void) {
     user_switch_out = 0;
     cli();
     paging_activate(p->pd);
-    int ready = !t->wait_op || retry_pipe_wait(t);
+    int ready = !t->wait_op || retry_wait(t);
     if (ready) {
       quantum_end = ticks + 2;
       tss[1] = (u32)p->kernel_stack + 4096;
