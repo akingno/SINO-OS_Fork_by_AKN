@@ -1,5 +1,6 @@
 #include "kernel.h"
 #include "klog.h"
+#include "lib/kstring.h"
 void klog_write_bytes(const void* data, u32 length) {
   const u8* p = data;
   while (length--)

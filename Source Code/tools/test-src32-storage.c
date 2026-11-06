@@ -5,13 +5,13 @@
 #include <string.h>
 #include "../src32/types.h"
 #define SINO_KERNEL_H
-#define MAX_FILE 65536u
+/* Use host libc and the utility stubs below. */
+#define SINO_KSTRING_H
 volatile u32 ticks;
 int settings_language;
 static u8 storage_test_boot_drive;
 static u32 storage_test_boot_signature;
 int streq(const char*, const char*);
-int page_free(void*);
 void number(u32, char*);
 void pr_debug(const char*);
 #include "storage-under-test.inc"

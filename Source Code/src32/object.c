@@ -1,5 +1,4 @@
 #include "klog.h"
-#include "kernel.h"
 #include "object.h"
 #include "gui.h"
 #include "net.h"
@@ -7,6 +6,8 @@
 #include "filesys.h"
 #include "pipe.h"
 #include "terminal.h"
+#include "lib/kstring.h"
+#include "panic.h"
 Object objects[OBJECTS];
 static u32 generation, cookie;
 int object_new(u32 type, int value) {

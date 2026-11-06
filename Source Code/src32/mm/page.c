@@ -1,7 +1,8 @@
-#include "../kernel.h"
 #include "../api.h"
 #include "../klog.h"
 #include "page.h"
+#include "../lib/kstring.h"
+#include "../panic.h"
 
 enum { PAGE_SIZE = 4096, MAX_RUN = 64, E820_MAX = 32 };
 enum { PAGE_FREE, PAGE_USED, PAGE_RESERVED };

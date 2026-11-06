@@ -5,6 +5,8 @@
 #include "vfs.h"
 #include "storage.h"
 #include "gui.h"
+#include "lib/kstring.h"
+#include "mm/page.h"
 
 typedef struct {
   int node, parent;

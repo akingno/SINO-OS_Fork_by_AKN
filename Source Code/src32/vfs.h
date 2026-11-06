@@ -1,6 +1,6 @@
 #ifndef SINO_VFS_H
 #define SINO_VFS_H
-#include "kernel.h"
+#include "types.h"
 #include "locale.h"
 #define VFS_NODES 128
 #define VFS_PATH 128

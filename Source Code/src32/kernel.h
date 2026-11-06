@@ -1,11 +1,6 @@
 #ifndef SINO_KERNEL_H
 #define SINO_KERNEL_H
 #include "types.h"
-#include "boot-layout.h"
-#define RAMDISK ((const u8*)0x200000)
-#define RAMDISK_SIZE (BOOT_SECTORS * 512u)
-_Static_assert(0x200000u + RAMDISK_SIZE <= 0x700000u, "RAM disk overlaps graphics assets");
-#define MAX_FILE 65536u
 static inline void outb(u16 p, u8 v) {
   __asm__ volatile("outb %0,%1" ::"a"(v), "Nd"(p));
 }
@@ -31,25 +26,15 @@ static inline void sti(void) {
 static inline void halt(void) {
   __asm__ volatile("hlt");
 }
-void* memcpy(void*, const void*, u32);
-void* memset(void*, int, u32);
-u32 strlen(const char*);
-int streq(const char*, const char*);
-void number(u32, char*);
-void panic(const char*, u32, u32);
 typedef struct {
   u32 edi, esi, ebp, esp, ebx, edx, ecx, eax, vector, error, eip, cs, eflags;
 } Frame;
 extern volatile u32 ticks, keyboard_irqs, mouse_irqs, mouse_packets;
 extern volatile i32 mouse_x, mouse_y;
 extern volatile u8 mouse_buttons, mouse_dirty;
-extern u32 free_pages, usable_memory, fault_resume, fault_expected, fault_count;
+extern u32 fault_resume, fault_expected, fault_count;
 extern int mouse_present;
 void arch_init(void);
-void* page_alloc(void);
-void* page_alloc_run(u32);
-int page_free_run(void*, u32);
-int page_free(void*);
 int key_read(void);
 typedef struct {
   i32 x, y;
@@ -67,22 +52,10 @@ void run_native(u32);
 void native_exit(void);
 void test_page_fault(void);
 void test_invalid_opcode(void);
-typedef struct {
-  char name[13];
-  u32 size;
-  u16 cluster;
-  u16 reserved;
-} File;
-extern File files[224];
-extern u32 file_count;
-int fs_init(void);
-int fs_read(u32, u8*, u32);
-int fs_read_at(u32, u32, u8*, u32);
 void shell_command_init(void);
 void shell_bridge_init(void);
 void shell_bridge_poll(void);
 void shell_bridge_irq(void);
-void console_panic(const char*, u32, u32);
 void kernel_tests(void);
 void shell_tests(void);
 #endif

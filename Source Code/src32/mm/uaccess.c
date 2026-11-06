@@ -1,8 +1,8 @@
 #include "../api.h"
-#include "../kernel.h"
 #include "../process.h"
 #include "paging.h"
 #include "uaccess.h"
+#include "../lib/kstring.h"
 
 #define PAGE_BYTES 4096u
 

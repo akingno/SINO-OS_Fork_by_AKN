@@ -4,6 +4,8 @@
 #include "terminal.h"
 #include "mm/uaccess.h"
 #include "process.h"
+#include "lib/kstring.h"
+#include "mm/page.h"
 typedef struct {
   u32 refs, width, height, mode, foreground, closed, eof;
   u32 foreground_object; /* Client object index + 1. */

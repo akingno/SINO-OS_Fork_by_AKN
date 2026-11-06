@@ -3,6 +3,7 @@
 #ifdef SINO_SHELL_BRIDGE
 #include "process.h"
 #include "klog.h"
+#include "lib/kstring.h"
 static Handle owner[HANDLES];
 static u32 nonce[2], last_id, lease;
 static int active;

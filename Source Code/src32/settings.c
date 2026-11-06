@@ -5,6 +5,8 @@
 #include "vfs.h"
 #include "storage.h"
 #include "disk.h"
+#include "lib/kstring.h"
+#include "mm/page.h"
 #define INK 0x253044u
 #define BLUE 0x3265a8u
 int settings_language, settings_pending;

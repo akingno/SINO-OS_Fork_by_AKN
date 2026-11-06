@@ -7,6 +7,9 @@
 #include "vfs.h"
 #include "process.h"
 #include "storage.h"
+#include "lib/kstring.h"
+#include "mm/page.h"
+#include "panic.h"
 #define LINE_SIZE 256
 #define TOKENS 32
 #define PIPE_SIZE 8192u

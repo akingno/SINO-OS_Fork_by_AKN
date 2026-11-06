@@ -7,6 +7,10 @@
 #include "disk.h"
 #include "storage.h"
 #include "settings.h"
+#include "boot-ramdisk.h"
+#include "fs/boot_fat12.h"
+#include "kernel.h"
+#include "lib/kstring.h"
 #define BLUE 0x245b9eu
 #define INK 0x26354bu
 typedef struct {

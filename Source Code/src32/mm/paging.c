@@ -3,6 +3,8 @@
 #include "../klog.h"
 #include "page.h"
 #include "paging.h"
+#include "../lib/kstring.h"
+#include "../panic.h"
 
 #define PAGE_BYTES 4096u
 #define PAGE_MASK (~(PAGE_BYTES - 1))

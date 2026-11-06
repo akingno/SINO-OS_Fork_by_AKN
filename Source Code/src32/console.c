@@ -2,6 +2,8 @@
 #include "console.h"
 #include "gui.h"
 #include "graphics.h"
+#include "kernel.h"
+#include "lib/kstring.h"
 #define SCROLL_LINES CON_ROWS
 static u32 cells[SCROLL_LINES][CON_COLS];
 static u32 utf_pending;

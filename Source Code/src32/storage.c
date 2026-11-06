@@ -4,6 +4,10 @@
 #include "storage.h"
 #include "vfs.h"
 #include "disk.h"
+#include "api.h"
+#include "kernel.h"
+#include "lib/kstring.h"
+#include "mm/page.h"
 #define BANK_SECTORS 8192u
 #define BANK_START(b) (volume_base + 8u + (u32)(b) * BANK_SECTORS)
 #define STORE_MAGIC 0x31534653u

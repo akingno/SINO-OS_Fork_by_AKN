@@ -10,6 +10,9 @@
 #include "settings.h"
 #include "install.h"
 #include "process.h"
+#include "lib/kstring.h"
+#include "mm/page.h"
+#include "panic.h"
 #define BG 0xd6d7dbu
 #define INK 0x24252au
 #define BLUE 0x355e9au

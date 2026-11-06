@@ -14,6 +14,9 @@
 #include "pipe.h"
 #include "terminal.h"
 #include "ui_queue.h"
+#include "lib/kstring.h"
+#include "mm/page.h"
+#include "panic.h"
 #define NP 8
 #define NT 4
 #define USER_STACK_BYTES 16384u

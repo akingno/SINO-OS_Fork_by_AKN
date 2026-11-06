@@ -2,6 +2,8 @@
 #include <string.h>
 #include "../src32/types.h"
 #define SINO_KERNEL_H
+/* Use the host libc declarations from <string.h>. */
+#define SINO_KSTRING_H
 static unsigned char output[128];
 static u32 used;
 static void outb(u16 port, u8 byte) {

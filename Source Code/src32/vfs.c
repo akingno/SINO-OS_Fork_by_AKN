@@ -2,6 +2,10 @@
 #include "vfs.h"
 #include "storage.h"
 #include "api.h"
+#include "fs/boot_fat12.h"
+#include "lib/kstring.h"
+#include "mm/page.h"
+#include "panic.h"
 Node nodes[VFS_NODES];
 int cwd;
 u32 vfs_generation[VFS_NODES];

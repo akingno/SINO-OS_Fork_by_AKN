@@ -1,6 +1,6 @@
 #ifndef SINO_STORAGE_H
 #define SINO_STORAGE_H
-#include "kernel.h"
+#include "types.h"
 #include "locale.h"
 extern int storage_ready, storage_dirty;
 extern int storage_disk;

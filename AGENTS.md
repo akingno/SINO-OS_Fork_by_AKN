@@ -63,6 +63,7 @@ Shell 宿主测试参数：`-ExpectedExitCode 1` 断言预期失败，`-TimeoutS
 | 任务 | 起读文件 / 符号 | 对应验证入口（tools/） |
 | --- | --- | --- |
 | 构建、引导 | build32.ps1、build-image32.js、src32/loader.asm、src32/kernel.c:kmain | `tests/host/test-boot.js <BuildOnly 构建目录>` |
+| FAT12 启动卷 | src32/fs/boot_fat12.c:fs_init / fs_read / fs_read_at、src32/boot-ramdisk.h | 普通镜像无窗口启动；ShellBridge 验证 `/boot` 读取 |
 | 物理页分配、启动页表 | src32/mm/page.c:page_init / page_alloc_run、src32/mm/paging.c:paging_bootstrap / paging_kernel_init | 普通镜像无窗口启动，核对启动日志 |
 | 用户页表、权限和线程栈 | src32/mm/paging.c、src32/mm/uaccess.c:uaccess_prepare、src32/process.c:launch_policy / alloc_user_stack | ShellBridge 中 `run -s /boot/poltest.snx paging-a/b` |
 | 多用户页表与动态地址窗口 | src32/mm/paging.c:paging_user_map / paging_user_find_gap | ShellBridge 中 `run -s /boot/poltest.snx paging-c` 系列 |

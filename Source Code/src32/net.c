@@ -4,6 +4,9 @@
    IPv4 validator and UDP/TCP/ICMP decoders; no socket-to-socket copy shortcut.
  */
 #include "net.h"
+#include "lib/kstring.h"
+#include "mm/page.h"
+#include "panic.h"
 #define NS 16
 #define RX_CAP 1024u
 #define SYN 2

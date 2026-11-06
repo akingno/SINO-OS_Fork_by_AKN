@@ -2,6 +2,9 @@
 /* Opaque cached surfaces, grayscale text and a clipped alpha pointer. */
 #include "graphics.h"
 #include "settings.h"
+#include "fs/boot_fat12.h"
+#include "lib/kstring.h"
+#include "panic.h"
 #define FRONT ((u32*)0x1600000)
 #define ASSETS ((u8*)0x700000)
 typedef struct {
