@@ -2,6 +2,7 @@
    One object per endpoint; Dup/launch references keep that endpoint alive. */
 #include "pipe.h"
 #include "kernel.h"
+#include "process.h"
 typedef struct {
   u8* data;
   u32 capacity, head, used, readers, writers, ends;
@@ -10,10 +11,19 @@ static u32 pipe_count;
 static void destroy(Pipe* p) {
   page_free(p->data); page_free(p); pipe_count--;
 }
-void pipe_release(int pointer, int writing) {
-  Pipe* p = (Pipe*)pointer;
-  if (writing) p->writers = 0; else p->readers = 0;
+void pipe_release(Object* endpoint) {
+  Pipe* p = (Pipe*)endpoint->value;
+  if (endpoint->type == OBJ_PIPE_WRITE) p->writers = 0; else p->readers = 0;
+  process_pipe_wake(endpoint);
   if (!--p->ends) destroy(p);
+}
+/* Both endpoints share the pipe address. S_AGAIN guarantees a live peer. */
+u32 pipe_peer(const Object* endpoint) {
+  u32 type = endpoint->type == OBJ_PIPE_READ ? OBJ_PIPE_WRITE : OBJ_PIPE_READ;
+  for (u32 i = 0; i < OBJECTS; i++)
+    if (objects[i].refs && objects[i].type == type && objects[i].value == endpoint->value)
+      return i + 1;
+  return 0;
 }
 void pipe_limits(PipeLimits* out) {
   *out = (PipeLimits){sizeof(*out), 1, PIPE_COUNT, PIPE_BYTES, RUN_IO_MAX,

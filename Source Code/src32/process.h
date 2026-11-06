@@ -15,6 +15,7 @@ int process_workspace_frontend(u32);
 int process_desktop_run(u32, u32, const DesktopRun*);
 void process_completion_release(int);
 void process_stream_release(int);
+void process_pipe_wake(const Object*);
 /* Trusted kernel entry points; the user syscall validates all pointers first. */
 int process_run_start(Handle *, const RunSpec *);
 int process_run_start_directory(Handle *, const RunSpec *, u32, u32);

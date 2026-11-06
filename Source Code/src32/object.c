@@ -56,7 +56,7 @@ void object_unref(int index) {
     else if (o->type == OBJ_DIRECTORY || o->type == OBJ_FILE || o->type == OBJ_STAGING)
       filesys_release(o->value);
     else if (o->type == OBJ_PIPE_READ || o->type == OBJ_PIPE_WRITE)
-      pipe_release(o->value, o->type == OBJ_PIPE_WRITE);
+      pipe_release(o);
     else if(o->type==OBJ_TERM_CONTROL||o->type==OBJ_TERM_CLIENT)
       terminal_release(o->value,o->type==OBJ_TERM_CLIENT);
   }

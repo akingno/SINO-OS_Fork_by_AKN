@@ -57,12 +57,148 @@ static u32 captured_count(int h) {
   require(ReadRunOutput(h, &request) == 4, "separate final capture");
   return count;
 }
+#ifdef STREAM_BLOCK_FLAG
+static int blocking_transfer(int reading, u32 handle, void* buffer, u32 bytes, u32 timeout) {
+  u32 call = reading ? SYS_STREAM_READ : SYS_STREAM_WRITE;
+  __asm__ volatile("int $0x80" : "+a"(call)
+                   : "b"(handle), "c"(buffer), "d"(STREAM_BLOCK_FLAG | bytes), "S"(timeout)
+                   : "memory", "cc");
+  return (int)call;
+}
+typedef struct {
+  int reading;
+  u32 handle, timeout;
+  u8* buffer;
+  volatile int started, done, result;
+  volatile u32 elapsed;
+} WaitProbe;
+static WaitProbe probes[2];
+static void pipe_wait_worker(WaitProbe* probe) {
+  u32 start = StreamTicks();
+  probe->started = 1;
+  probe->result = blocking_transfer(probe->reading, probe->handle, probe->buffer, 1, probe->timeout);
+  probe->elapsed = StreamTicks() - start;
+  probe->done = 1;
+  api(SYS_THREAD_EXIT, 0, 0, 0);
+}
+static void first_waiter(void) { pipe_wait_worker(&probes[0]); }
+static void second_waiter(void) { pipe_wait_worker(&probes[1]); }
+static void begin_wait(int i, int reading, u32 handle, u8* buffer, u32 timeout) {
+  probes[i] = (WaitProbe){.reading=reading, .handle=handle, .timeout=timeout, .buffer=buffer};
+  require(api(SYS_THREAD, (u32)(i ? second_waiter : first_waiter), 0, 0) > 0, "start pipe waiter");
+  u32 start = StreamTicks();
+  while (!probes[i].started && StreamTicks() - start < 30) Yield(1);
+  Yield(4);
+  require(probes[i].started && !probes[i].done, "pipe call stays pending");
+}
+static int finish_wait(int i) {
+  u32 start = StreamTicks();
+  while (!probes[i].done && StreamTicks() - start < 100) Yield(1);
+  require(probes[i].done, "pipe waiter finishes");
+  return probes[i].result;
+}
+static int blocking_case(const char* mode) {
+  Pair pair;
+  require(make(1, &pair) == 0, "create blocking pipe");
+  if (streq(mode, "read-wake")) {
+    begin_wait(0, 1, pair.read, output, 0);
+    require(transfer(0, pair.write, (void*)"R", 1) == 1 &&
+            finish_wait(0) == 1 && output[0] == 'R', "write wakes reader with its byte");
+  } else if (streq(mode, "write-wake") || streq(mode, "write-closed")) {
+    require(transfer(0, pair.write, (void*)"A", 1) == 1, "fill pipe");
+    data[0] = 'B';
+    begin_wait(0, 0, pair.write, data, 0);
+    if (streq(mode, "write-wake")) {
+      require(transfer(1, pair.read, output, 1) == 1 && output[0] == 'A' &&
+              finish_wait(0) == 1 && transfer(1, pair.read, output, 1) == 1 &&
+              output[0] == 'B', "read wakes writer and preserves byte order");
+    } else {
+      require(Close((int)pair.read) == 0 && finish_wait(0) == S_CLOSED, "last reader close wakes writer");
+      pair.read = 0;
+    }
+  } else if (streq(mode, "read-eof")) {
+    int duplicate = api(SYS_DUP, pair.write, 2, 0);
+    require(duplicate > 0, "duplicate writer");
+    begin_wait(0, 1, pair.read, output, 0);
+    require(Close((int)pair.write) == 0, "close one writer");
+    pair.write = 0;
+    Yield(4);
+    require(!probes[0].done && Close(duplicate) == 0 && finish_wait(0) == 0, "last writer close wakes reader with EOF");
+  } else if (streq(mode, "read-timeout")) {
+    output[0] = 0x5a;
+    u32 start = StreamTicks();
+    require(blocking_transfer(1, pair.read, output, 1, 5) == S_TIMEOUT &&
+            StreamTicks() - start >= 5 && output[0] == 0x5a, "timeout preserves read output");
+  } else if (streq(mode, "contended-read")) {
+    begin_wait(0, 1, pair.read, output, 40);
+    begin_wait(1, 1, pair.read, output + 1, 40);
+    require(transfer(0, pair.write, (void*)"R", 1) == 1, "wake both contenders");
+    int a = finish_wait(0), b = finish_wait(1);
+    require((a == 1 && output[0] == 'R' && b == S_TIMEOUT && probes[1].elapsed >= 40) ||
+            (b == 1 && output[1] == 'R' && a == S_TIMEOUT && probes[0].elapsed >= 40),
+            "only one reader consumes the byte; the other waits again");
+  } else if (streq(mode, "local-close")) {
+    begin_wait(0, 1, pair.read, output, 0);
+    int duplicate = api(SYS_DUP, pair.read, 1, 0);
+    require(duplicate > 0 && Close((int)pair.read) == 0, "close exact waited handle with duplicate alive");
+    int replacement = api(SYS_DUP, (u32)duplicate, 1, 0);
+    require(replacement > 0 && (replacement & 255) == (int)(pair.read & 255) &&
+            finish_wait(0) == S_BADHANDLE && Close(replacement) == 0, "slot reuse cannot redirect wait");
+    pair.read = (u32)duplicate;
+  } else if (streq(mode, "unmap")) {
+    int address = AnonMap(4096);
+    require((u32)address >= USER_DYNAMIC_BASE &&
+            (u32)address < USER_DYNAMIC_END, "map waiter buffer");
+    begin_wait(0, 1, pair.read, (u8*)address, 0);
+    require(AnonUnmap((void*)address) == 0 && transfer(0, pair.write, (void*)"U", 1) == 1 &&
+            finish_wait(0) == S_INVALID && transfer(1, pair.read, output, 1) == 1 &&
+            output[0] == 'U', "retry revalidates the buffer before consuming pipe data");
+  } else if (streq(mode, "wire")) {
+    u32 address = (u32)AnonMap(RUN_IO_MAX);
+    require(address >= USER_DYNAMIC_BASE && address < USER_DYNAMIC_END, "map maximum transfer buffer");
+    require(blocking_transfer(1, pair.read, (void*)0, 0, 0) == 0 &&
+            blocking_transfer(1, pair.read, output, RUN_IO_MAX + 1, 1) == S_INVALID &&
+            blocking_transfer(1, pair.read, output, 1, STREAM_WAIT_MAX + 1) == S_INVALID &&
+            blocking_transfer(1, pair.write, output, 1, 1) == S_BADHANDLE &&
+            blocking_transfer(1, cli.in, output, 1, 1) == S_BADHANDLE &&
+            StreamRead((int)cli.in, output, 1) == 0, "blocking wire argument validation");
+    require(transfer(0, pair.write, (void*)"M", 1) == 1 &&
+            blocking_transfer(1, pair.read, (void*)address, RUN_IO_MAX, STREAM_WAIT_MAX) == 1 &&
+            *(u8*)address == 'M' && AnonUnmap((void*)address) == 0, "maximum size and timeout retain short transfers");
+  } else {
+    require(0, "unknown blocking pipe case");
+  }
+  require((!pair.read || Close((int)pair.read) == 0) &&
+          (!pair.write || Close((int)pair.write) == 0), "release pipe case endpoints");
+  return 0;
+}
+static int blocking_release_case(void) {
+  Pair pair;
+  require(make(1, &pair) == 0 && transfer(0, pair.write, (void*)"P", 1) == 1, "fill child pipe");
+  int child = start("block-child", 0, pair.write, 0, 20, "/boot/pipetest.snx");
+  require(child > 0 && Close((int)pair.write) == 0, "child owns last writer");
+  wait_result(child, PROCESS_TIMEOUT);
+  require(transfer(1, pair.read, output, 1) == 1 && output[0] == 'P' &&
+          transfer(1, pair.read, output, 1) == 0 && Close((int)pair.read) == 0 && Close(child) == 0,
+          "timeout of an all-blocked process releases its writer");
+  Log("PIPE BLOCK RELEASE PASS\n");
+  return 0;
+}
+#endif
 static int child(void) {
   require(QueryCliInfo(&cli) == 0 && cli.argc == 1, "child launch context");
   const char* mode = cli.bytes + cli.offsets[0];
   StartInfo info;
   require(QueryStartInfo(&info) == 0 && info.policy == PROCESS_STRICT && !info.caps &&
           Spawn("/boot/pipetest.snx") == S_DENIED, "pipe binding does not downgrade policy");
+#ifdef STREAM_BLOCK_FLAG
+  if (streq(mode, "block-child")) {
+    Log("PIPE BLOCK CHILD ENTER\n");
+    blocking_transfer(0, cli.out, (void*)"X", 1, 0);
+    require(0, "blocked child must time out at process level");
+  }
+  if (mode[0] == 'b' && mode[1] == ':') return blocking_case(mode + 2);
+#endif
   if (streq(mode, "close-reader")) { require(Close((int)cli.in) == 0, "early reader close"); return 0; }
   if (streq(mode, "shared-writer")) {
     require(StreamWrite((int)cli.out, "X", 1) == 1 && Close((int)cli.out) == 0,
@@ -115,6 +251,9 @@ static int child(void) {
   return 0;
 }
 int main(void) {
+#ifdef STREAM_BLOCK_FLAG
+  if (streq(Arguments(), "block-release")) return blocking_release_case();
+#endif
   if (!streq(Arguments(), "suite")) return child();
   u32 limits[9]; for (u32 i = 0; i < 9; i++) limits[i] = 0xccccccccu;
   require(api(PIPE_LIMITS_CALL, (u32)limits, 36, 0) == 0 && limits[0] == 32 &&

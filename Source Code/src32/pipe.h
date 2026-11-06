@@ -2,7 +2,8 @@
 #define SINO_PIPE_H
 #include "object.h"
 int pipe_create(Handle*, u32, PipePair*);
-void pipe_release(int, int);
+void pipe_release(Object*);
+u32 pipe_peer(const Object*);
 int pipe_acquire(Handle*, u32, int);
 int pipe_transfer(Object*, int, void*, u32);
 int pipe_ready(Object*);

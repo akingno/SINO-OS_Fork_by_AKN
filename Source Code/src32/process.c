@@ -317,7 +317,8 @@ static inline void thread_block(Thread* t, u32 object, u32 op, u32 timeout) {
   t->wait_timed = timeout != 0;
   t->state = THREAD_BLOCKED;
 }
-static void thread_resume(Thread* t, u32 now) {
+static void thread_finish_wait(Thread* t, int result, u32 now) {
+  t->saved.frame.eax = (u32)result;
   t->wait_object = 0;
   t->wait_op = 0;
   t->wait_deadline = 0;
@@ -325,8 +326,11 @@ static void thread_resume(Thread* t, u32 now) {
   t->wake = now;
   t->state = THREAD_ACTIVE;
 }
-/* Resource wakeup preserves the saved syscall result. */
-static inline void thread_unblock(u32 object, u32 op) {
+static int thread_wait_expired(const Thread* t, u32 now) {
+  return t->wait_timed && (i32)(now - t->wait_deadline) >= 0;
+}
+/* Readiness allows a retry. The wait record survives until the call finishes. */
+static void thread_unblock(u32 object, u32 op) {
   u32 now = ticks;
   for (int i = 0; i < NP; i++) {
     Process* p = &processes[i];
@@ -334,10 +338,16 @@ static inline void thread_unblock(u32 object, u32 op) {
       continue;
     for (int j = 0; j < NT; j++) {
       Thread* t = &p->thread[j];
-      if (t->state == THREAD_BLOCKED && t->wait_object == object && t->wait_op == op)
-        thread_resume(t, now);
+      if (t->state == THREAD_BLOCKED && t->wait_object == object && t->wait_op == op) {
+        t->wake = now;
+        t->state = THREAD_ACTIVE;
+      }
     }
   }
+}
+void process_pipe_wake(const Object* endpoint) {
+  thread_unblock((u32)(endpoint - objects) + 1,
+                 endpoint->type == OBJ_PIPE_WRITE ? WAIT_PIPE_READ : WAIT_PIPE_WRITE);
 }
 int process_launch(const char* path, u32 caps) {
   return process_launch_args(path, caps, "");
@@ -813,6 +823,36 @@ static void leave(Frame* f) {
   user_switch_out = 1;
   paging_activate_kernel();
 }
+static Object* pipe_handle(u32 handle, int reading) {
+  return handle_get(current->handles, handle, reading ? OBJ_PIPE_READ : OBJ_PIPE_WRITE,
+                    reading ? 1 : 2);
+}
+static int transfer_pipe(Object* endpoint, int reading, u32 buffer, u32 bytes) {
+  if (bytes > RUN_IO_MAX) return S_INVALID;
+  if (bytes) UACCESS_TRY(uaccess_prepare(current->pd, buffer, bytes, reading ? USER_WRITE : USER_READ));
+  int result = pipe_transfer(endpoint, reading, (void*)buffer, bytes);
+  if (result > 0)
+    process_pipe_wake(endpoint);
+  return result;
+}
+static int retry_pipe_wait(Thread* t) {
+  u32 now = ticks;
+  int result = S_TIMEOUT;
+  if (!thread_wait_expired(t, now)) {
+    Frame* f = &t->saved.frame;
+    int reading = t->wait_op == WAIT_PIPE_READ;
+    Object* endpoint = pipe_handle(f->ebx, reading);
+    result = endpoint ? transfer_pipe(endpoint, reading, f->ecx, f->edx & ~STREAM_BLOCK_FLAG)
+                      : S_BADHANDLE;
+  }
+  if (result == S_AGAIN) {
+    /* Another waiter may have transferred first. Keep the original deadline. */
+    t->state = THREAD_BLOCKED;
+    return 0;
+  }
+  thread_finish_wait(t, result, now);
+  return 1;
+}
 /* Allow local mechanisms, public queries and explicitly authorized objects.
  * New calls are denied until reviewed; old ambient paths cannot bypass this. */
 static int strict_call(u32 call) {
@@ -942,16 +982,23 @@ static int syscall(Frame* f) {
     case SYS_STREAM_READ:
     case SYS_STREAM_WRITE: {
       int reading = f->eax == SYS_STREAM_READ;
-      if(handle_get(current->handles,a,OBJ_TERM_CLIENT,0)){
+      int blocking = (c & STREAM_BLOCK_FLAG) != 0;
+      if (!blocking && handle_get(current->handles, a, OBJ_TERM_CLIENT, 0)) {
         TerminalRequest q={reading?TERM_READ:TERM_WRITE,a,b,c,0,0};
         return terminal_call(current->handles,current->pid,current->policy,&q,user_pd);
       }
-      o = handle_get(current->handles, a, reading ? OBJ_PIPE_READ : OBJ_PIPE_WRITE, reading ? 1 : 2);
+      o = pipe_handle(a, reading);
       if (o) {
-        if (c > RUN_IO_MAX) return S_INVALID;
-        if (c) UACCESS_TRY(uaccess_prepare(user_pd, b, c, (reading) ? USER_WRITE : USER_READ));
-        return pipe_transfer(o, reading, (void*)b, c);
+        if (blocking && f->esi > STREAM_WAIT_MAX) return S_INVALID;
+        r = transfer_pipe(o, reading, b, c & ~STREAM_BLOCK_FLAG);
+        if (blocking && r == S_AGAIN) {
+          thread_block(&current->thread[current_thread], pipe_peer(o),
+                       reading ? WAIT_PIPE_READ : WAIT_PIPE_WRITE, f->esi);
+          leave(f);
+        }
+        return r;
       }
+      if (blocking) return S_BADHANDLE;
       o = handle_get(current->handles, a, OBJ_STREAM, reading ? 1 : 2);
       if (!o || current->completion_object != (u32)(o->value / 3) + 1) return S_BADHANDLE;
       u32 role = (u32)o->value % 3;
@@ -1293,7 +1340,15 @@ static int syscall(Frame* f) {
       UACCESS_TRY(uaccess_prepare(user_pd, a, sizeof(UiEvent), USER_WRITE));
       return ui_queue_pop(&current->input_queue,(UiEvent*)a);
     case SYS_CLOSE:
-      return handle_close(current->handles, a);
+      r = handle_close(current->handles, a);
+      if (r == S_OK)
+        for (int i = 0; i < NT; i++) {
+          Thread* t = &current->thread[i];
+          if ((t->wait_op == WAIT_PIPE_READ || t->wait_op == WAIT_PIPE_WRITE) &&
+              t->saved.frame.ebx == a)
+            thread_finish_wait(t, S_BADHANDLE, ticks);
+        }
+      return r;
     case SYS_READ:
       r = homepath(a, path, 0);
       if (r)
@@ -1501,10 +1556,8 @@ void process_step(void) {
       continue;
     for (int j = 0; j < NT; j++) {
       Thread* t = &p->thread[j];
-      if (t->state == THREAD_BLOCKED && t->wait_timed && (i32)(now - t->wait_deadline) >= 0) {
-        t->saved.frame.eax = (u32)S_TIMEOUT;
-        thread_resume(t, now);
-      }
+      if (thread_wait_expired(t, now))
+        thread_finish_wait(t, S_TIMEOUT, now);
     }
   }
   for (int i = 0; i < NP * NT; i++) {
@@ -1516,16 +1569,20 @@ void process_step(void) {
     current = p;
     current_thread = which % NT;
     user_switch_out = 0;
-    quantum_end = ticks + 2;
-    tss[1] = (u32)p->kernel_stack + 4096;
     cli();
     paging_activate(p->pd);
-    process_switches++;
-    user_enter(&t->saved);
+    int ready = !t->wait_op || retry_pipe_wait(t);
+    if (ready) {
+      quantum_end = ticks + 2;
+      tss[1] = (u32)p->kernel_stack + 4096;
+      process_switches++;
+      user_enter(&t->saved);
+    }
     paging_activate_kernel();
     current = 0;
     sti();
-    break;
+    if (ready)
+      break;
   }
 }
 void process_tests(void) {

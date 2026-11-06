@@ -136,13 +136,30 @@ can consume the opportunity before the next syscall. Helpers do not reserve it.
 The older CliWriteAll remains a finite-backend helper and may return S_AGAIN on
 pipes; use stream.h when waiting is intended.
 
-There is no thread WAITING state, wakeup registry or blocked C stack in this
-delivery. Predicate polling cannot lose a one-shot wakeup registration because
-there is none; a persistent condition is checked again after Yield. This is
-cooperative bounded waiting, not an event-driven scheduler or hard real-time
-deadline. Long synchronous kernel operations can still delay deadlines. Closing
-a waited local handle makes the next attempt S_BADHANDLE; another process closing
-its copy changes EOF/peer state according to the remaining references.
+### Opt-in blocking pipe calls
+
+Stage 4 adds a blocking mode to the pipe endpoints of SYS_STREAM_READ and
+SYS_STREAM_WRITE. EBX holds the handle and ECX holds the user buffer. Set
+`STREAM_BLOCK_FLAG` (bit 31) in EDX alongside the byte count (0..65536).
+ESI holds the timeout in guest ticks (0..60000), with zero selecting indefinite
+waiting. Calls without the flag ignore ESI and retain the existing behavior.
+The flag requires a pipe endpoint with matching rights. Finite and terminal
+stream handles return S_BADHANDLE in this mode.
+
+A flagged call attempts the transfer first. On S_AGAIN the scheduler suspends
+the calling thread. Opposite-end progress or final peer close makes it eligible
+to retry. The scheduler rechecks the handle and the entire user buffer before
+transferring. Another waiter may consume the available bytes or space first.
+In that case the thread waits again with its original deadline. Once that
+deadline expires, the call returns S_TIMEOUT without transferring bytes.
+Closing the exact local handle from a sibling thread returns S_BADHANDLE to the
+waiter even if a duplicate keeps the endpoint alive. Peer close follows the
+normal drain/EOF and S_CLOSED rules.
+
+The kernel retains the saved user registers and wait metadata across suspension.
+Process teardown discards the wait and releases the normal handle references.
+The `stream.h` helper deadlines above still use the polling path and treat
+zero as a single immediate attempt.
 
 ## Validation boundary
 
@@ -160,7 +177,10 @@ writer cancel/timeout, runtime deadline/progress, and synthetic tick wrap.
 The host checks actual final results, intentional fault counts and object/page
 baselines. Existing A-D, finite host protocol, app logic and cold boot checks stay.
 
-This does not prove exhaustive page-allocation fault injection, physical SMP or
-hardware behavior, arbitrary historical binaries, fairness under many writers,
-general native Shell pipe syntax or event-driven blocking waits. Terminal sessions
-and foreground/input ownership belong to Stage F.
+The Stage 4 Phase B runner `tools/test-stage4-pipes.js <ShellBridge build directory>`
+uses a private guest disk. It covers the legacy pipe probe, blocked read and write,
+final peer close, timeout, competing readers, local handle reuse, buffer unmap,
+wire validation and process timeout cleanup. It checks the free-page count after
+each case and saves the aggregate result in `shell-report.json`.
+
+Terminal sessions and foreground/input ownership belong to Stage F.

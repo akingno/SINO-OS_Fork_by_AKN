@@ -153,6 +153,8 @@ typedef struct {
 #define PIPE_COUNT 8u
 #define PIPE_BYTES 4096u
 #define STREAM_WAIT_MAX 60000u
+/* Pipe stream calls: set in EDX alongside the byte count; ESI is the timeout. */
+#define STREAM_BLOCK_FLAG 0x80000000u
 enum { STREAM_READABLE = 1, STREAM_WRITABLE = 2, STREAM_EOF = 4,
        STREAM_HANGUP = 8, STREAM_LIMIT = 16 };
 typedef struct { u32 read, write; } PipePair;
