@@ -504,7 +504,11 @@ void kmain(void) {
   arch_init();
   paging_bootstrap();
   page_init();
-  paging_kernel_init(BOOT_IDENTITY_BYTES, boot_framebuffer());
+  u32 identity_bytes = (usable_memory + 0x3fffffu) & ~0x3fffffu;
+  if (identity_bytes < BOOT_IDENTITY_BYTES)
+    identity_bytes = BOOT_IDENTITY_BYTES;
+  paging_kernel_init(identity_bytes, boot_framebuffer());
+  page_publish_extended();
   if (!fs_init())
     panic("FAT12 mount failed", 0, 0);
   process_init();

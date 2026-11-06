@@ -33,7 +33,7 @@ All fields below are little-endian u32, in listed order, aligned to four bytes.
 
 SystemInfo (48 bytes): size, version, features, ticks_hz, max_processes,
 max_threads, max_handles, max_objects, max_file, image_bytes, stack_bytes, reserved.
-Current values after the first three fields: 100, 8, 4, 24, 64, 65536, 196608,
+Current values after the first three fields: 100, 8, 4, 24, 64, 65536, 16777216,
 16384, 0. Limits describe current hard maxima, not available capacity or a promise
 that allocation will succeed. ticks_hz is the current PIT frequency.
 
@@ -45,29 +45,30 @@ Stage C provides structured arguments through a separate CliInfo query.
 
 Feature bits: SYSTEM_INFO=1, STRICT_POLICY=2, START_INFO=4, COMPLETION=8,
 BOUNDED_RUN=16, FILE_OBJECTS=32, PIPES=64, TERMINALS=128, CALENDAR=256,
-WORKSPACE=512, LINE_EDIT=1024, ANON_MEMORY=2048. The current feature mask is
-4095. Clients detect features by testing individual bits.
+WORKSPACE=512, LINE_EDIT=1024, ANON_MEMORY=2048, ANON_LAZY=4096, SNX_V2=8192.
+The current feature mask is 16383. Clients detect features by testing individual bits.
 These indicate implemented mechanisms, not grants to use every mechanism.
 Unknown feature bits must not be interpreted as authority. Unknown syscalls
 return S_INVALID. Add future syscall IDs before SYS_CALL_END; the sentinel is not
 a callable interface. Strict policy remains a default-deny allowlist.
 
-## Anonymous memory (Stage 3 Phase D)
+## Anonymous memory (Stage 3 Phases D through F)
 
-`FEATURE_ANON_MEMORY` advertises the initial eager mapping contract. Both strict
-and compatibility processes may use it for their own address space.
+`FEATURE_ANON_MEMORY` advertises anonymous mapping. Both strict and compatibility
+processes may use it for their own address space. With `FEATURE_ANON_LAZY`, a
+successful map reserves virtual addresses and charges the per-process quota.
+Each page gets private zero-filled backing on first access. Kernels advertising
+only `FEATURE_ANON_MEMORY` allocate and zero the entire mapping up front.
 
 - `SYS_ANON_MAP` (`0x14e`) takes the requested byte count in EBX. The kernel
   rounds up to 4096 bytes and chooses a page-aligned base in
-  `[0x40400000, 0x80000000)`. It allocates and zeroes all data pages before
-  returning the positive base. A failure releases every page acquired by the call.
+  `[0x40400000, 0x80000000)` and returns the positive base.
 - `SYS_ANON_UNMAP` (`0x14f`) takes the exact live base in EBX and releases the
   entire region, returning `S_OK`. A released base may be reused by a later map.
 - Both calls require ECX and EDX to be zero. Invalid inputs, including zero
   map size, rounding overflow, and unknown or interior unmap addresses, return
   `S_INVALID`. Each process can hold up to 32 regions and 16 MiB in total after
-  rounding. Quota or address-space exhaustion returns `S_LIMIT`. A failure to
-  allocate a physical page or page table returns `S_NOMEM`.
+  rounding. Quota or address-space exhaustion returns `S_LIMIT`.
 
 SDK `AnonMap` and `AnonUnmap` preserve the syscall status. `malloc` maps one
 region per allocation and returns null on failure. `free(NULL)` is a no-op.
@@ -79,9 +80,34 @@ entire requested range for read or write permission before reading or writing
 it. Nested request pointers are prepared before operations consume input, write
 files, or publish handles or results. Bounded strings are read through their
 first NUL, including a NUL at the end of a mapped page. An invalid range returns
-`S_INVALID`. The internal preparation interface returns a status so later
-on-demand allocation can propagate `S_NOMEM`. Phase E uses existing eager
-mappings for every successful access.
+`S_INVALID`. With lazy mappings, syscall preparation validates the full range
+before allocating missing pages. On physical OOM the syscall returns `S_NOMEM`
+before consuming input, modifying the file or writing the caller's output.
+Any pages already prepared remain owned by the mapping and are reclaimed on
+unmap or exit. A user instruction that reaches physical OOM at first touch
+terminates the process with `PROCESS_FAULTED`, vector 14. Protection violations
+and references outside live regions follow the usual fault path. Program images,
+argument pages and thread stacks still receive backing at creation.
+
+## SNX image layout and physical pool (Stage 3 Phase G)
+
+SNX v1 and v2 use the same magic, 32-byte header and link base `0x40000000`.
+The `abi` field selects the layout. v1 images retain the 192 KiB limit and
+their original argument page and stack slots. v2 `memory_bytes` may reach
+16 MiB, including BSS. Both versions retain the 64 KiB on-disk file limit.
+`SystemInfo.image_bytes` reports the largest supported in-memory image.
+
+v2 places its read-only argument and executable strings at `0x80000000` and
+its first stack top at `0x80010000`. The remaining stacks are spaced 32 KiB
+apart with 16 KiB mapped per stack. The dynamic allocator skips pages occupied
+by the actual image. New v2 programs build with `SINO_SNX_ABI=2` and link with
+`--defsym=snx_abi=2`. The repository build selects this through the app's ABI
+entry and keeps existing apps on v1.
+
+The kernel publishes E820 RAM above 64 MiB after switching to its formal
+supervisor page tables. The identity window ends at 1 GiB, where SNX user
+addresses begin. Pages marked unavailable, boot reserves and allocator metadata
+stay outside the pool. The 64 MiB QEMU configuration still boots.
 
 ## Trusted selection and old application compatibility
 

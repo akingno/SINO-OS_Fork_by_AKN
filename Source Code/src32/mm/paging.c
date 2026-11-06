@@ -10,7 +10,7 @@
 #define TABLE_BYTES (PAGE_BYTES * TABLE_ENTRIES)
 #define USER_FLAGS (PAGE_PRESENT | PAGE_USER)
 #define USER_FIRST_PDE (USER_BASE >> 22)
-#define USER_END_PDE (USER_DYNAMIC_END >> 22)
+#define USER_END_PDE ((USER_V2_END + TABLE_BYTES - 1) / TABLE_BYTES)
 #define TEMP_PD ((u32*)0x90000u)
 #define TEMP_PT ((u32*)0x1e0000u)
 #define VBE_TABLES 3u
@@ -75,6 +75,10 @@ void paging_kernel_init(u32 identity_bytes, u32 framebuffer) {
     if (!pt)
       panic("No memory for kernel page table", i, free_pages);
     identity_table(pd, i, pt, PAGE_PRESENT | PAGE_WRITE);
+    if (i >= BOOT_IDENTITY_BYTES / TABLE_BYTES)
+      for (u32 slot = 0; slot < TABLE_ENTRIES; slot++)
+        if (!page_boot_usable(i * TABLE_BYTES + slot * PAGE_BYTES))
+          pt[slot] = 0;
   }
   for (u32 i = 0; i < VBE_TABLES; i++) {
     u32* pt = page_alloc();
@@ -107,7 +111,7 @@ static int active(const u32* pd) {
 }
 
 static u32* user_table(const u32* pd, u32 va) {
-  if (va < USER_BASE || va >= USER_DYNAMIC_END)
+  if (va < USER_BASE || va >= USER_V2_END)
     return 0;
   u32 pde = pd[va >> 22];
   if ((pde & USER_FLAGS) != USER_FLAGS)
@@ -128,7 +132,7 @@ u32* paging_user_create(void) {
 }
 
 int paging_user_map(u32* pd, u32 va, void* page, int write) {
-  if (!page || va < USER_BASE || va >= USER_DYNAMIC_END ||
+  if (!page || va < USER_BASE || va >= USER_V2_END ||
       ((va | (u32)page) & ~PAGE_MASK))
     return 0;
   u32* pt = user_table(pd, va);

@@ -4,7 +4,8 @@ static int call(u32 op,u32 h,void* b,u32 n,u32 v,u32 x){Request r={op,h,(u32)b,n
 static void check(int ok,const char* why){if(!ok){Log("TERMINAL SELFTEST FAIL: ");Log(why);Log("\n");Exit(1);}}
 static u8 bytes[256];
 static u32 info[8];
-static int start(const char* mode){u32 offset=0;RunSpec s={48,1,0,(u32)"/boot/termtest.snx",1,strlen(mode)+1,(u32)mode,(u32)&offset,0,0,500,0};return StartRun(&s);}
+static int start_program(const char* path,const char* mode){u32 offset=0;RunSpec s={48,1,0,(u32)path,1,strlen(mode)+1,(u32)mode,(u32)&offset,0,0,500,0};return StartRun(&s);}
+static int start(const char* mode){return start_program("/boot/termtest.snx",mode);}
 static void done(int h,u32 reason){RunResult r;check(RunWaitFor(h,&r,600)==0&&r.completion.reason==reason&&!r.completion.code,"typed child result");check(Close(h)==0,"close observer");}
 static int uaccess_terminal_parent(void) {
   u8* edge = malloc(4096);
@@ -55,8 +56,25 @@ static int uaccess_terminal_child(int term) {
   free(edge);
   return 0;
 }
+static int anon_fault_parent(void) {
+  int control = TerminalCreate(80, 25);
+  int child = start_program("/boot/fstest.snx", "anon-fault-oom");
+  check(control > 0 && child > 0 && TerminalForeground(control, child) > 0,
+        "attach anonymous OOM child");
+  RunResult result;
+  check(RunWaitFor(child, &result, 600) == S_OK &&
+        result.completion.reason == PROCESS_FAULTED && result.completion.vector == 14,
+        "anonymous user OOM produces a typed page fault");
+  TerminalInfo state;
+  check(TerminalGetInfo(control, &state) == S_OK && !state.foreground &&
+        state.mode == (TERM_LINE | TERM_ECHO), "OOM fault restores terminal foreground and mode");
+  check(Close(child) == S_OK && Close(control) == S_OK, "OOM probe releases handles");
+  Log("ANON TERMINAL FAULT PASS\n");
+  return 0;
+}
 int main(void){
  if(streq(Arguments(),"uaccess-parent")) return uaccess_terminal_parent();
+ if(streq(Arguments(),"anon-fault-parent")) return anon_fault_parent();
  if(!streq(Arguments(),"suite")){
   CliInfo cli;check(QueryCliInfo(&cli)==0,"cli");int t;
   u32 begin=StreamTicks();while((t=call(2,0,0,0,0,0))==S_NOTFOUND && StreamTicks()-begin<100)Yield(1);

@@ -1,125 +1,157 @@
-# Native application development
+# 原生应用开发指南
 
-Stage C finite CLI runtime: see [bounded-cli.md](bounded-cli.md) for CliArguments,
-opaque standard stream handles, binary I/O, retained results and the root run.ps1
-host entry. It keeps main(void)/SNX1 and all older launch semantics intact.
+## 基本环境
 
-Stage A adds versioned SystemInfo/StartInfo queries and trusted strict launches
-through Shell `run -s`; old launches remain compatible. See
-[os-interface.md](os-interface.md) for exact layouts, permissions and limitations.
+使用 w64devkit GCC/GNU Binutils 和源码包含的 NASM 3.02 交叉编译。不链接宿主 CRT。应用入口为 `int main(void)`，退出或返回终止进程并释放句柄和地址空间。
 
-Stage B adds SpawnTracked/GetProcessResult/CancelProcess and bounded completion
-objects. A compatibility launcher gets an owned handle for a strict child; normal
-exit codes and faults remain readable after cleanup. This does not change old
-Spawn/run or add standard streams. Query FEATURE_COMPLETION and handle S_AGAIN;
-closing an observer does not terminate the child. Details are in the same contract.
+`user/sdk.h` 和 `user/runtime.c` 定义 ABI 1 的 UI 命令、文件/进程/消息包装函数。INT 0x80 进入内核，所有用户指针经过页表权限检查。
 
-Use the existing w64devkit GCC/Binutils and bundled NASM; no host CRT is linked. `user/sdk.h` and `user/runtime.c` define ABI 1, bounded UI commands and file/process/message wrappers. Application entry is `int main(void)`. Static data and code are private; use Yield to wait for events. The PIT also preempts noncooperative user loops. Exit or return terminates the application and releases its handles/address space.
+## 构建流程
 
-Example: `user/hello.c`. Add its build tuple to `tools/build-user.js`, describe files in a JSON manifest like `packages/hello.json`, and call `tools/package.js`. `build.ps1 -TestImage` builds both kernel variants, user applications and example package with the same toolchain. Build checks every required linker symbol and rejects files over 64 KiB or memory over 192 KiB. SNX1 stores magic/ABI/image size/entry/data offset/memory size in a 32-byte header. The host link uses PE/COFF as an intermediate only; the guest never loads a PE image.
+1. 在 `user/` 下编写应用源码
+2. 在 `tools/build-user.js` 中添加构建元组
+3. 如需安装包，在 `packages/` 下创建 JSON 清单，用 `tools/package.js` 打包
+4. `dev.ps1 -BuildOnly` 构建内核和所有用户应用
 
-Window/Scene/Event provide original UI presentation. The kernel copies a validated maximum of 256 commands per canvas (the original UiScene holds 64; UiCanvas holds 256); no framebuffer or kernel pointers are shared. `Arguments()` reads the immutable launch string. Shared threads must use globals/events rather than stack pointers to unmapped memory. Thread functions must call SYS_THREAD_EXIT, not return. Events are manual-reset and nonblocking: wait returns S_AGAIN until signaled. Yield bounds CPU use; application loops must handle failed API calls.
+构建检查：每个必需的链接符号、文件不超过 64 KiB、SNX v1 映像/数据不超过 192 KiB。SNX v2 上限 16 MiB。
 
-G1 adds `UI_CELL_TEXT=9` for fixed-grid UTF-8 rows in the existing Scene ABI.
-Font 2 advances seven pixels for ASCII and 21 for non-ASCII, with a 79-byte string
-limit per command. `user/terminal_frontend.c` splits rows between codepoints and
-owns its decoder/history. F12 opens this caps=0 compatibility frontend with the
-strict user Shell. Frontend authority, bounds, lifecycle and testing are
-documented in [terminal-sessions.md](terminal-sessions.md).
+## SNX 格式
 
-ABI restrictions: integer C only (no FPU/SIMD, libc, exceptions or dynamic linking), 8 processes, 4 threads each, 24 local handles, 15 pending input events per process, 8 desktop windows, 16 KiB stack per thread. Read/write returns unified negative errors from `src32/api.h`. Home write capability does not authorize writes to `/boot`, `/etc` or kernel memory. Untrusted writable legacy F32 programs are refused.
+SNX1 在 32 字节头中存储 magic、ABI 版本、映像大小、入口点、数据偏移和内存大小。宿主链接使用 PE/COFF 作中间格式，客户机不加载 PE 映像。SNX v2 使用相同基址 `0x40000000`，支持更大的用户程序。
 
-Handle duplication reduces rights and keeps a separate reference; cookies are unique per handle allocation, so duplicate handles cannot revive a closed slot. Clipboard APIs are shared with legacy desktop apps. SYS_WINDOW_POLICY enables close-request delivery so an editor can show its own unsaved-change dialog. Public data types are in src32/types.h and api.h, separate from kernel declarations. Native apps use Chinese-first UI; full per-application localization and adaptive layouts remain pending. SysBASIC currently needs roughly 1024x768 logical space for its complete fixed layout.
+## ABI 限制
 
-## Calculator migration / ABI-1 additions (2026-11-03)
+- 仅整数 C（无 FPU/SIMD、libc、异常或动态链接）
+- 8 个进程，每进程 4 线程
+- 每进程 24 个本地句柄
+- 每进程 15 个待处理输入事件
+- 8 个桌面窗口
+- 每线程 16 KiB 栈
+- 线程函数必须调用 `SYS_THREAD_EXIT`，不能直接 return
+- Read/Write 返回 `src32/api.h` 中定义的统一负数错误码
+- Home 写能力不授权写入 `/boot`、`/etc` 或内核内存
 
-`user/calculator.c` is the independent `/boot/calc.snx` application. F4, the SINO menu and `/Applications/Calculator.app` all launch it; each invocation has its own process and arithmetic state. It uses integer hundredths, a 44-command UiScene, and a 306x406 window. `run /boot/calc.snx /selftest` runs the same arithmetic implementation plus permission assertions and logs `CALCULATOR SELFTEST PASS`. Shell `run` still reports creation, not completion; tests wait for the actual user-mode completion marker. `/spawn-test` and `/title-test` support child-launch and cross-process title regressions without granting extra rights.
+## 窗口与绘图
 
-Two syscalls are appended after SYS_DUP; existing values and layouts are unchanged:
+Window/Scene/Event 提供 UI 展示。内核每画布最多验证复制 256 命令（旧 UiScene 保持 64 命令兼容）。不共享帧缓冲或内核指针。
 
-- `UiLanguage()` / SYS_UI_LANGUAGE: returns the current applied UI language (0 Chinese, 1 English). Read-only, no capability required.
-- `WindowTitle(handle, title)` / SYS_WINDOW_TITLE: requires write rights on a window in the current process handle table. Copies a validated NUL-terminated user string of at most 63 UTF-8 bytes. Invalid/unreadable or unterminated strings return S_INVALID; foreign, stale, reduced-rights or wrong-type handles return S_BADHANDLE. Failure preserves the old title.
+绘图原语：
 
-Window policy flags are WINDOW_CLOSE_REQUEST=1, WINDOW_APP_KEYS=2 and WINDOW_NO_IME=4, combinable as a mask. WINDOW_NO_IME keeps physical key messages available to non-text applications while the global Pinyin mode is enabled; text editors and older clients retain their default input behavior. The calculator polls the language every ten guest ticks and changes its own title/text without changing arithmetic state. Do not expect kernel literal translation to translate user-owned scene strings.
+| 命令 | 说明 |
+| --- | --- |
+| UI_PANEL | 填充矩形 |
+| UI_TEXT | 文本（Font 0/1/2） |
+| UI_CELL_TEXT | 固定网格 UTF-8 文本行（终端用，Font 2） |
+| UI_LINE | 有符号线段（±1000 × ±714） |
+| UI_ELLIPSE | 有界填充椭圆 |
+| UI_GRID | 网格 |
+| UI_SELECTION | 选区 |
 
-The loader removes all capability bits for the resolved, read-only FAT12 nodes `/boot/calc.snx` and `/boot/clock.snx`, including canonical/case aliases and launches from shortcuts, Shell and SYS_SPAWN. It does not apply this policy to arbitrary writable files with the same name. caps=0 prevents home writes, network operations and management of other processes; existing public read/clipboard interfaces remain available. Other legacy built-ins remain separate pending migrations.
+`ui_canvas_begin/fill/text/line/ellipse` 构建最多 256 命令的 UiCanvas，溢出返回 `S_LIMIT`。Font 2 ASCII 前进 7 像素，非 ASCII 前进 21 像素，每命令字符串上限 79 字节。
 
-## Clock migration / time and canvas additions (2026-11-03)
+窗口策略标志（可组合）：
 
-`user/clock.c` is the independent `/boot/clock.snx` application. F6, the SINO menu and Clock.app share a desktop singleton: repeated launches restore/focus the same owner PID, including while its first window is still pending. A dead PID is discarded on the next launch. Direct Shell or SYS_SPAWN launches can create separate instances; this is not a system-wide singleton service.
+| 标志 | 值 | 说明 |
+| --- | --- | --- |
+| WINDOW_CLOSE_REQUEST | 1 | 接收关闭请求消息 |
+| WINDOW_APP_KEYS | 2 | F5/F8 交给应用而非全局快捷键 |
+| WINDOW_NO_IME | 4 | 非文本应用排除拼音输入 |
+| WINDOW_DESKTOP_COMMANDS | 8 | 接收桌面命令消息 |
 
-SYS_TIME is appended after SYS_WINDOW_TITLE. `Time(TimeOfDay *out)` passes an output capacity of 12 bytes. The struct has three u32 fields: hour (0..23), minute and second (0..59). Success copies a validated cached local RTC time. No capability is required. Invalid or non-writable user ranges and capacities below 12 return S_INVALID; absent or older-than-200-guest-tick samples return S_AGAIN. Failures do not modify output. The call performs no CMOS I/O and exposes no device registers, shared kernel pointers or setting operation. It is wall time, not SYS_TICKS uptime, and has no timezone conversion.
+用户窗口最大 1000×714。
 
-`src32/rtc.c` owns CMOS register selection with NMI enabled. It checks UIP, mode consistency, two matching snapshots, BCD/binary and 12/24-hour conversion, calendar ranges and leap years. Four attempts and at most 1024 UIP reads per snapshot bound a poll. The main loop polls at 100 guest ticks; the top bar refreshes from this cache when its displayed text changes. Shell date/time can request a due poll before formatting the same cache, including from synchronous scripts. Missing century registers (0 or 255) use century 20. The clock retains its last displayed sample on S_AGAIN and labels it unavailable; before a first valid sample it displays --:--:--.
+## 权限策略
 
-UI_ELLIPSE is appended to the existing drawing enum; positive width/height define a filled ellipse inside the bounding rectangle, clipped to the client area. UI_LINE keeps its start-plus-delta layout and now accepts signed deltas bounded to +/-1000 horizontally and +/-714 vertically. Old positive lines extending beyond the client area remain accepted and clipped. There is no blanket permission to use negative rectangle/grid sizes. Rendering is integer-only and bounded; ellipse products use integer 64-bit multiplication, not floating point or 64-bit division.
+### 兼容策略
 
-`ui_canvas_begin/fill/text/line/ellipse` explicitly build a UiCanvas of at most 256 commands and report S_LIMIT instead of silently dropping overflow or text longer than 79 bytes. The old UiScene builders retain their 64-command limit. The clock submits 69 commands for a valid sample: background, two dial ellipses, 60 ticks, three hands, hub and two texts. Angle tables, geometry, formatting, language and refresh decisions live in the application; the kernel only supplies generic rendering/time mechanisms.
+继承原有全局文件和桌面访问。现有应用（文件管理器、IDE 等）使用此策略。
 
-Clock `/selftest` validates time and denied capabilities; `/spawn-test` tests child launch. `/fault-test` renders its first scene then deliberately raises UD2 in Ring 3 to verify cleanup and desktop containment. These diagnostic modes grant no additional rights. Normal launch uses no arguments. The clock uses WINDOW_NO_IME and polls time/language every ten guest ticks, submitting scenes only when something changes.
+### 严格策略（caps=0）
 
-## Files migration / desktop integration (2026-11-04)
+`run -s` 启动的进程默认拒绝一切，仅允许白名单中的系统调用。Shell、文件工具和新用户程序运行在此策略下。
 
-F1, the SINO menu, Files.app, directory opens, sidebar targets and the standard desktop disk/application/trash icons now start `/boot/files.snx` with a directory argument. The kernel refuses legacy FILES window allocation; its file-list renderer, navigation and selection handlers are removed. The enum and Window layout remain stable for ABI/test compatibility. The native program owns listing, filtering, merged application-library policy, selection, scrolling, dialogs, clipboard naming/copy policy, rename, cut, trash/restore and deletion. Each browser window is an independent process, subject to the existing eight-process/window limits. A missing/bad boot Files image reports failure instead of using a Ring 0 browser.
+受保护只读 boot 节点（`/boot/calc.snx`、`/boot/clock.snx` 等）的加载器在解析后移除所有能力位，不区分大小写或别名路径。
 
-The resolved read-only FAT12 `/boot/files.snx` node has capabilities restricted to the launcher's CAP_HOME bit; this never grants CAP_HOME to a parent that lacks it, and removes network/manage bits. Normal desktop launches supply CAP_HOME. Ordinary file opening still uses the existing TextEdit/other desktop dispatch: this stage does not migrate the editor. User-installed Files packages remain independent copies and need explicit update; default desktop browsing uses boot Files without requiring package installation.
+## 常用系统调用
 
-Four syscalls are appended after SYS_TIME; earlier numbers and structures are unchanged:
+### 查询
 
-- `OpenPath(path)` / SYS_OPEN_PATH: requires CAP_HOME, copies/canonicalizes an absolute path of at most 127 bytes and requests existing desktop dispatch for a directory, legacy .app, .snx, .sxp, .lnk or ordinary document. It is not a kernel command evaluator. Missing paths return S_NOTFOUND; a zero response indicates dispatch was requested, not that a child completed. Subsequent desktop failures can have a visible notice. Existing Paint/SNP denial stays active.
-- `FileClip(op, FileClipboard*)` / SYS_FILE_CLIP: shared typed file clipboard, separate from text clipboard. FileClipboard is 132 bytes (path[128], u32 cut). op=0 reads a fully initialized value into a writable buffer; op=1 sets a copied/canonical path with cut=0/1; op=2 clears it. The buffer must be accessible for the operation (clear ignores its contents). Set/clear require CAP_HOME; a cut source must be in the writable home subtree. The kernel binds its own node generation; deleted/reused sources fail rather than selecting an unrelated file. Copying/naming is performed by the client, not this syscall.
-- `DropZones(window,zones,count)` / SYS_DROP_ZONES: requires a writable owned window handle and CAP_HOME. Up to 32 UiDropZone values specify client rectangles, source/target flags and NUL-terminated absolute paths. Target paths must resolve to directories; rectangles must lie within the client window. The kernel validates the complete update before replacing the old registration, keeps internal generation-bound references and releases registrations when the window closes or process faults. count=0 clears registration. Invalid pointers/count/geometry/flags/type are rejected. No Node ID, kernel pointer or framebuffer is exposed.
-- `GetWindowSize(window,WindowSize*)` / SYS_WINDOW_SIZE: readable owned window handle, writable 8-byte output and capacity >=8; copies the current logical client width/height. Wrong/stale/foreign/reduced-rights handles and malformed output ranges are checked using the same object table as other window operations.
+- `QuerySystemInfo(SystemInfo*)`：只读系统信息（48 字节），含 features 位
+- `QueryStartInfo(StartInfo*)`：只读启动策略（24 字节）
+- `UiLanguage()`：当前 UI 语言（0 中文，1 英文）
+- `Time(TimeOfDay*)`：缓存的本地 RTC 时间（12 字节，时/分/秒）
+- `CalendarTime(CalendarTime*)`：完整日期时间（32 字节）
 
-WINDOW_DESKTOP_COMMANDS=8 opts a window into desktop command messages and generic resize/zoom interaction. MSG_COMMAND carries existing desktop command numbers (1 new window, 2 new directory, 3 new document, 6 open, 8 rename, 9 trash/delete, 10 home, 11 applications, 12 refresh, 14 move, 15 open path). Global refresh (12) and Save Home (13) remain shared desktop/storage actions; close remains a window-manager action unless WINDOW_CLOSE_REQUEST is also enabled. Menu edit actions arrive as key codes. MSG_FILES_CHANGED is a coalesced invalidation hint; applications relist and own their state. MSG_SCROLL carries a signed row delta. Event queue capacity remains bounded; these are notifications, not durable completion records.
+### 窗口
 
-Cross-window/desktop drag presentation and the actual checked VFS transfer remain shared desktop infrastructure. Clients register explicit hit regions; the kernel checks stale references, readonly targets, writable home scope and name conflicts at drop time. Readonly sources may be copied into home; writable home sources move. Native Files does not receive raw disk privileges. The desktop's own icons/context/file actions still reside in Ring 0; this does not claim migration of the complete desktop service.
+- `WindowTitle(handle, title)`：设置窗口标题，最多 63 UTF-8 字节
+- `GetWindowSize(handle, WindowSize*)`：获取逻辑客户区宽高
 
-`files.snx /selftest` runs actual user-side rights, pointer, geometry, clipboard and capability checks and emits FILES SELFTEST PASS only after assertions. `/fault-test` draws the real application and deliberately executes UD2 to verify cleanup/isolation. `/boot/files.snx` is always provided by normal image packaging. Full file bytes remain limited to 64 KiB; native copying uses bounded static storage, not the 16-KiB user stack. Folder copy remains unsupported (as with the old file-copy path); moving folders and permanent deletion of empty folders retain VFS rules.
+### 进程
 
-## Stage D explicit file authority
+- `SpawnTracked(path)`：兼容启动者可用，启动严格孩子并获得 WAIT/CANCEL 句柄
+- `GetProcessResult(handle)`：非阻塞查询进程结果（正常退出/故障/取消/外部终止）
+- `CancelProcess(handle)`：取消子进程
 
-Stage D adds GrantDirectory, StartRunWithDirectory/StartDirectory, OpenAt,
-FileReadAt/FileWriteAt, versioned enumeration, and private FileStage/Publish/Commit.
-Strict programs need explicit directory handles; legacy global Read/Write/Sync
-remain denied to them. Existing GUI applications continue using their current
-compatibility APIs. Full layouts, rights, failure semantics and limits are in
-[file-objects.md](file-objects.md). The implementation and fstest.snx regression
-client passed compilation and the Stage 2 text gate, including cold-boot byte
-checks. Remaining fault-injection coverage is documented there. Publication
-alone does not confirm durability.
+### 文件（Stage D，严格进程需显式目录授权）
 
-## Stage E byte pipes and bounded runtime waits
+- `GrantDirectory(path, rights)`：获取目录句柄
+- `OpenAt(dir, name)`：相对打开文件
+- `FileReadAt(file, offset, buf, len)` / `FileWriteAt(...)`：区间读写
+- `FileStage(dir, name)` / `Publish(staged)` / `Commit(dir)`：暂存、发布、提交
 
-PipeCreate and StreamReady add bounded streams; StreamRead/StreamWrite accept
-owned pipe endpoints. StartRunWithStreams (RunSpecV3) explicitly binds those
-endpoints to strict child stdio; unused parent copies must be closed. Include
-`user/stream.h` for StreamReadFor/WriteFor, StreamWriteAllFor, StreamWaitFor and
-RunWaitFor/ProcessWaitFor. These helpers use monotonic deadlines and Yield, not
-blocking kernel stacks. The Stage 2 text gate exercises real concurrent binary
-transport, reference-controlled EOF, early close, faults, cancellation and timeout.
-See [stream-pipes.md](stream-pipes.md) for rights, ABI, quotas, partial progress
-and remaining coverage limits. Existing Shell pipes and host finite capture are
-unchanged; interactive terminal sessions belong to Stage F.
+### 管道（Stage E）
 
-Stage F now provides a headless text-session backend with controller/client
-handles, foreground input, line/raw mode, bounded echo/output and typed
-resize/key/EOF/hangup events. Client handles support StreamRead/Write/Ready and
-the existing bounded runtime helpers. See [terminal-sessions.md](terminal-sessions.md).
-F2, Terminal.app and the SINO menu launch the Ring 3 terminal with a
-writable home workspace. F12 starts a read-only session. See [desktop-shell.md](desktop-shell.md).
-See [user-shell.md](user-shell.md) for commands, read-only home paths and results.
+- `PipeCreate(capacity)`：创建管道（1–4096 字节）
+- `StreamRead(handle, buf, len)` / `StreamWrite(...)`：读写管道端点
+- `StreamReady(handle)`：查询就绪状态
 
-G2 interactive startup and the narrow session broker use the existing terminal syscall. See [interactive-runs.md](interactive-runs.md) and user/interactive.h for atomic argv/directory/stdio binding, result and cleanup contracts.
+### 终端会话（Stage F）
 
-G4 supplies strict read-only terminal file tools, `ls/stat/cat/view`, through
-the same Shell entry. Their range reads, revision checks, text decoding and
-paging remain in user/tview.c and file_text.h; see [file-tools.md](file-tools.md).
-The user Shell owns its welcome banner. The former Ring 0 desktop terminal
-is archived outside the build. The host protocol uses src32/shell_bridge.c.
+- `SYS_TERMINAL`：控制端和程序端操作，支持行/raw 模式、回显、Ctrl+C 等
 
-G5a command metadata, user welcome and checked text scans live in user/shell_commands.h, shell_banner.h and text_scan.h. The default frontend is120 columns; the new read-only Calendar query leaves SYS_TIME unchanged. See [shell-tools.md](shell-tools.md).
+### 交互启动（Stage G2）
 
-G5b adds explicit `run /boot/term.snx /write` for touch/mkdir/rm/rmdir/write/append/cp/mv/sync using a granted home workspace. Read-only sessions and catalogs 4 and 5 keep their previous access scope. Writable-mode authority, publication versus persistence and intentional compatibility differences are in [workspace-shell.md](workspace-shell.md).
+原子绑定 CLI 参数、目录授权、定向标准流与会话。详见 [interactive-runs.md](interactive-runs.md)。
 
-Line editing, completion, paste and the test-only terminal entry points are documented in [shell-editing.md](shell-editing.md).
+### 写工作区（Stage G5b）
+
+- `SYS_WORKSPACE`：仅限由只读 boot/term.snx 发起的可信来源
+- `SYS_DIRECTORY_COMMIT`：提交整代 home 快照
+
+### 行编辑（Stage G5c）
+
+- `TERM_EDIT` 等 4 项 SYS_TERMINAL 操作（17–20）
+
+## 用户态运行库
+
+`user/stream.h` 提供有截止时间的等待辅助函数：
+
+- `StreamReadFor` / `StreamWriteFor` / `StreamWriteAllFor`：带超时的流操作
+- `StreamWaitFor` / `RunWaitFor` / `ProcessWaitFor`：使用单调截止时间和 Yield
+
+这些辅助函数使用 Yield 轮询，不是线程级阻塞等待。`S_TIMEOUT` 不自动取消子进程。
+
+## 示例应用
+
+- `user/hello.c`：最简示例
+- `user/calculator.c`：计算器（caps=0，44 命令场景）
+- `user/clock.c`：时钟（caps=0，69 命令场景，桌面单实例）
+- `user/files.c`：文件管理器（CAP_HOME，桌面集成）
+- `user/gsh.c`：SI-SHELL（caps=0，120×25 终端）
+
+## 详细契约文档
+
+- [os-interface.md](os-interface.md) — 系统调用接口（Stage A–F）
+- [bounded-cli.md](bounded-cli.md) — 有限 CLI
+- [file-objects.md](file-objects.md) — 文件对象与目录授权
+- [stream-pipes.md](stream-pipes.md) — 管道
+- [terminal-sessions.md](terminal-sessions.md) — 文本会话后端
+- [interactive-runs.md](interactive-runs.md) — 交互启动
+- [user-shell.md](user-shell.md) — Shell 命令与契约
+- [file-tools.md](file-tools.md) — 只读文件工具
+- [shell-tools.md](shell-tools.md) — 日常命令
+- [workspace-shell.md](workspace-shell.md) — 写工作区
+- [shell-editing.md](shell-editing.md) — 行编辑
+- [desktop-shell.md](desktop-shell.md) — 桌面终端入口
+- [boot-image.md](boot-image.md) — 启动镜像布局

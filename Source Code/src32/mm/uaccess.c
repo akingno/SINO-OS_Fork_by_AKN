@@ -1,24 +1,36 @@
 #include "../api.h"
 #include "../kernel.h"
+#include "../process.h"
 #include "paging.h"
 #include "uaccess.h"
 
 #define PAGE_BYTES 4096u
-#define LEGACY_USER_END (USER_BASE + 0x60000u)
 
 int uaccess_prepare(u32* pd, u32 address, u32 bytes, UserAccess access) {
-  u32 limit = address >= USER_DYNAMIC_BASE ? USER_DYNAMIC_END : LEGACY_USER_END;
-  if (address < USER_BASE || address > limit || address == USER_DYNAMIC_END ||
-      bytes > limit - address)
+  u32 limit = process_user_limit(pd, address);
+  if (!limit || bytes > limit - address)
     return S_INVALID;
   if (!bytes)
     return S_OK;
 
   u32 needed = PAGE_PRESENT | PAGE_USER | (access == USER_WRITE ? PAGE_WRITE : 0);
   u32 last = address + bytes - 1;
-  for (u32 page = address & ~(PAGE_BYTES - 1); page <= last; page += PAGE_BYTES)
-    if ((paging_user_flags(pd, page) & needed) != needed)
+  u32 first = address & ~(PAGE_BYTES - 1);
+  int missing = 0;
+  for (u32 page = first; page <= last; page += PAGE_BYTES) {
+    u32 flags = paging_user_flags(pd, page);
+    if ((flags & needed) == needed)
+      continue;
+    if (flags & PAGE_PRESENT)
       return S_INVALID;
+    UACCESS_TRY(process_anon_page(pd, page, 0));
+    missing = 1;
+  }
+  /* Check the whole range first, then populate before the syscall has effects. */
+  if (missing)
+    for (u32 page = first; page <= last; page += PAGE_BYTES)
+      if (!(paging_user_flags(pd, page) & PAGE_PRESENT))
+        UACCESS_TRY(process_anon_page(pd, page, 1));
   return S_OK;
 }
 

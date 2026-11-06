@@ -114,7 +114,9 @@ enum { FEATURE_SYSTEM_INFO = 1, FEATURE_STRICT_POLICY = 2, FEATURE_START_INFO = 
 #define FEATURE_WORKSPACE 512u
 #define FEATURE_LINE_EDIT 1024u
 #define FEATURE_ANON_MEMORY 2048u
-#define SYSTEM_FEATURES (FEATURE_SYSTEM_INFO | FEATURE_STRICT_POLICY | FEATURE_START_INFO | FEATURE_COMPLETION | FEATURE_BOUNDED_RUN | FEATURE_FILE_OBJECTS | FEATURE_PIPES | FEATURE_TERMINALS | FEATURE_CALENDAR | FEATURE_WORKSPACE | FEATURE_LINE_EDIT | FEATURE_ANON_MEMORY)
+#define FEATURE_ANON_LAZY 4096u
+#define FEATURE_SNX_V2 8192u
+#define SYSTEM_FEATURES (FEATURE_SYSTEM_INFO | FEATURE_STRICT_POLICY | FEATURE_START_INFO | FEATURE_COMPLETION | FEATURE_BOUNDED_RUN | FEATURE_FILE_OBJECTS | FEATURE_PIPES | FEATURE_TERMINALS | FEATURE_CALENDAR | FEATURE_WORKSPACE | FEATURE_LINE_EDIT | FEATURE_ANON_MEMORY | FEATURE_ANON_LAZY | FEATURE_SNX_V2)
 enum { TERM_CREATE=1, TERM_CURRENT, TERM_FOREGROUND, TERM_FEED, TERM_INFO,
        TERM_MODE, TERM_READ, TERM_WRITE, TERM_DRAIN, TERM_EVENT, TERM_READY };
 enum { TERM_TEXT=1, TERM_KEY, TERM_EOF, TERM_HANGUP, TERM_CANCEL, TERM_RESIZE };
@@ -298,11 +300,34 @@ typedef struct {
 #define USER_DYNAMIC_END 0x80000000u
 #define ANON_MAX_REGIONS 32u
 #define ANON_MAX_BYTES 0x1000000u
-#define USER_BYTES 0x30000u
-#define USER_ARGUMENTS (USER_BASE + 0x30000u)
-#define USER_STACK(t) (USER_BASE + 0x40000u + (u32)(t) * 0x8000u)
+#define SNX_V1_IMAGE_BYTES 0x30000u
+#define SNX_V2_IMAGE_BYTES 0x1000000u
+#define USER_V1_ARGUMENTS (USER_BASE + SNX_V1_IMAGE_BYTES)
+#define USER_V1_STACK(t) (USER_BASE + 0x40000u + (u32)(t) * 0x8000u)
+#define USER_V1_END (USER_BASE + 0x60000u)
+#define USER_V2_ARGUMENTS USER_DYNAMIC_END
+#define USER_V2_STACK(t) (USER_V2_ARGUMENTS + 0x10000u + (u32)(t) * 0x8000u)
+#define USER_V2_END (USER_V2_ARGUMENTS + 0x30000u)
+#if defined(SINO_SNX_ABI) && SINO_SNX_ABI == 2
+#define USER_BYTES SNX_V2_IMAGE_BYTES
+#define USER_ARGUMENTS USER_V2_ARGUMENTS
+#define USER_STACK(t) USER_V2_STACK(t)
+#else
+#define USER_BYTES SNX_V1_IMAGE_BYTES
+#define USER_ARGUMENTS USER_V1_ARGUMENTS
+#define USER_STACK(t) USER_V1_STACK(t)
+#endif
 #define NATIVE_MAGIC 0x31584e53u /* SNX1; deliberately not PE/Win32 */
 typedef struct {
   u32 magic, abi, image_bytes, entry, data_offset, memory_bytes, reserved[2];
 } NativeHeader;
+
+static inline int native_header_valid(const NativeHeader* h, u32 file_bytes) {
+  return h->magic == NATIVE_MAGIC && (h->abi == 1 || h->abi == 2) &&
+         h->image_bytes == file_bytes && h->entry >= sizeof(NativeHeader) &&
+         h->entry < h->data_offset && h->data_offset <= h->image_bytes &&
+         !(h->data_offset & 4095) && h->memory_bytes >= h->image_bytes &&
+         h->memory_bytes <= (h->abi == 2 ? SNX_V2_IMAGE_BYTES : SNX_V1_IMAGE_BYTES) &&
+         !h->reserved[0] && !h->reserved[1];
+}
 #endif

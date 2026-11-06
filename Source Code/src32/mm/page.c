@@ -1,4 +1,5 @@
 #include "../kernel.h"
+#include "../api.h"
 #include "../klog.h"
 #include "page.h"
 
@@ -15,12 +16,15 @@ typedef struct {
 
 static u8* mem_map;
 static u32 nr_pages, metadata_pages;
+static Range ranges[E820_MAX];
+static u32 range_count;
+static int logged_extended_allocation;
 u32 free_pages, usable_memory;
 
-static int available(const Range* ranges, u32 count, u32 start) {
+int page_boot_usable(u32 start) {
   u32 end = start + PAGE_SIZE;
   int usable = 0;
-  for (u32 i = 0; i < count; i++) {
+  for (u32 i = 0; i < range_count; i++) {
     const Range* r = &ranges[i];
     if (r->start >= end || r->end <= start)
       continue;
@@ -32,22 +36,30 @@ static int available(const Range* ranges, u32 count, u32 start) {
   return usable;
 }
 
+static void publish_pages(u32 start, u32 end) {
+  for (u32 addr = start; addr < end; addr += PAGE_SIZE)
+    if ((addr < (u32)mem_map || addr >= (u32)mem_map + metadata_pages * PAGE_SIZE) &&
+        page_boot_usable(addr)) {
+      mem_map[addr / PAGE_SIZE] = PAGE_FREE;
+      free_pages++;
+    }
+}
+
 void page_init(void) {
   u32 count = *(volatile u16*)0x4f00;
   const E820Entry* map = (const E820Entry*)0x5000;
   if (!count || count > E820_MAX)
     panic("Invalid E820 memory map", count, 0);
 
-  Range ranges[E820_MAX];
-  u32 range_count = 0;
   for (u32 i = 0; i < count; i++) {
     const E820Entry* e = &map[i];
-    if (!(e->attributes & 1) || e->base_hi || e->base >= BOOT_IDENTITY_BYTES ||
+    if (!(e->attributes & 1) || e->base_hi || e->base >= USER_BASE ||
         (!e->length_hi && !e->length))
       continue;
-    /* Clamp the length before addition so a large E820 entry cannot wrap. */
-    u32 end = e->length_hi || e->length > BOOT_IDENTITY_BYTES - e->base
-                  ? BOOT_IDENTITY_BYTES : e->base + e->length;
+    /* The supervisor identity window ends at the SNX link base. Clamp
+       before adding the E820 length, which may exceed 32 bits. */
+    u32 end = e->length_hi || e->length > USER_BASE - e->base
+                  ? USER_BASE : e->base + e->length;
     ranges[range_count++] = (Range){e->base, end, e->type};
     if (e->type == 1 && end > usable_memory)
       usable_memory = end;
@@ -57,8 +69,10 @@ void page_init(void) {
   metadata_pages = (nr_pages + PAGE_SIZE - 1) / PAGE_SIZE;
   /* Lower memory contains the kernel, boot tables, RAM disk and graphics. */
   u32 run = 0, metadata_base = 0;
-  for (u32 pfn = BOOT_POOL_START / PAGE_SIZE; pfn < nr_pages; pfn++) {
-    if (!available(ranges, range_count, pfn * PAGE_SIZE)) {
+  u32 boot_end = usable_memory < BOOT_IDENTITY_BYTES ? usable_memory : BOOT_IDENTITY_BYTES;
+  boot_end &= ~(PAGE_SIZE - 1);
+  for (u32 pfn = BOOT_POOL_START / PAGE_SIZE; pfn < boot_end / PAGE_SIZE; pfn++) {
+    if (!page_boot_usable(pfn * PAGE_SIZE)) {
       run = 0;
       continue;
     }
@@ -72,15 +86,7 @@ void page_init(void) {
 
   mem_map = (u8*)metadata_base;
   memset(mem_map, PAGE_RESERVED, metadata_pages * PAGE_SIZE);
-  u32 metadata_end = metadata_base + metadata_pages * PAGE_SIZE;
-  for (u32 pfn = BOOT_POOL_START / PAGE_SIZE; pfn < nr_pages; pfn++) {
-    u32 addr = pfn * PAGE_SIZE;
-    if ((addr < metadata_base || addr >= metadata_end) &&
-        available(ranges, range_count, addr)) {
-      mem_map[pfn] = PAGE_FREE;
-      free_pages++;
-    }
-  }
+  publish_pages(BOOT_POOL_START, boot_end);
   if (!free_pages)
     panic("No allocatable physical pages", usable_memory, metadata_pages);
   pr_debug("PAGE metadata base=");
@@ -90,8 +96,16 @@ void page_init(void) {
   pr_debug("\n");
 }
 
+void page_publish_extended(void) {
+  u32 before = free_pages;
+  publish_pages(BOOT_IDENTITY_BYTES, nr_pages * PAGE_SIZE);
+  pr_debug("PAGE extended pages=");
+  pr_debug_hex(free_pages - before);
+  pr_debug("\n");
+}
+
 void* page_alloc_run(u32 count) {
-  if (!count || count > MAX_RUN)
+  if (!count || count > MAX_RUN || count > free_pages)
     return 0;
   for (u32 i = BOOT_POOL_START / PAGE_SIZE; i + count <= nr_pages; i++) {
     u32 j = 0;
@@ -102,6 +116,12 @@ void* page_alloc_run(u32 count) {
       free_pages -= count;
       void* p = (void*)(i * PAGE_SIZE);
       memset(p, 0, count * PAGE_SIZE);
+      if ((u32)p >= BOOT_IDENTITY_BYTES && !logged_extended_allocation) {
+        logged_extended_allocation = 1;
+        pr_debug("PAGE first extended allocation=");
+        pr_debug_hex((u32)p);
+        pr_debug("\n");
+      }
       return p;
     }
     i += j;
