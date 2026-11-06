@@ -1,5 +1,5 @@
-const {waitFor}=require('./calculator-test');
-const {shellCommand}=require('./test-terminal-replacement');
+const {waitFor}=require('../tests/support/calculator-test');
+const {shellCommand}=require('../tests/host/test-terminal-replacement');
 /* Build the public demo disk exclusively from a fresh private virtual disk. */
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict'),crypto=require('node:crypto');
 const {VM,sleep,root}=require('./vm-test'),{volume}=require('./test-volume');

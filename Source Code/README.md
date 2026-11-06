@@ -24,7 +24,8 @@ user/                 Ring 3 用户态程序
   runtime.c           用户态运行库
   linker.ld           用户态链接脚本（基址 0x40000000）
 disk32/               启动盘内容与字体资源
-tools/                构建、测试与开发工具
+tools/                构建、发布与共享开发工具
+tests/                宿主测试、客户机探针与测试辅助代码
   dev-run.js          开发构建与 QEMU 启动
   shell-test.js       Shell 命令通道测试
   vm-test.js          QEMU 测试基础设施

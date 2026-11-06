@@ -12,6 +12,14 @@
 
 构建产物在 `Build Output/dev/runs/<构建编号>/`。
 
+## 测试源码位置
+
+- `tests/host/` 存放宿主 C 检查、Node.js 套件和 PowerShell 验证入口。
+- `tests/guest/` 存放编译为 SNX 的独立测试程序。`tools/build-user.js` 维护源码与镜像内程序名的对应关系。
+- `tests/support/` 存放测试夹具和套件辅助模块。构建、发布与测试共用的宿主工具仍在 `tools/`。
+
+仓库根的 PowerShell 命令、`verify-system.js`、`verify-desktop.js` 和原 `tools/` 下的独立测试脚本入口可照常使用。新用例和套件实现放入对应的测试目录。
+
 ## 无界面启动检查
 
 从仓库根目录运行 `dev.ps1 -BuildOnly` 后，把该次输出的构建目录传给：
@@ -92,12 +100,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\run.ps1 -Program /boot/cli
 node 'Source Code/verify-system.js'
 ```
 
-需要按 testing.md 准备普通和 SELFTEST 两种镜像。23 组覆盖：启动/应用、指针/键盘、文件/拖放、中文/拼音、设置/模式、安装/包管理、网络、IDE/断点、计算器/时钟/画板隐藏/文件管理器、桌面终端替换。其中 `tools/test-iso.js` 还通过 QMP 操作计算器并保存截图。
+需要按 testing.md 准备普通和 SELFTEST 两种镜像。23 组覆盖：启动/应用、指针/键盘、文件/拖放、中文/拼音、设置/模式、安装/包管理、网络、IDE/断点、计算器/时钟/画板隐藏/文件管理器、桌面终端替换。其中 `tests/host/test-iso.js` 还通过 QMP 操作计算器并保存截图。
 
 ## src32 基础设施契约测试
 
 ```
-node 'Source Code/tools/test-src32-refactor.js'
+node 'Source Code/tests/host/test-src32-refactor.js'
 ```
 
 43 项独立测试：用实际 `storage.c` 配合内存磁盘和受控 VFS 边界编译运行，测试 klog 字节/十六进制输出和 locale 查询/格式化（含 UTF-8 名称和容量错误），以及资源生成器的缺失/重复键拒绝。不修改运行时源码或日常磁盘。
@@ -105,8 +113,8 @@ node 'Source Code/tools/test-src32-refactor.js'
 ## Stage 3 内存管理专项
 
 ```
-node 'Source Code/tools/test-stage3-mm.js' g <本轮目录> <G前构建目录>
-node 'Source Code/tools/test-stage3-mm.js' d <本轮目录>
+node 'Source Code/tests/host/test-stage3-mm.js' g <本轮目录> <G前构建目录>
+node 'Source Code/tests/host/test-stage3-mm.js' d <本轮目录>
 ```
 
 使用私有 64 MiB / 1 GiB VM 和同一 ISO。`g` 测高页与 SNX v2，`d` 补测匿名内存。需要对显式指定的 ShellBridge 构建运行。

@@ -47,7 +47,7 @@ Form, Label, Button, TextBox, CheckBox, ListBox, Timer, and a simple Menu button
 
 TODO: user-defined Function/return values and Sub parameters; module-level declaration processing, lexical local scope, string/Variant arrays, full Variant coercion, short-circuit expressions, inline Else, colon-separated statements, Now/Date; PictureBox image decoding; full menu hierarchy, multi-form projects/modules, multiple undo/redo levels, partial text selection, token-level highlighting, full debugger call stack, editable application ID/version controls, and comprehensive malformed-source fuzzing. Five complete requested example projects are unfinished; the counter and First tutorials are delivered. HTTP/TCP project templates await package permission delegation. Unsupported Function/parameter syntax is rejected instead of silently accepted.
 
-This is a BASIC-subset development tool, not a VB6-compatible compiler. QA in tools/test-ide.js exercises designer movement/resizing, properties, generated events, edited source, preview execution, breakpoint/step, project persistence, package build/install, and the resulting independent application.
+This is a BASIC-subset development tool, not a VB6-compatible compiler. QA in tests/host/test-ide.js exercises designer movement/resizing, properties, generated events, edited source, preview execution, breakpoint/step, project persistence, package build/install, and the resulting independent application.
 
 ## 0.2.1 interaction fixes
 
@@ -61,4 +61,4 @@ PS/2 Set 1 decoding is in src32/keyboard.c. The fixed US physical layout tracks 
 
 disk32/FIRST.* provides a runnable example with underscores in event/control/variable names. On the preinstalled release disk it is /home/user/Projects/First.prj, with First.snx, First.sxp, and the installed basic-first entry. After installing a fresh ISO, copy it using the terminal commands in ../Documentation/Getting Started.txt.
 
-tools/test-keyboard.js checks decoding; test-ide-input.js sends real virtual PS/2 press/hold/release events and checks underscore save/run, persisted coordinates for all eight resize handles, cancellation, and reverse-direction drawing. test-ide-panels.js preserves the right-panel regression.
+tests/host/test-keyboard.js checks decoding; test-ide-input.js sends real virtual PS/2 press/hold/release events and checks underscore save/run, persisted coordinates for all eight resize handles, cancellation, and reverse-direction drawing. test-ide-panels.js preserves the right-panel regression.

@@ -45,7 +45,7 @@ available. Explicit ShellBridge images retain the headless SCS1 command
 transport and SCS2 managed execution. SELFTEST images retain the headless
 command self-checks. The legacy demo and script are fixtures in those images.
 
-Run `node "Source Code/tools/test-terminal-replacement.js"` against a
+Run `node "Source Code/tests/host/test-terminal-replacement.js"` against a
 matching ordinary build for real keyboard, launch routes, write isolation,
 installer dispatch and snapshot checks. The Stage 2 gate also verifies
 scoped process termination, directory grants and resource reclamation.

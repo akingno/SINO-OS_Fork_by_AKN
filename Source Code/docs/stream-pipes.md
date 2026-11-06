@@ -179,7 +179,7 @@ writer cancel/timeout, runtime deadline/progress, and synthetic tick wrap.
 The host checks actual final results, intentional fault counts and object/page
 baselines. Existing A-D, finite host protocol, app logic and cold boot checks stay.
 
-The Stage 4 Phase B runner `tools/test-stage4-pipes.js <ShellBridge build directory>`
+The Stage 4 Phase B runner `tests/host/test-stage4-pipes.js <ShellBridge build directory>`
 uses a private guest disk. It covers the legacy pipe probe, blocked read and write,
 final peer close, timeout, competing readers, local handle reuse, buffer unmap,
 wire validation and process timeout cleanup. It checks the free-page count after

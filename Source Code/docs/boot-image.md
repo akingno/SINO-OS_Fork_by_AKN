@@ -25,7 +25,7 @@ rollback.
 
 First run root dev.ps1 -BuildOnly and set SINO_TOOLCHAIN to the directory containing
 gcc.exe and SINO_QEMU_DIR to the QEMU directory. Run the dedicated test with
-`node "Source Code/tools/test-boot-expansion.js"` from the repository root.
+`node "Source Code/tests/host/test-boot-expansion.js"` from the repository root.
 Use a matching completed build and run this test without concurrent builds.
 
 The test prints a compact result and saves expansion-report.json under

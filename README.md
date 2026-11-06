@@ -71,7 +71,8 @@ Source Code/          唯一的开发源码目录
   src32/              内核（C + x86 汇编）
     mm/               内存管理子系统
   user/               Ring 3 用户态程序
-  tools/              构建与测试工具
+  tools/              构建、发布与共享开发工具
+  tests/              宿主测试、客户机探针与测试辅助代码
   docs/               技术契约文档
 Documentation/        项目文档与截图
 Build Output/         构建产物（不提交）

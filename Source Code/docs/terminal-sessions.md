@@ -145,7 +145,7 @@ Remaining work includes further application integration, foreground groups inste
 task, full PTY/ANSI and detailed page-allocation failure injection. The backend
 does not reserve global device input. The headless F suite covers its own API
 authority checks. G1 separately exercises desktop keyboard/focus routing below.
-The Stage 4 Phase D runner `tools/test-stage4-terminal.js <ShellBridge build directory>`
+The Stage 4 Phase D runner `tests/host/test-stage4-terminal.js <ShellBridge build directory>`
 checks blocking reads and selected pipe/completion regressions with a private
 guest disk. The scheduler parks only the calling thread and resumes from its
 saved user state.
@@ -156,7 +156,7 @@ saved user state.
 command `run /boot/term.snx` open independent windows. The resolved read-only boot
 image is forced to caps=0. Its frontend uses compatibility policy and retains
 ambient read access under that policy. Its strict child runs the probe from
-`user/terminal_probe.c`. Both entry points share the boot image, selected by the
+`tests/guest/terminal_probe.c`. Both entry points share the boot image, selected by the
 trusted startup policy, to fit the current FAT12 image. Only this new program
 uses function-section garbage collection during linking.
 

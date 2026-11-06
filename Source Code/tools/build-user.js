@@ -4,15 +4,50 @@ const flags=['-m32','-march=i386','-std=c11','-Os','-ffreestanding','-fno-builti
 function command(exe,args){run(exe,args,{cwd:root,stdio:'inherit'});}
 command(path.join(root,'tools/nasm-3.02/nasm.exe'),['-f','win32','user/entry.asm','-o',path.join(out,'entry.o')]);
 command(path.join(tc,'gcc.exe'),[...flags,'-c','user/runtime.c','-o',path.join(out,'runtime.o')]);
-const apps=[['writer','write_tool',0],['tview','tview',0],['rdtest','read_tests',0],['gsh','gsh',0],['gcmd','gcmd',0],['brokerqa','interactive_tests',0],['term','terminal_frontend',0],['termqa','terminal_frontend',1],['termtest','terminal_tests',0],['pipetest','pipe_tests',0],['fstest','file_tests',0],['clitest','cli_tests',0],['comptest','completion_tests',0],['poltest','policy_tests',0],['probe','probe',0],['fault','probe',1],['iofault','probe',2],['spin','probe',3],['udfault','probe',4],['clock','clock',0],['calc','calculator',0],['hello','hello',0],['setup','setup',0],['apps','apps',0],['instest','installer_tests',0],['nettest','nettest',0],['bstest','basic_tests',0],['basicrun','basicrun',0],['ide','ide',0],['files','files',0],['editor','editor',0],['tasks','tasks',0],['memv2','memory_v2_test',0,2]];
+// Each row names the output, source path, MODE and optional SNX ABI.
+const apps = [
+ ['writer', 'user/write_tool.c', 0],
+ ['tview', 'user/tview.c', 0],
+ ['rdtest', 'tests/guest/read_tests.c', 0],
+ ['gsh', 'user/gsh.c', 0],
+ ['gcmd', 'user/gcmd.c', 0],
+ ['brokerqa', 'tests/guest/interactive_tests.c', 0],
+ ['term', 'user/terminal_frontend.c', 0],
+ ['termqa', 'user/terminal_frontend.c', 1],
+ ['termtest', 'tests/guest/terminal_tests.c', 0],
+ ['pipetest', 'tests/guest/pipe_tests.c', 0],
+ ['fstest', 'tests/guest/file_tests.c', 0],
+ ['clitest', 'tests/guest/cli_tests.c', 0],
+ ['comptest', 'tests/guest/completion_tests.c', 0],
+ ['poltest', 'tests/guest/policy_tests.c', 0],
+ ['probe', 'tests/guest/probe.c', 0],
+ ['fault', 'tests/guest/probe.c', 1],
+ ['iofault', 'tests/guest/probe.c', 2],
+ ['spin', 'tests/guest/probe.c', 3],
+ ['udfault', 'tests/guest/probe.c', 4],
+ ['clock', 'user/clock.c', 0],
+ ['calc', 'user/calculator.c', 0],
+ ['hello', 'user/hello.c', 0],
+ ['setup', 'user/setup.c', 0],
+ ['apps', 'user/apps.c', 0],
+ ['instest', 'tests/guest/installer_tests.c', 0],
+ ['nettest', 'tests/guest/nettest.c', 0],
+ ['bstest', 'tests/guest/basic_tests.c', 0],
+ ['basicrun', 'user/basicrun.c', 0],
+ ['ide', 'user/ide.c', 0],
+ ['files', 'user/files.c', 0],
+ ['editor', 'user/editor.c', 0],
+ ['tasks', 'user/tasks.c', 0],
+ ['memv2', 'tests/guest/memory_v2_test.c', 0, 2]
+];
 for(const [name,source,mode,abi=1] of apps){
  // The frontend and strict probe share one boot image. Strip unused runtime
  // sections only for this new program to fit the existing FAT12 image budget.
  const appFlags=(name==='term'||name==='termqa')?[...flags,'-ffunction-sections','-fno-ident']:flags;
  const runtime=path.join(out,(name==='term'||name==='termqa')?name+'-runtime.o':'runtime.o');
  if(name==='term'||name==='termqa')command(path.join(tc,'gcc.exe'),[...appFlags,'-c','user/runtime.c','-o',runtime]);
- command(path.join(tc,'gcc.exe'),[...appFlags,`-DMODE=${mode}`,`-DSINO_SNX_ABI=${abi}`,'-c',`user/${source}.c`,'-o',path.join(out,`${name}.o`)]);
- const extra=[];if(name==='termqa'){const obj=path.join(out,name+'-probe.o');command(path.join(tc,'gcc.exe'),[...appFlags,'-c','user/terminal_probe.c','-o',obj]);extra.push(obj);}
+ command(path.join(tc,'gcc.exe'),[...appFlags,'-I','user',`-DMODE=${mode}`,`-DSINO_SNX_ABI=${abi}`,'-c',source,'-o',path.join(out,`${name}.o`)]);
+ const extra=[];if(name==='termqa'){const obj=path.join(out,name+'-probe.o');command(path.join(tc,'gcc.exe'),[...appFlags,'-I','user','-c','tests/guest/terminal_probe.c','-o',obj]);extra.push(obj);}
  if(name==='setup'||name==='instest'){const obj=path.join(out,`${name}-service.o`);command(path.join(tc,'gcc.exe'),[...flags,'-c','user/install_service.c','-o',obj]);extra.push(obj);}
  if(name==='bstest'||name==='basicrun'||name==='ide'){for(const module of (name==='bstest'?['basic','netlib']:['basic','netlib','forms'])){const obj=path.join(out,`${name}-${module}.o`);command(path.join(tc,'gcc.exe'),[...flags,'-c',`user/${module}.c`,'-o',obj]);extra.push(obj);}}
  if(name==='nettest'){const obj=path.join(out,`${name}-netlib.o`);command(path.join(tc,'gcc.exe'),[...flags,'-c','user/netlib.c','-o',obj]);extra.push(obj);}

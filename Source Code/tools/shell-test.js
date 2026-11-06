@@ -85,34 +85,8 @@ class ShellChannel {
 
 function scenarios(job) {
     if (!job.selfTest) return [{command:job.command, status:job.expectedExitCode}];
-    if (job.suite === 'commands') return require('./shell-command-cases');
-    return [
-        {command:'echo hello', status:0, output:'hello\n'},
-        {command:'echo 你好', status:0, output:'你好\n', fragment:true},
-        {command:'pwd', status:0, output:'/home/user\n'},
-        {command:'echo one two | wc', status:0, output:'1 2 8\n'},
-        {command:'echo alpha > bridge.txt; cat < bridge.txt', status:0, output:'alpha\n'},
-        {command:'echo beta >> bridge.txt; cat bridge.txt | grep beta', status:0, output:'beta\n'},
-        {command:'cd /tmp; pwd', status:0, output:'/tmp\n'},
-        {command:'cd /home/user; pwd', status:0, output:'/home/user\n'},
-        {command:'cat missing-bridge-file', status:1, contains:'no such file'},
-        {command:'echo $?', status:0, output:'1\n'},
-        {command:'echo "unterminated', status:2, contains:'unclosed quote'},
-        {command:'bridge-no-such-command', status:1, contains:'command not found'},
-        {command:'echo SCR1 PASS', status:0, output:'SCR1 PASS\n'},
-        {command:'echo recovered', status:0, output:'recovered\n', prefix:'garbage'},
-        {command:'', declaredSize:256, status:-1, output:''},
-        {command:'echo invalid\nline', status:-1, output:''},
-        {command:'echo ' + 'x'.repeat(250), status:0, output:'x'.repeat(250)+'\n'},
-        {command:'echo after-invalid', status:0, output:'after-invalid\n'},
-        {command:'echo ' + 'x'.repeat(200) + ' > chunk.txt', status:0, output:''},
-        {command:'echo -e "' + Array(8).fill('cat chunk.txt >> large.txt').join('\\n') + '" > repeat.sh', status:0, output:''},
-        {command:Array(6).fill('source repeat.sh').join('; '), status:0, output:''},
-        {command:'cat large.txt', status:0, overflow:true, output:''},
-        {command:'echo after-overflow', status:0, output:'after-overflow\n'},
-        {command:'source /boot/demo.sh', status:0, contains:'hello from SINO SH'},
-        {command:'sync', status:0}
-    ];
+    if (job.suite === 'commands') return require('../tests/support/shell-command-cases');
+    return require('../tests/support/shell-transport-cases');
 }
 
 async function run(directory, {execute, seedDisk, memoryMiB = 64} = {}) {

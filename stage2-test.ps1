@@ -18,7 +18,7 @@ try {
     & node $helper record $runRoot
     if ($LASTEXITCODE -ne 0) { throw 'Stage 2 build identity verification failed.' }
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Source Code\build32\kernel-normal.exe') -Destination (Join-Path $runRoot 'kernel-normal.exe')
-    & node (Join-Path $PSScriptRoot 'Source Code\tools\stage2-test.js') $runRoot
+    & node (Join-Path $PSScriptRoot 'Source Code\tests\host\stage2-test.js') $runRoot
     $result = $LASTEXITCODE
 } catch {
     if ($runRoot) {

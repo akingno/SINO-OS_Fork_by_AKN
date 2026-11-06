@@ -85,8 +85,8 @@ entry, not a new host run.ps1/v2 protocol.
 
 ## Verification
 
-`tools/test-gsh.c` compiles the actual shared parser/path/integer helpers.
-`tools/stage2-shell.js` adds five real QMP cases for command recovery, argv,
+`tests/host/test-gsh.c` compiles the actual shared parser/path/integer helpers.
+`tests/host/stage2-shell.js` adds five real QMP cases for command recovery, argv,
 independent cwd/UTF-8 sessions, signed results/fault/cancel/EOF, process-table
 exhaustion and recovery, bounded history, canonical editing and exact resource
 cleanup. These run through `stage2-test.ps1`; inspect the saved run with

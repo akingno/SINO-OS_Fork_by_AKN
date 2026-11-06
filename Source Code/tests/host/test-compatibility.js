@@ -1,0 +1,3 @@
+const {calculator,expectDisplay}=require('../support/calculator-test');
+const {VM}=require('../../tools/vm-test'),assert=require('node:assert/strict');
+(async()=>{const vm=new VM('compatibility-qa',4561);try{await vm.start({fresh:true,cpu:'pentium3'});assert.equal(await vm.value('graphics_sse2'),0);await vm.key('f4');await calculator(vm);await vm.type('6*7=');await expectDisplay(vm,await calculator(vm),'42.00');await vm.shot('no-sse2');console.log('PASS: no-SSE2 CPU fallback boots and renders native applications.');}finally{await vm.stop();}})().catch(e=>{console.error(e);process.exitCode=1;});

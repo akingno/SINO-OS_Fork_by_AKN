@@ -71,9 +71,9 @@ file writes and default desktop entry switching belong to subsequent work.
 
 ## Tests
 
-`tools/test-file-text.c` compiles the actual decoder/layout helpers, covering
+`tests/host/test-file-text.c` compiles the actual decoder/layout helpers, covering
 controls, malformed/partial UTF-8, four-byte codepoints, a sequence straddling
-byte512, empty input and wide-character wrapping. `tools/stage2-files-cli.js`
+byte512, empty input and wide-character wrapping. `tests/host/stage2-files-cli.js`
 uses real QMP keyboard events and private-VM fixtures to exercise the Shell,
 broker, strict file tools, paging and resource cleanup. Fixtures are created
 by rdtest.snx, then removed; they must not be created on a daily development disk.
