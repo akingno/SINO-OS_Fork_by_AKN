@@ -7,9 +7,12 @@
 ```
 src32/                内核（C + x86 汇编）
   mm/                 独立内存管理子系统（page.c, paging.c, uaccess.c）
+  fs/                 文件系统（boot_fat12.c）
+  lib/                内核工具库（kstring.c）
   loader.asm          引导加载器
   kernel.c            内核主入口
   process.c           进程管理、系统调用分发、权限策略
+  panic.c             panic 与停机处理
   api.h               系统调用编号与用户态共享结构
   boot-layout.h       2.88 MB 启动镜像布局（NASM/C/JS 共用）
 user/                 Ring 3 用户态程序
@@ -25,13 +28,14 @@ user/                 Ring 3 用户态程序
   linker.ld           用户态链接脚本（基址 0x40000000）
 disk32/               启动盘内容与字体资源
 tools/                构建、发布与共享开发工具
-tests/                宿主测试、客户机探针与测试辅助代码
-  dev-run.js          开发构建与 QEMU 启动
-  shell-test.js       Shell 命令通道测试
-  vm-test.js          QEMU 测试基础设施
-  stage2-test.js      Stage 2 全量门禁
   build-user.js       用户态程序构建
   build-locale.py     双语 UI 资源生成与校验
+  vm-test.js          QEMU 测试基础设施
+  shell-test.js       Shell 命令通道测试
+tests/                宿主套件、Ring 3 测试探针与测试辅助模块
+  host/               宿主测试脚本（stage2-test.js、test-stage4-*.js 等）
+  guest/              Ring 3 客户机测试程序（编译为 .snx）
+  support/            共享夹具与用例数据
 docs/                 技术契约文档
   architecture.md     系统架构
   os-interface.md     系统调用接口（Stage A–F）
