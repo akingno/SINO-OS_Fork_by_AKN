@@ -5,10 +5,6 @@
 enum { PAGE_SIZE = 4096, MAX_RUN = 64, E820_MAX = 32 };
 enum { PAGE_FREE, PAGE_USED, PAGE_RESERVED };
 
-/* Everything below 52 MiB is kept out of the pool, including the kernel,
-   boot tables, RAM disk, launch scratch, and fixed graphics buffers. */
-#define BOOT_POOL_START 0x3400000u
-
 typedef struct PACKED {
   u32 base, base_hi, length, length_hi, type, attributes;
 } E820Entry;
@@ -59,6 +55,7 @@ void page_init(void) {
 
   nr_pages = usable_memory / PAGE_SIZE;
   metadata_pages = (nr_pages + PAGE_SIZE - 1) / PAGE_SIZE;
+  /* Lower memory contains the kernel, boot tables, RAM disk and graphics. */
   u32 run = 0, metadata_base = 0;
   for (u32 pfn = BOOT_POOL_START / PAGE_SIZE; pfn < nr_pages; pfn++) {
     if (!available(ranges, range_count, pfn * PAGE_SIZE)) {

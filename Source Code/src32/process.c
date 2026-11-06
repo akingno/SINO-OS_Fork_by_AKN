@@ -306,7 +306,7 @@ static int launch_policy(const char* path, u32 caps, const char* arguments,
   if (!p || next_pid >= 0x7fffffu || strlen(arguments) > 255)
     return S_LIMIT;
   memset(p, 0, sizeof(*p));
-  p->pd = paging_user_create(BOOT_KERNEL_PD);
+  p->pd = paging_user_create();
   p->kernel_stack = page_alloc();
   if (!p->pd || !p->kernel_stack) {
     release(p);
@@ -713,7 +713,7 @@ static void leave(Frame* f) {
   Thread* t = &current->thread[current_thread];
   memcpy(&t->saved, f, sizeof(UserFrame));
   user_switch_out = 1;
-  paging_activate(BOOT_KERNEL_PD);
+  paging_activate_kernel();
 }
 /* Allow local mechanisms, public queries and explicitly authorized objects.
  * New calls are denied until reviewed; old ambient paths cannot bypass this. */
@@ -1395,7 +1395,7 @@ void process_step(void) {
     paging_activate(p->pd);
     process_switches++;
     user_enter(&t->saved);
-    paging_activate(BOOT_KERNEL_PD);
+    paging_activate_kernel();
     current = 0;
     sti();
     break;

@@ -374,15 +374,7 @@ void ps2_byte(int aux, u8 value) {
     __asm__ volatile("nop");
 }
 
-static void paging_init(void) {
-  u32* pd = BOOT_KERNEL_PD;
-  u32* pt = (u32*)0x1e0000;
-  memset(pd, 0, 4096);
-  for (u32 i = 0; i < BOOT_IDENTITY_BYTES / 4096; i++)
-    pt[i] = (i * 4096) | 3;
-  pt[0] = 0;
-  for (u32 i = 0; i < BOOT_IDENTITY_BYTES / 0x400000; i++)
-    pd[i] = (0x1e0000 + i * 4096) | 3;
+static u32 boot_framebuffer(void) {
   const u8* vbe = (const u8*)0x5800;
   u32 fb = *(const u32*)(vbe + 40);
   if (!fb || *(const u16*)(vbe + 18) != GUI_WIDTH ||
@@ -390,25 +382,7 @@ static void paging_init(void) {
       vbe[31] != 8 || vbe[32] != 16 || vbe[33] != 8 || vbe[34] != 8 ||
       vbe[35] != 8 || vbe[36] != 0)
     panic("VBE direct-color mode unavailable", fb, vbe[25]);
-  if ((fb >> 22) < BOOT_IDENTITY_BYTES / 0x400000 || (fb >> 22) > 1022)
-    panic("Invalid VBE framebuffer", fb, 0);
-  for (u32 bank = 0; bank < 3; bank++) {
-    u32* video = (u32*)(0x1f0000 + bank * 4096);
-    for (u32 i = 0; i < 1024; i++)
-      video[i] = ((fb & 0xffc00000u) + (bank * 1024 + i) * 4096) | 0x1b;
-    pd[(fb >> 22) + bank] = (u32)video | 3;
-  }
-  paging_activate(pd);
-  u32 cr0;
-  __asm__ volatile("mov %%cr0,%0" : "=r"(cr0));
-  cr0 = (cr0 & ~0x60000000u) | 0x80010000u;
-  __asm__ volatile("mov %0,%%cr0" ::"r"(cr0) : "memory");
-  pr_debug("PAGING enabled: CR0=");
-  pr_debug_hex(cr0);
-  pr_debug(" CR3=0x00090000, null page unmapped\n");
-  pr_debug("VBE framebuffer mapped: ");
-  pr_debug_hex(fb);
-  pr_debug(" 1024x768x32\n");
+  return fb;
 }
 File files[224];
 u32 file_count;
@@ -528,8 +502,9 @@ void kmain(void) {
   pr_debug("SINO BUILD ID: " SINO_BUILD_ID "\n");
 #endif
   arch_init();
+  paging_bootstrap();
   page_init();
-  paging_init();
+  paging_kernel_init(BOOT_IDENTITY_BYTES, boot_framebuffer());
   if (!fs_init())
     panic("FAT12 mount failed", 0, 0);
   process_init();

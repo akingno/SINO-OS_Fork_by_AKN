@@ -4,10 +4,12 @@
 #include "../types.h"
 
 enum { PAGE_PRESENT = 1, PAGE_WRITE = 2, PAGE_USER = 4 };
-#define BOOT_KERNEL_PD ((u32*)0x90000u)
+void paging_bootstrap(void);
+void paging_kernel_init(u32 identity_bytes, u32 framebuffer);
+void paging_activate_kernel(void);
 
 /* User PDEs are private and created on first use. Other PDEs are shared. */
-u32* paging_user_create(const u32* kernel_pd);
+u32* paging_user_create(void);
 void paging_user_destroy(u32* pd);
 
 /* A successful map transfers ownership of page to pd. Unmap returns it. */
