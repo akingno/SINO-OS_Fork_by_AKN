@@ -21,9 +21,15 @@ typedef struct {
   Frame frame;
   u32 useresp, ss;
 } UserFrame;
+enum { THREAD_UNUSED, THREAD_ACTIVE, THREAD_BLOCKED };
+enum { WAIT_PIPE_READ = 1, WAIT_PIPE_WRITE, WAIT_COMPLETION, WAIT_TERM_READ };
 typedef struct {
   int state;
   u32 wake;
+  u32 wait_object; /* Object index + 1; zero when not waiting. */
+  u32 wait_op;
+  u32 wait_deadline;
+  int wait_timed; /* A finite deadline can wrap to zero. */
   UserFrame saved;
 } Thread;
 typedef struct {
@@ -293,13 +299,45 @@ static int paging_probe_setup(Process* p, int exhaust) {
 #endif
 static void initial(Thread* t, u32 entry, u32 stack) {
   memset(t, 0, sizeof(*t));
-  t->state = 1;
+  t->state = THREAD_ACTIVE;
   t->wake = ticks;
   t->saved.frame.eip = entry;
   t->saved.frame.cs = 0x1b;
   t->saved.frame.eflags = 0x202;
   t->saved.useresp = stack;
   t->saved.ss = 0x23;
+}
+/* A zero timeout waits indefinitely. Finite waits use signed tick comparisons. */
+static inline void thread_block(Thread* t, u32 object, u32 op, u32 timeout) {
+  if (timeout > 0x7fffffffu)
+    timeout = 0x7fffffffu;
+  t->wait_object = object;
+  t->wait_op = op;
+  t->wait_deadline = timeout ? ticks + timeout : 0;
+  t->wait_timed = timeout != 0;
+  t->state = THREAD_BLOCKED;
+}
+static void thread_resume(Thread* t, u32 now) {
+  t->wait_object = 0;
+  t->wait_op = 0;
+  t->wait_deadline = 0;
+  t->wait_timed = 0;
+  t->wake = now;
+  t->state = THREAD_ACTIVE;
+}
+/* Resource wakeup preserves the saved syscall result. */
+static inline void thread_unblock(u32 object, u32 op) {
+  u32 now = ticks;
+  for (int i = 0; i < NP; i++) {
+    Process* p = &processes[i];
+    if (p->state != 1)
+      continue;
+    for (int j = 0; j < NT; j++) {
+      Thread* t = &p->thread[j];
+      if (t->state == THREAD_BLOCKED && t->wait_object == object && t->wait_op == op)
+        thread_resume(t, now);
+    }
+  }
 }
 int process_launch(const char* path, u32 caps) {
   return process_launch_args(path, caps, "");
@@ -1353,7 +1391,7 @@ static int syscall(Frame* f) {
           paging_user_flags(current->pd, a) != (PAGE_PRESENT | PAGE_USER))
         return S_INVALID;
       for (int i = 1; i < NT; i++)
-        if (!current->thread[i].state) {
+        if (current->thread[i].state == THREAD_UNUSED) {
           if (!alloc_user_stack(current, i))
             return S_NOMEM;
           initial(&current->thread[i], a, user_stack_top(current, i));
@@ -1361,10 +1399,10 @@ static int syscall(Frame* f) {
         }
       return S_LIMIT;
     case SYS_THREAD_EXIT: {
-      current->thread[current_thread].state = 0;
+      current->thread[current_thread].state = THREAD_UNUSED;
       int live = 0;
       for (int i = 0; i < NT; i++)
-        if (current->thread[i].state)
+        if (current->thread[i].state != THREAD_UNUSED)
           live = 1;
       if (!live) {
         current->state = 2;
@@ -1456,11 +1494,24 @@ void process_step(void) {
   for (int i = 0; i < NP; i++)
     if (processes[i].state == 2)
       release(&processes[i]);
+  u32 now = ticks;
+  for (int i = 0; i < NP; i++) {
+    Process* p = &processes[i];
+    if (p->state != 1)
+      continue;
+    for (int j = 0; j < NT; j++) {
+      Thread* t = &p->thread[j];
+      if (t->state == THREAD_BLOCKED && t->wait_timed && (i32)(now - t->wait_deadline) >= 0) {
+        t->saved.frame.eax = (u32)S_TIMEOUT;
+        thread_resume(t, now);
+      }
+    }
+  }
   for (int i = 0; i < NP * NT; i++) {
     int which = cursor++ % (NP * NT);
     Process* p = &processes[which / NT];
     Thread* t = &p->thread[which % NT];
-    if (p->state != 1 || t->state != 1 || (i32)(ticks - t->wake) < 0)
+    if (p->state != 1 || t->state != THREAD_ACTIVE || (i32)(ticks - t->wake) < 0)
       continue;
     current = p;
     current_thread = which % NT;
@@ -1493,7 +1544,7 @@ int process_list(ProcessInfo* out, u32 cap) {
       v->exit_code = p->code;
       memcpy(v->name, p->name, 32);
       for (int j = 0; j < NT; j++)
-        if (p->thread[j].state)
+        if (p->thread[j].state != THREAD_UNUSED)
           v->threads++;
       v->pages = paging_user_count(p->pd);
     }
