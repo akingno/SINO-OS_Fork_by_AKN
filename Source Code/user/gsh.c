@@ -7,7 +7,8 @@
 static CliInfo cli;
 static ShellWords words;
 static int terminal, root, cwd_handle, writable;
-static char cwd[128], history[16][SHELL_LINE];
+static char cwd[128], previous_cwd[128], history[16][SHELL_LINE];
+static char hostname[32] = "sino";
 static u32 history_total, history_count, request_id;
 static i32 last_code, last_start;
 static u32 last_reason = PROCESS_EXITED;
@@ -135,6 +136,143 @@ static void external(u32 program, u32 rights) {
   }
   status(code, reason, 0);
 }
+static int path_prefix(const char *path, const char *prefix) {
+  while (*prefix)
+    if (*path++ != *prefix++)
+      return 0;
+  return !*path || *path == '/';
+}
+static int home_path(const char *path, char out[128]) {
+  if (path_prefix(path, "/home/user"))
+    path = path[10] ? path + 10 : "/";
+  else if (path_prefix(path, "~"))
+    path = path[1] ? path + 1 : "/";
+  else if (path_prefix(path, "/boot"))
+    return -1;
+  return shell_path(cwd, path, out);
+}
+static const char *argument(u32 index) {
+  return words.bytes + words.offsets[index];
+}
+static int writable_session(void) {
+  if (writable)
+    return 1;
+  put("read-only session\n");
+  status(1, PROCESS_EXITED, 0);
+  return 0;
+}
+static int hostname_valid(const char *name) {
+  if (!*name || strlen(name) >= sizeof(hostname))
+    return 0;
+  for (; *name; name++) {
+    char c = *name;
+    if (!(c >= 'a' && c <= 'z') && !(c >= 'A' && c <= 'Z') &&
+        !(c >= '0' && c <= '9') && c != '-')
+      return 0;
+  }
+  return 1;
+}
+static void desktop_run(const char *command) {
+  if (!writable_session())
+    return;
+  DesktopRun request = {{0}, {0}};
+  u32 operation = DESKTOP_RUN_APP;
+  if (streq(command, "kill")) {
+    if (usage(2, 2))
+      return;
+    i32 pid;
+    if (shell_integer(argument(1), &pid) || pid <= 0)
+      goto invalid;
+    operation = DESKTOP_KILL;
+    memcpy(request.path, &pid, sizeof(pid));
+  } else if (streq(command, "install")) {
+    if (usage(2, 2))
+      return;
+    operation = DESKTOP_INSTALL;
+    if (strlen(argument(1)) >= sizeof(request.argument))
+      goto invalid;
+    copy(request.argument, argument(1));
+  } else if (streq(command, "nettest")) {
+    if (usage(1, 1))
+      return;
+    operation = DESKTOP_NETTEST;
+  } else {
+    int strict = words.argc > 1 && streq(argument(1), "-s");
+    u32 path_index = strict ? 2 : 1;
+    if (usage(path_index + 1, path_index + 2))
+      return;
+    const char *path = argument(path_index);
+    char relative[128];
+    int boot = path_prefix(path, "/boot");
+    if (boot ? shell_path("", path[5] ? path + 5 : "/", relative)
+             : home_path(path, relative))
+      goto invalid;
+    const char *prefix = boot ? "/boot/" : "/home/user/";
+    if (!*relative || strlen(prefix) + strlen(relative) >= sizeof(request.path))
+      goto invalid;
+    copy(request.path, prefix);
+    copy(request.path + strlen(prefix), relative);
+    if (words.argc > path_index + 1) {
+      const char *arg = argument(path_index + 1);
+      if (strlen(arg) >= sizeof(request.argument))
+        goto invalid;
+      copy(request.argument, arg);
+    }
+    if (strict)
+      operation = DESKTOP_RUN_STRICT;
+  }
+  int pid = TerminalCall(TERM_DESKTOP_RUN, terminal, &request,
+                         sizeof(request), operation, 0);
+  if (pid < 0) {
+    put("start failed ");
+    integer(pid);
+    put("\n");
+    status(126, 0, pid);
+  } else if (operation != DESKTOP_KILL) {
+    put("Started user process ");
+    integer(pid);
+    put("\n");
+    status(0, PROCESS_EXITED, 0);
+  } else
+    status(0, PROCESS_EXITED, 0);
+  return;
+invalid:
+  put("invalid application path or argument\n");
+  status(2, PROCESS_EXITED, 0);
+}
+static void redirect_echo(u32 operator) {
+  int append = line[operator + 1] == '>';
+  u32 start = operator + 1 + (u32)append;
+  ShellWords target;
+  char path[128];
+  if (!words.argc || !streq(argument(0), "echo") || words.argc == 16 ||
+      shell_parse(line + start, length - start, &target) || target.argc != 1) {
+    put("syntax error: expected echo text > path or echo text >> path\n");
+    status(2, PROCESS_EXITED, 0);
+    return;
+  }
+  if (!writable_session())
+    return;
+  if (home_path(target.bytes, path) || !*path) {
+    put("path outside grant or invalid output file\n");
+    status(1, PROCESS_EXITED, 0);
+    return;
+  }
+  ShellWords original = words;
+  copy(words.bytes, append ? "echo>>" : "echo>");
+  words.offsets[0] = 0;
+  words.offsets[1] = strlen(words.bytes) + 1;
+  copy(words.bytes + words.offsets[1], path);
+  words.used = words.offsets[1] + strlen(path) + 1;
+  for (u32 i = 1; i < original.argc; i++) {
+    const char *arg = original.bytes + original.offsets[i];
+    words.offsets[i + 1] = words.used;
+    copy(words.bytes + words.used, arg);
+    words.used += strlen(arg) + 1;
+  }
+  words.argc++;
+  external(IX_WRITETOOLS, FS_LOOKUP | FS_READ | FS_WRITE | FS_CREATE);
+}
 static void execute(void) {
   if (!length)
     return;
@@ -144,9 +282,14 @@ static void execute(void) {
   history_total++;
   if (history_count < 16)
     history_count++;
-  if (shell_parse(line, length, &words)) {
+  u32 output_operator = shell_output_operator(line, length);
+  if (shell_parse(line, output_operator, &words)) {
     put("syntax error\n");
     status(2, PROCESS_EXITED, 0);
+    return;
+  }
+  if (output_operator < length) {
+    redirect_echo(output_operator);
     return;
   }
   if (!words.argc)
@@ -163,6 +306,10 @@ static void execute(void) {
       used += strlen(arg) + 1;
     }
     words.used = used;
+  }
+  if (entry && entry->kind == 6) {
+    desktop_run(command);
+    return;
   }
   if (streq(command, "status")) {
     if (usage(1, 1))
@@ -202,7 +349,7 @@ static void execute(void) {
       return;
     if (words.argc == 2) {
       const ShellCommand *item = shell_command(words.bytes + words.offsets[1]);
-      if (!item || item->kind == 4) {
+      if (!item || item->kind == 4 || (which && item->kind == 6 && !writable)) {
         put(which ? "which: unavailable command\n"
                   : "help: unavailable command\n");
         status(1, PROCESS_EXITED, 0);
@@ -216,20 +363,48 @@ static void execute(void) {
         put(item->kind == 0   ? ": builtin\n"
             : item->kind == 5 ? ": /boot/writer.snx (catalog 6)\n"
             : item->kind == 2 ? ": /boot/tview.snx (catalog 5)\n"
+            : item->kind == 6 ? ": desktop launch service\n"
                               : ": /boot/gcmd.snx (catalog 4)\n");
       }
     } else {
-      put("builtins: help pwd cd history status exit\n");
-      put("navigation: which; clear (Ctrl+L); / = /home/user\n");
       for (u32 i = 0; i < sizeof(shell_commands) / sizeof(*shell_commands); i++)
         if (shell_commands[i].kind == 1 || shell_commands[i].kind == 2) {
           put(shell_commands[i].usage);
           put("\n");
         }
+      put("builtins: help pwd cd history status exit\n");
+      put("navigation: which; clear (Ctrl+L); / = /home/user\n");
+      put("identity: whoami hostname env\n");
       put("workspace (write session): touch mkdir rm rmdir write append cp mv "
           "sync\n");
+      put("write session: echo text > path, echo text >> path, run, kill, install, nettest\n");
       put("diagnostics: args exitcode spin fault\n");
     }
+  } else if (streq(command, "whoami")) {
+    if (usage(1, 1))
+      return;
+    put("user\n");
+  } else if (streq(command, "hostname")) {
+    if (usage(1, 2))
+      return;
+    if (words.argc == 2) {
+      if (!hostname_valid(argument(1))) {
+        put("hostname: use 1..31 letters, digits or hyphens\n");
+        status(2, PROCESS_EXITED, 0);
+        return;
+      }
+      copy(hostname, argument(1));
+    }
+    put(hostname);
+    put("\n");
+  } else if (streq(command, "env")) {
+    if (usage(1, 1))
+      return;
+    put("USER=user\nHOME=/home/user\nPWD=/");
+    put(cwd);
+    put("\nHOSTNAME=");
+    put(hostname);
+    put("\nSHELL=gsh\nPATH=/boot\nVERSION=0.10\n");
   } else if (streq(command, "pwd")) {
     if (usage(1, 1))
       return;
@@ -241,7 +416,9 @@ static void execute(void) {
       return;
     char path[128];
     const char *target = words.argc == 1 ? "/" : words.bytes + words.offsets[1];
-    if (shell_path(cwd, target, path)) {
+    if (streq(target, "-"))
+      copy(path, previous_cwd);
+    else if (home_path(target, path)) {
       put("cd: outside grant or path too long\n");
       status(1, PROCESS_EXITED, 0);
       return;
@@ -259,6 +436,7 @@ static void execute(void) {
     if (cwd_handle != root)
       Close(cwd_handle);
     cwd_handle = next;
+    copy(previous_cwd, cwd);
     copy(cwd, path);
   } else if (streq(command, "history")) {
     if (usage(1, 1))
@@ -273,11 +451,8 @@ static void execute(void) {
     external(IX_COMMAND, 0);
     return;
   } else if (entry && entry->kind == 5) {
-    if (!writable) {
-      put("read-only session\n");
-      status(1, PROCESS_EXITED, 0);
+    if (!writable_session())
       return;
-    }
     int dual = streq(command, "cp") || streq(command, "mv"),
         text = streq(command, "write") || streq(command, "append"),
         sync = streq(command, "sync");
@@ -290,13 +465,18 @@ static void execute(void) {
       status(2, PROCESS_EXITED, 0);
       return;
     }
+    int boot_copy = streq(command, "cp") && path_prefix(argument(1), "/boot");
     ShellWords original = words;
     words.used = 0;
     for (u32 i = 0; i < original.argc; i++) {
       const char *value = original.bytes + original.offsets[i];
       char path[128];
+      if (boot_copy && i == 0)
+        value = "cp-boot";
       if (i == 1 || (dual && i == 2)) {
-        if (shell_path(cwd, value, path)) {
+        int boot_source = boot_copy && i == 1;
+        if (boot_source ? shell_path("", value[5] ? value + 5 : "/", path)
+                        : home_path(value, path)) {
           put("path outside grant or too long\n");
           status(1, PROCESS_EXITED, 0);
           return;
@@ -322,7 +502,7 @@ static void execute(void) {
       rights |= FS_REMOVE | FS_CREATE;
     else
       rights |= FS_READ | FS_WRITE | FS_CREATE;
-    external(IX_WRITETOOLS, rights);
+    external(boot_copy ? IX_BOOTCOPY : IX_WRITETOOLS, rights);
     return;
   } else if (entry && entry->kind == 4) {
     put("unavailable: ");
@@ -361,9 +541,10 @@ static void execute(void) {
       return;
     }
     char path[128];
-    if (shell_path(
-            cwd, index == words.argc ? "." : words.bytes + words.offsets[index],
-            path)) {
+    const char *target = index == words.argc ? "." : argument(index);
+    int boot = path_prefix(target, "/boot");
+    if (boot ? shell_path("", target[5] ? target + 5 : "/", path)
+             : home_path(target, path)) {
       put("path outside grant or too long\n");
       status(1, PROCESS_EXITED, 0);
       return;
@@ -387,7 +568,8 @@ static void execute(void) {
     }
     if (words.argc < index + 1)
       words.argc = index + 1;
-    external(IX_READTOOLS, FS_READ | FS_LOOKUP | ((ls || walk) ? FS_ENUM : 0));
+    external(boot ? IX_BOOTTOOLS : IX_READTOOLS,
+             FS_READ | FS_LOOKUP | ((ls || walk) ? FS_ENUM : 0));
     return;
   } else {
     put("unknown command: ");

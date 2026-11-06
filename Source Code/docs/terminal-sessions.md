@@ -216,3 +216,5 @@ G5a adds the plain-text user welcome, everyday text/information commands and a 1
 G5b adds an explicit writable frontend mode, now selected by /write. The default stays read-only; session ownership and cancellation contracts are unchanged. See [workspace-shell.md](workspace-shell.md).
 
 G5c adds the editable prompt protocol and separates diagnostics from the ordinary boot image. See [shell-editing.md](shell-editing.md).
+
+G6 routes F2, the SINO menu and Terminal.app to the writable Ring 3 frontend. F12 opens a read-only window. For read-only boot access and the typed desktop application launcher, see [desktop-shell.md](desktop-shell.md).

@@ -15,9 +15,9 @@ async function run(context, api, persistOnly=false) {
     }
     async function type(text) {
         const plain={'\n':'ret',' ':'spc',"'":'apostrophe','\\':'backslash','/':'slash','.':'dot','-':'minus','|':'backslash'};
+        const shifted={'"':'apostrophe','|':'backslash','>':'dot','<':'comma',':':'semicolon'};
         for (const c of text) {
-            if(c==='"') await key('shift','apostrophe');
-            else if(c==='|') await key('shift','backslash');
+            if(shifted[c]) await key('shift',shifted[c]);
             else if(/[A-Z]/.test(c)) await key('shift',c.toLowerCase());
             else await key(plain[c]||c);
         }
@@ -167,28 +167,38 @@ async function run(context, api, persistOnly=false) {
         await until(async () => (await processes()).length === 0, 'close bypasses input pressure', 2000);
         assert.deepEqual(await resources(), baseline);
     });
-    await check('G1 old F2 desktop Shell still accepts keyboard input', async () => {
+    await check('G6 F2 uses a writable Ring 3 Shell and the detached app route', async () => {
         await key('f2');
-        const stride = await value('gui_window_stride');
-        await until(async () => {
-            const windows = await memory(symbols.windows, stride * 8);
-            for (let i = 0; i < 8; i++) if (windows.readUInt32LE(i * stride) &&
-                windows.readUInt32LE(i * stride + 4) === 6) return true;
-            return false;
-        }, 'legacy terminal window');
-        await type('echo legacyready\n');
-        await until(async () => {
-            const cells = await memory(symbols.terminal, 80 * 25 * 4);
-            const rows = [];
-            let output = '';
-            for (let i = 0; i < cells.length; i += 4) {
-                const cp = cells.readUInt32LE(i) & 0x1fffff;
-                output += cp <= 0x10ffff ? String.fromCodePoint(cp) : ' ';
-                if ((i + 4) % (80 * 4) === 0) { rows.push(output.trim()); output = ''; }
-            }
-            return rows.includes('legacyready');
-        }, 'legacy desktop output');
+        await until(async () => (await processes()).some(p => p.name === 'term.snx'), 'F2 frontend');
+        const pid = (await processes()).find(p => p.name === 'term.snx').pid;
+        await waitText(pid, '/ = /home/user (read-write)');
+        const prompt = () => until(async () => (await text(pid)).endsWith('gsh:/ $'), 'F2 ready');
+        await prompt();
+        await type('echo g6-first > /home/user/g6-test.txt\n'); await prompt();
+        await type('echo -n g6-second >> g6-test.txt\n'); await prompt();
+        assert.equal(await command('cat /home/user/g6-test.txt'), 'g6-first\ng6-second');
+        await type('head -n 1 /boot/readme.txt\n');
+        await waitText(pid, 'SINO 0.10 Desktop and Hard-Disk Installation');
+        await prompt();
+        await type('cp /boot/first.bas g6-boot.bas\n'); await prompt();
+        assert.equal(await command('cat /home/user/g6-boot.bas'), await command('cat /boot/first.bas'));
+        await command('rm /home/user/g6-boot.bas');
+        await type('echo denied > /boot/readme.txt\n'); await waitText(pid, 'path outside grant');
+        await prompt();
+        await type('run /boot/no-such.snx\n'); await waitText(pid, 'start failed -4');
+        await prompt();
+        await type('run /boot/spin.snx\n'); await waitText(pid, 'Started user process');
+        const spin = (await processes()).find(p => p.name === 'spin.snx');
+        assert(spin, 'detached process alive');
+        const unrelated = await launch('spin');
+        await type('kill ' + unrelated + '\n'); await waitText(pid, 'start failed -3');
+        assert((await processes()).some(p => p.pid === unrelated), 'unrelated process remains alive');
+        await command('kill ' + unrelated);
+        await type('kill ' + spin.pid + '\n');
+        await until(async () => (await processes()).every(p => p.name !== 'spin.snx'), 'detached process reaped');
         await key('ctrl','w');
+        await until(async () => (await processes()).length === 0, 'F2 session closed');
+        await command('rm /home/user/g6-test.txt');
         assert.deepEqual(await resources(), baseline);
     });
     await check('G2 desktop broker restores foreground after exit, fault and cancel', async () => {

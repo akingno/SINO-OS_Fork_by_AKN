@@ -23,7 +23,7 @@ const legacy=process.argv.includes('--legacy');
    for(const command of ['run /boot/clock.snx /selftest','run /boot/./CLOCK.SNX /selftest','run /boot/clock.snx /spawn-test']){
     const n=(vm.log().match(/CLOCK SELFTEST PASS/g)||[]).length;await shell(command);await waitFor(async()=>(vm.log().match(/CLOCK SELFTEST PASS/g)||[]).length===n+1,command);assert(!vm.log().includes('CLOCK SELFTEST FAIL'),vm.log());
    }
-   await shell('date; time');assert(!vm.log().includes('RTC time unavailable'));await close();pass('Caps=0 wall time, canonical/case and child launches; Shell date/time');
+   await shell('date');await shell('time');assert(!vm.log().includes('RTC time unavailable'));await close();pass('Caps=0 wall time, canonical/case and child launches; Shell date/time');
    const before=await vm.value('free_pages');
    const refs=async()=>{const b=await vm.memory(vm.symbols.objects,64*16);let sum=0;for(let i=0;i<64;i++)sum+=b.readUInt32LE(i*16+4);return sum;};const beforeRefs=await refs();
    await vm.key('f6');w=await clock(vm);assert.equal(w.app,9);
@@ -49,7 +49,21 @@ const legacy=process.argv.includes('--legacy');
    await waitFor(async()=>await vm.value('process_faults')===faults+1,'actual clock fault contained');await waitFor(async()=>!(await vm.state()).windows.some(q=>q.id===w.id),'fault window reclaimed');await close();await waitFor(async()=>await vm.value('free_pages')===before,'fault process reclaimed');
    const afterFault=await topTime(vm);await waitFor(async()=>await topTime(vm)!==afterFault,'top bar after clock fault');pass('Fault in the real clock process is isolated; top bar and resources survive');
    for(let i=0;i<8;i++){await vm.key('f4');await waitFor(async()=>(await vm.state()).windows.filter(q=>q.app===9).length===i+1,'fill windows');}await vm.key('f6');assert.equal((await vm.state()).modal,2);await vm.key('ret');for(let i=0;i<8;i++)await close();await waitFor(async()=>await vm.value('free_pages')===before,'full windows reclaim');
-   const logStart=vm.log().length;await shell(Array(8).fill('run /boot/spin.snx').join('; '));await vm.key('f6');assert.equal((await vm.state()).modal,2);await vm.key('ret');const spins=[...vm.log().slice(logStart).matchAll(/PROCESS start spin.snx pid=0x([0-9A-F]+)/g)].map(m=>parseInt(m[1],16));assert.equal(spins.length,8);await shell(spins.map(pid=>'kill '+pid).join('; '));await close();await waitFor(async()=>await vm.value('free_pages')===before,'full processes reclaim');await vm.key('f6');w=await clock(vm);pass('Full window/process tables fail visibly and singleton can recover');
+   const logStart=vm.log().length;const launched=()=>[...vm.log().slice(logStart).matchAll(/PROCESS start spin.snx pid=0x([0-9A-F]+)/g)].map(m=>parseInt(m[1],16));
+   for(let i=0;i<6;i++){
+    await shell('run /boot/spin.snx');
+    await waitFor(()=>launched().length===i+1,'spin fills process slot '+(i+1),20000);
+   }
+   await vm.key('f6');assert.equal((await vm.state()).modal,2);await vm.key('ret');const spins=launched();assert.equal(spins.length,6);const {terminalText}=require('./test-terminal-replacement');
+   const term=(await vm.state()).windows.find(w=>w.title==='SINO Shell');
+   for(const pid of spins){
+    await shell('kill '+pid);
+    await waitFor(async()=>{
+     const screen=await terminalText(vm,term.id,false);
+     return screen.includes('$ kill '+pid+'\n')&&screen.endsWith('gsh:/ $');
+    },'owned spin stops: '+pid,20000);
+   }
+   await close();await waitFor(async()=>await vm.value('free_pages')===before,'full processes reclaim');await vm.key('f6');w=await clock(vm);pass('Full window/process tables fail visibly and singleton can recover');
    await vm.key('f7');let settings=(await vm.state()).windows.find(q=>q.app===7);
    const click=async(x,y)=>{const width=await vm.value('gui_width'),height=await vm.value('gui_height');await vm.q.call('input-send-event',{events:[{type:'abs',data:{axis:'x',value:Math.round(x*32767/(width-1))}},{type:'abs',data:{axis:'y',value:Math.round(y*32767/(height-1))}}]});await vm.q.call('input-send-event',{events:[{type:'btn',data:{button:'left',down:true}}]});await vm.q.call('input-send-event',{events:[{type:'btn',data:{button:'left',down:false}}]});await sleep(120);};
    const at=async(x,y)=>click(settings.x+x,settings.y+y);const apply=async()=>{await at(settings.w-86,settings.h-34);assert.equal(await vm.value('settings_pending'),1);settings=(await vm.state()).windows.find(q=>q.app===7);await at(settings.w-86,settings.h-49);await waitFor(async()=>await vm.value('settings_pending')===0,'settings confirmed');};

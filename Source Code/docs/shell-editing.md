@@ -1,10 +1,9 @@
 # Shell line editing and formal terminal entries
 
-Open the normal terminal with F12 or `run /boot/term.snx`. Use
-`run /boot/term.snx /write` for the explicitly writable home session.
-The /g1, /g2, /g3 and /g3-write phase selectors are not public entries anymore;
-the window title is SINO Shell. F2 still opens the legacy rescue/development
-Shell pending G6's default desktop routing change.
+F2, the SINO menu and Terminal.app open writable **SINO Shell**. F12 opens
+a read-only session. A writable Shell can open another session with
+`run /boot/term.snx` or `run /boot/term.snx /write`. See
+[desktop-shell.md](desktop-shell.md) for routes and authority.
 
 ## One owner of the edit line
 
@@ -97,4 +96,4 @@ Host tests compile the actual line editor, repaint model and input queue.
 Real QMP scenarios exercise the formal F12 entry and integration with the
 existing read/write tools. Run stage2-test.ps1 and inspect an explicit saved
 run using stage2-summary.ps1. Full ANSI/PTY, grapheme-cluster editing, multiline
-paste and global default F2/menu migration retain separate scopes.
+paste retain separate scopes.

@@ -1,15 +1,14 @@
 # G5a everyday Shell commands
 
-Press F12 or use `run /boot/term.snx`. The new frontend starts at **120 by 25 cells**
+Press F2 for a writable session or F12 for a read-only session. The frontend starts at **120 by 25 cells**
 in an 872 by 522 pixel window (7-pixel ASCII cells plus margins). Resizing still
 maps to the actual available grid, up to 120 by 35. Non-ASCII glyphs occupy
-three cells under the existing font convention. The legacy F2 terminal keeps
-its historical implementation until G6 switches default entry points.
+three cells under the existing font convention. See [desktop-shell.md](desktop-shell.md) for all routes.
 
 ## Welcome, help and command discovery
 
 The plain-text SINO SH lettering is in **user/shell_banner.h**, derived from
-the existing src32/banner.h lettering. gsh prints it once at startup when at
+the archived Ring 0 banner lettering. gsh prints it once at startup when at
 least 56 columns are available, then the real version, current grid size and
 `/ = /home/user (read-only)` mapping. Narrow startup grids use the short welcome.
 No kernel drawing/color calls or ANSI parser are required for this banner.

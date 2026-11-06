@@ -7,6 +7,14 @@ typedef struct {
   const char *usage;
 } ShellCommand;
 static const ShellCommand shell_commands[] = {
+    {"run", 6, "run [-s] program.snx [argument]"},
+    {"kill", 6, "kill pid (applications started by this Shell)"},
+    {"install", 6, "install package.sxp | /quiet:path | /remove:id"},
+    {"nettest", 6, "nettest"},
+    {"whoami", 0, "whoami"},
+    {"hostname", 0, "hostname [name]"},
+    {"env", 0, "env"},
+    {"sleep", 1, "sleep seconds (0..3600)"},
  {"clear",0,"clear"},
     {"touch", 5, "touch path"},
     {"mkdir", 5, "mkdir path"},
@@ -60,8 +68,10 @@ static int shell_equal(const char *a, const char *b) {
   return *a == *b;
 }
 static const char *shell_alias(const char *s) {
-  const char *from[] = {"DIR", "dir", "TYPE", "type", "VER", "LS", "CAT", 0};
-  const char *to[] = {"ls", "ls", "cat", "cat", "ver", "ls", "cat"};
+  const char *from[] = {"DIR", "dir", "TYPE", "type", "VER", "LS", "CAT",
+                        "cls", "md", "del", "copy", "ren", 0};
+  const char *to[] = {"ls", "ls", "cat", "cat", "ver", "ls", "cat",
+                      "clear", "mkdir", "rm", "cp", "mv"};
   for (u32 i = 0; from[i]; i++)
     if (shell_equal(s, from[i]))
       return to[i];

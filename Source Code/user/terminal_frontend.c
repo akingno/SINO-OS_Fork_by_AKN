@@ -305,8 +305,13 @@ int main(void) {
         }
       }
       if (!child && InteractiveRequest(control, &intent) == 0) {
-        child = InteractiveStart(control, &intent,
-                                 intent.rights ? directory : 0, 1);
+        int boot = intent.program == IX_BOOTTOOLS;
+        int grant = intent.rights ? directory : 0;
+        if (boot)
+          grant = GrantDirectory("/boot", intent.rights | FS_DELEGATE);
+        child = InteractiveStart(control, &intent, grant > 0 ? grant : 0, 1);
+        if (boot && grant > 0)
+          Close(grant);
         changed = 1;
         if (child < 0)
           child = 0;

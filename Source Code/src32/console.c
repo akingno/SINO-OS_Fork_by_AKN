@@ -2,11 +2,11 @@
 #include "console.h"
 #include "gui.h"
 #include "graphics.h"
-#define SCROLL_LINES 512u
+#define SCROLL_LINES CON_ROWS
 static u32 cells[SCROLL_LINES][CON_COLS];
-static u32 utf_pending, edit_anchor = 0xffffffffu, edit_span;
+static u32 utf_pending;
 static int utf_need;
-static u32 line, column, scrollback, cursor_override;
+static u32 line, column;
 static u8 color = 7;
 static void blank(u32 n) {
   for (u32 i = 0; i < CON_COLS; i++)
@@ -32,10 +32,8 @@ void con_init(void) {
   outb(0x3d5, 7);
 }
 void con_clear(void) {
-  line = column = scrollback = utf_pending = 0;
+  line = column = utf_pending = 0;
   utf_need = 0;
-  edit_anchor = cursor_override = 0xffffffffu;
-  edit_span = 0;
   for (u32 i = 0; i < SCROLL_LINES; i++)
     blank(i);
   con_flush();
@@ -44,8 +42,6 @@ void con_color(u8 value) {
   color = value;
 }
 static void put_codepoint(u32 c) {
-  cursor_override = 0xffffffffu;
-  scrollback = 0;
   if (c == '\r') {
     column = 0;
     return;
@@ -121,64 +117,8 @@ void con_write(const char* s) {
   while (*s)
     con_put(*s++);
 }
-u32 con_position(void) {
-  return line * CON_COLS + column;
-}
-void con_edit(u32 anchor, const char* s, u32 length, u32 pos, u32 old_length) {
-  (void)old_length;
-  u32 end = anchor, caret = anchor;
-  int i = 0;
-  while (i < (int)length) {
-    if (i == (int)pos)
-      caret = end;
-    u32 c = utf_next(s, &i), width = c >= 128 ? 3 : 1;
-    if (end % CON_COLS + width > CON_COLS)
-      end += CON_COLS - end % CON_COLS;
-    end += width;
-  }
-  if (pos == length)
-    caret = end;
-  u32 last = end / CON_COLS;
-  for (u32 row = line + 1; row <= last; row++)
-    blank(row);
-  u32 span = end - anchor,
-      count = edit_anchor == anchor && edit_span > span ? edit_span : span;
-  for (u32 j = 0; j < count; j++) {
-    u32 at = anchor + j;
-    cells[(at / CON_COLS) % SCROLL_LINES][at % CON_COLS] =
-        ((u32)color << 24) | ' ';
-  }
-  u32 at = anchor;
-  i = 0;
-  while (i < (int)length) {
-    u32 c = utf_next(s, &i), width = c >= 128 ? 3 : 1;
-    if (at % CON_COLS + width > CON_COLS)
-      at += CON_COLS - at % CON_COLS;
-    cells[(at / CON_COLS) % SCROLL_LINES][at % CON_COLS] =
-        ((u32)color << 24) | c;
-    at++;
-    for (u32 j = 1; j < width; j++, at++)
-      cells[(at / CON_COLS) % SCROLL_LINES][at % CON_COLS] =
-          ((u32)color << 24) | 0x110000;
-  }
-  edit_anchor = anchor;
-  edit_span = span;
-  line = end / CON_COLS;
-  column = end % CON_COLS;
-  cursor_override = caret;
-  scrollback = 0;
-}
 void con_flush(void) {
-  if (gui_active) {
-    gui_console_changed();
-    return;
-  }
-  u32 latest = line >= CON_ROWS ? line - CON_ROWS + 1 : 0,
-      earliest = line >= SCROLL_LINES ? line - SCROLL_LINES + 1 : 0;
-  u32 available = latest > earliest ? latest - earliest : 0;
-  if (scrollback > available)
-    scrollback = available;
-  u32 start = latest - scrollback;
+  u32 start = line >= CON_ROWS ? line - CON_ROWS + 1 : 0;
   volatile u16* v = (volatile u16*)0xb8000;
   for (u32 y = 0; y < CON_ROWS; y++)
     for (u32 x = 0; x < CON_COLS; x++) {
@@ -187,42 +127,11 @@ void con_flush(void) {
       v[y * CON_COLS + x] =
           (u16)(((c >> 24) << 8) | ((c & 0x1fffff) < 128 ? (c & 127) : '?'));
     }
-  u32 p = cursor_override == 0xffffffffu ? con_position() : cursor_override;
-  cursor(scrollback || p < start * CON_COLS ||
+  u32 p = line * CON_COLS + column;
+  cursor(p < start * CON_COLS ||
                  p >= (start + CON_ROWS) * CON_COLS
              ? -1
              : (int)(p - start * CON_COLS));
-}
-void con_snapshot(u32* dest, u32* position) {
-  u32 latest = line >= CON_ROWS ? line - CON_ROWS + 1 : 0,
-      earliest = line >= SCROLL_LINES ? line - SCROLL_LINES + 1 : 0;
-  u32 available = latest > earliest ? latest - earliest : 0;
-  if (scrollback > available)
-    scrollback = available;
-  u32 start = latest - scrollback;
-  for (u32 y = 0; y < CON_ROWS; y++)
-    for (u32 x = 0; x < CON_COLS; x++)
-      dest[y * CON_COLS + x] =
-          start + y <= line ? cells[(start + y) % SCROLL_LINES][x] : 0x07000020;
-  u32 p = cursor_override == 0xffffffffu ? con_position() : cursor_override;
-  *position =
-      scrollback || p < start * CON_COLS || p >= (start + CON_ROWS) * CON_COLS
-          ? 0xffffffffu
-          : p - start * CON_COLS;
-}
-void con_scroll(int n) {
-  u32 latest = line >= CON_ROWS ? line - CON_ROWS + 1 : 0,
-      earliest = line >= SCROLL_LINES ? line - SCROLL_LINES + 1 : 0;
-  int next = (int)scrollback + n;
-  if (next < 0)
-    next = 0;
-  if ((u32)next > latest - earliest)
-    next = (int)(latest - earliest);
-  scrollback = (u32)next;
-  con_flush();
-}
-u32 con_scrolled(void) {
-  return scrollback;
 }
 void console_panic(const char* s, u32 vector, u32 error) {
   if (gui_active) {

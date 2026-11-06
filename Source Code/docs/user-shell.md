@@ -1,8 +1,9 @@
 # G3 strict user Shell
 
-Press F12 or run `run /boot/term.snx` from the legacy Shell. The Ring 3 frontend
-atomically starts strict `/boot/gsh.snx` through the [interactive broker](interactive-runs.md).
-F2, Terminal.app and the legacy menu route stay on the old Shell until G6.
+F2, the SINO menu and Terminal.app open a writable Shell. F12 opens a
+read-only session. The Ring 3 frontend atomically starts strict
+`/boot/gsh.snx` through the [interactive broker](interactive-runs.md).
+See [desktop-shell.md](desktop-shell.md) for desktop launch and compatibility.
 
 ## Authority and paths
 
@@ -17,7 +18,7 @@ reference. There is no kernel-global chdir or environment inheritance.
 root is rejected. Absolute paths restart at the grant root. Normalized paths
 fit 127 bytes. A failed open preserves the old cwd; successful navigation opens
 the new directory before closing the old reference. Existing VFS open-reference
-Busy rules apply while a directory is held. No write rights are delegated in the default session; /write is explicit.
+Busy rules apply while a directory is held. The desktop Terminal action requests the home write grant. F12 uses the read-only grant.
 
 Catalog ID3 is the Shell root. ID4 is `/boot/gcmd.snx`, a small external tool
 selected by argv[0]. Both executable nodes must resolve to read-only boot files.
@@ -53,22 +54,22 @@ Single/double quotes preserve spaces and empty arguments; adjacent quoted and
 unquoted fragments concatenate. Backslash escapes the next byte except inside
 single quotes. UTF-8 argument bytes are preserved. Unterminated quotes, trailing
 escapes, embedded NUL and unsupported control bytes are syntax errors.
-Unquoted `| & ; < > $` and backtick, `*`, `?` are rejected rather than interpreted.
-There are no pipelines, redirections, expansions, scripts or arbitrary executable
-paths in this version. For example, `args "" "a b"` passes two arguments after
+G6 accepts one unquoted `>` or `>>` for echo in a writable session.
+Other unquoted shell operators and variable expansions remain unsupported.
+For example, `args "" "a b"` passes two arguments after
 the command name, one empty and one containing a space.
 
 ## Input and task results
 
-Canonical editing and echo belong to the session backend. G3 collects committed
-input until newline; its 64-byte read buffer does not limit command length.
-Backspace cannot erase the prompt. History is a list, not raw-mode recall.
+G5c gives the user Shell ownership of the editable line and history recall.
+The frontend displays acknowledged edit frames. Workers may use backend
+canonical editing and echo.
 Ctrl+C at the prompt clears the unfinished line and retains code130/reason3;
 during a tool it cancels only that foreground worker. The broker restores the
 Shell foreground before delivering the once-consumed result. As in G2, queued
 typeahead is discarded during foreground transfer; wait for the next prompt
-before entering another external command. General GUI queue overflow and
-controlled paste remain separate follow-up work.
+before entering another external command. Input rejection and single-line
+paste are described in [shell-editing.md](shell-editing.md).
 
 Normal worker completion preserves its signed exit code and reason1. Cancel
 maps to code130/reason3, fault to 128+vector/reason2 (#UD gives134), other

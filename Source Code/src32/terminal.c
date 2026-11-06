@@ -8,7 +8,7 @@ typedef struct {
   u32 input_size, output_size, line_size, events;
   u8 input[1024], output[1024], line[256];
   TerminalEvent event[8];
-  u32 shell, task, root, rights, request_id, phase;
+  u32 shell, task, root, rights, request_id, phase, desktop;
   InteractiveSpec request;
   InteractiveResult result;
   TerminalEdit edit;
@@ -294,7 +294,10 @@ static int interactive_call(Terminal* t, Client* c, Object* control,
     const InteractiveSpec* q = (void*)r->buffer;
     if (q->size != sizeof(*q) || q->version != 1 || !q->id ||
         t->request_id == 0xffffffffu || q->id != t->request_id + 1 ||
-        (q->program != 2 && q->program != IX_COMMAND && q->program != IX_READTOOLS && q->program != IX_WRITETOOLS) || q->argc > RUN_ARGC ||
+        (q->program != 2 && q->program != IX_COMMAND &&
+         q->program != IX_READTOOLS && q->program != IX_WRITETOOLS &&
+         q->program != IX_BOOTTOOLS && q->program != IX_BOOTCOPY) ||
+        q->argc > RUN_ARGC ||
         q->bytes > RUN_ARGS || (q->rights & ~t->rights))
       return S_INVALID;
     u32 n = 0;
@@ -400,13 +403,14 @@ static int interactive_call(Terminal* t, Client* c, Object* control,
   Object* directory = q->rights ? handle_get(owner, r->value, OBJ_DIRECTORY,
                                              q->rights | FS_DELEGATE)
                                 : 0;
+  int boot = q->program == IX_BOOTTOOLS;
   if ((q->rights && !directory) || (!q->rights && r->value) ||
-      (role && directory &&
-       ((directory ? (u32)(directory - objects) + 1 : 0) != t->root))) {
-    page_free(q);
-    return S_DENIED;
-  }
-  status = process_interactive_start(owner, q, r->value, t, &child);
+      (boot && (!t->desktop || !directory || !filesys_is_boot_directory(directory))) ||
+      (q->program == IX_BOOTCOPY && (!t->desktop || !(t->rights & FS_COMMIT))) ||
+      (role && directory && !boot && (u32)(directory - objects) + 1 != t->root)) {
+    status = S_DENIED;
+  } else
+    status = process_interactive_start(owner, q, r->value, t, &child);
   if (status >= 0) {
     if (role) {
       t->task = child;
@@ -414,6 +418,7 @@ static int interactive_call(Terminal* t, Client* c, Object* control,
     } else {
       t->shell = child;
       t->rights = q->rights;
+      t->desktop = q->program == IX_SHELL && process_workspace_frontend(pid);
       if (directory) {
         directory->refs++;
         t->root = (u32)(directory - objects) + 1;
@@ -433,7 +438,7 @@ static int interactive_call(Terminal* t, Client* c, Object* control,
 
 int terminal_call(Handle* owner, u32 pid, u32 policy, const TerminalRequest* r,
                   FileAccess access) {
-  if (r->op < TERM_CREATE || r->op > TERM_EDIT_ACK)
+  if (r->op < TERM_CREATE || r->op > TERM_DESKTOP_RUN)
     return S_INVALID;
   if (r->op == TERM_CREATE) {
     if (policy == PROCESS_STRICT)
@@ -462,6 +467,15 @@ int terminal_call(Handle* owner, u32 pid, u32 policy, const TerminalRequest* r,
       r->op != TERM_INFO && r->op != TERM_READ && r->op != TERM_WRITE &&
       r->op != TERM_READY)
     return S_DENIED;
+  if (r->op == TERM_DESKTOP_RUN) {
+    if (!c || !t->desktop || !(t->rights & FS_COMMIT) ||
+        pid != t->shell || pid != t->foreground || t->closed)
+      return S_DENIED;
+    if (r->extra || r->bytes != sizeof(DesktopRun) ||
+        !access(r->buffer, sizeof(DesktopRun), 0))
+      return S_INVALID;
+    return process_desktop_run(pid, r->value, (const DesktopRun*)r->buffer);
+  }
   if(r->op>=TERM_EDIT && r->op<=TERM_EDIT_ACK){
     if(r->op==TERM_EDIT_VIEW){
       if(!control)return S_DENIED;

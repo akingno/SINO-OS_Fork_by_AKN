@@ -38,6 +38,8 @@ typedef struct {
   u32 reason, fault_vector;
   CliInfo* interactive;
   u32 directory; /* Explicit startup grant; never a global working directory. */
+  u32 boot_directory;
+  u32 desktop_owner;
 } Process;
 typedef struct {
   CliInfo cli;
@@ -167,6 +169,61 @@ int process_launch_args(const char* path, u32 caps, const char* arguments) {
 }
 int process_launch_strict(const char* path, const char* arguments) {
   return launch_policy(path, 0, arguments, PROCESS_STRICT, -1);
+}
+int process_workspace_frontend(u32 pid) {
+  for (int i = 0; i < NP; i++)
+    if (processes[i].state && processes[i].pid == pid)
+      return processes[i].workspace_frontend;
+  return 0;
+}
+static int desktop_run(u32 operation, const DesktopRun* request) {
+  if (request->path[sizeof(request->path) - 1] ||
+      request->argument[sizeof(request->argument) - 1])
+    return S_INVALID;
+  if (operation == DESKTOP_INSTALL)
+    return process_launch_args("/boot/setup.snx", CAP_HOME, request->argument);
+  if (operation == DESKTOP_NETTEST)
+    return process_launch("/boot/nettest.snx", CAP_HOME | CAP_NETWORK);
+  if (operation != DESKTOP_RUN_APP && operation != DESKTOP_RUN_STRICT)
+    return S_INVALID;
+
+  char path[VFS_PATH];
+  if (request->path[0] != '/' || vfs_canonical(request->path, path) < 0)
+    return S_INVALID;
+  int node = vfs_lookup(path);
+  if (node < 0)
+    return S_NOTFOUND;
+  int home = vfs_lookup("/home/user"), boot = vfs_lookup("/boot");
+  int parent = nodes[node].parent;
+  while (parent > 0 && parent != home && parent != boot)
+    parent = nodes[parent].parent;
+  u32 len = strlen(nodes[node].name);
+  if (parent <= 0 || nodes[node].dir || len < 5 ||
+      !streq(nodes[node].name + len - 4, ".snx") ||
+      (parent == boot && (!nodes[node].readonly || nodes[node].boot < 0)))
+    return S_DENIED;
+  if (operation == DESKTOP_RUN_STRICT)
+    return process_launch_strict(path, request->argument);
+  return process_launch_args(path, CAP_HOME, request->argument);
+}
+int process_desktop_run(u32 shell, u32 operation, const DesktopRun* request) {
+  if (operation == DESKTOP_KILL) {
+    u32 target;
+    memcpy(&target, request->path, sizeof(target));
+    for (int i = 0; i < NP; i++)
+      if (processes[i].state && processes[i].pid == target)
+        return processes[i].desktop_owner == shell
+                   ? process_kill(target, 0) : S_DENIED;
+    return S_NOTFOUND;
+  }
+  int pid = desktop_run(operation, request);
+  if (pid > 0)
+    for (int i = 0; i < NP; i++)
+      if (processes[i].state && processes[i].pid == (u32)pid) {
+        processes[i].desktop_owner = shell;
+        break;
+      }
+  return pid;
 }
 static int launch_policy(const char* path, u32 caps, const char* arguments,
                          u32 policy, int completion) {
@@ -336,10 +393,17 @@ int process_interactive_start(Handle* owner, const InteractiveSpec* spec,
   }
   if (next != spec->bytes)
     return S_INVALID;
-  const char* path = spec->program==IX_SHELL ? "/boot/gsh.snx" : spec->program==IX_COMMAND ? "/boot/gcmd.snx" : spec->program==IX_WRITETOOLS ? "/boot/writer.snx" : spec->program==IX_READTOOLS ? "/boot/tview.snx" : "/boot/brokerqa.snx";
-  if (spec->program != 1 && spec->program != 2 && spec->program!=IX_SHELL && spec->program!=IX_COMMAND && spec->program!=IX_READTOOLS && spec->program!=IX_WRITETOOLS)
+  int reader = spec->program == IX_READTOOLS || spec->program == IX_BOOTTOOLS;
+  int boot_copy = spec->program == IX_BOOTCOPY;
+  int writer = spec->program == IX_WRITETOOLS || boot_copy;
+  const char* path = spec->program==IX_SHELL ? "/boot/gsh.snx" : spec->program==IX_COMMAND ? "/boot/gcmd.snx" : writer ? "/boot/writer.snx" : reader ? "/boot/tview.snx" : "/boot/brokerqa.snx";
+  if (spec->program != 1 && spec->program != 2 && spec->program!=IX_SHELL && spec->program!=IX_COMMAND && !reader && !writer)
     return S_DENIED;
-  if (spec->program != IX_SHELL && spec->program != IX_WRITETOOLS && (spec->rights & ~(FS_READ|FS_LOOKUP|FS_ENUM))) return S_DENIED;
+  if (spec->program != IX_SHELL && !writer &&
+      (spec->rights & ~(FS_READ|FS_LOOKUP|FS_ENUM))) return S_DENIED;
+  if (boot_copy &&
+      spec->rights != (FS_READ | FS_LOOKUP | FS_WRITE | FS_CREATE))
+    return S_DENIED;
   if (spec->program == IX_COMMAND && spec->rights)
     return S_DENIED;
   int n = vfs_lookup(path);
@@ -392,6 +456,11 @@ int process_interactive_start(Handle* owner, const InteractiveSpec* spec,
       child->directory = status;
     else
       object_unref(grant);
+  }
+  if (status >= 0 && boot_copy) {
+    status = filesys_boot_reader(handles);
+    if (status >= 0)
+      child->boot_directory = status;
   }
   if (status >= 0)
     status = terminal_bind_interactive(session, handles, *pid, cli);
@@ -655,11 +724,13 @@ static int syscall(Frame* f) {
       if (!role) return STREAM_READABLE | (run->input_position == run->input_bytes ? STREAM_EOF : 0);
       return run->length[role - 1] < RUN_BYTES ? STREAM_WRITABLE : STREAM_LIMIT;
     }
-    case SYS_START_DIRECTORY:
-      if (a || b || c) return S_INVALID;
-      if (!current->directory) return S_NOTFOUND;
-      return handle_get(current->handles, current->directory, OBJ_DIRECTORY, 0)
-                 ? (int)current->directory : S_BADHANDLE;
+    case SYS_START_DIRECTORY: {
+      if (a > 1 || b || c) return S_INVALID;
+      u32 directory = a ? current->boot_directory : current->directory;
+      if (!directory) return S_NOTFOUND;
+      return handle_get(current->handles, directory, OBJ_DIRECTORY, 0)
+                 ? (int)directory : S_BADHANDLE;
+    }
     case SYS_RUN_START: {
       if (c || (b != sizeof(RunSpec) && b != sizeof(RunSpecV2) && b != sizeof(RunSpecV3)) ||
           !user_access_ok(a, b, 0)) return S_INVALID;

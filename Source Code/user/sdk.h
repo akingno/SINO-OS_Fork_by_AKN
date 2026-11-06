@@ -81,6 +81,9 @@ static inline int DirectoryCommit(int directory,CommitInfo *out){return api(SYS_
 static inline int StartDirectory(void) {
   return api(SYS_START_DIRECTORY, 0, 0, 0);
 }
+static inline int StartBootDirectory(void) {
+  return api(SYS_START_DIRECTORY, 1, 0, 0);
+}
 static inline int OpenAt(int directory, const char *path, u32 rights, u32 flags) {
   OpenRequest request = {(u32)path, rights, flags};
   return api(SYS_OPEN_AT, (u32)directory, (u32)&request, sizeof(request));

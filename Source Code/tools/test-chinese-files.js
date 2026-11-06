@@ -1,5 +1,6 @@
 const {files,rowPoint,expectNotice}=require('./files-test');
-const {scene}=require('./calculator-test');
+const {scene,waitFor}=require('./calculator-test');
+const {terminalText,shellCommand}=require('./test-terminal-replacement');
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {VM,sleep,root}=require('./vm-test');
 const {volume}=require('./test-volume');
@@ -35,7 +36,16 @@ function pass(s){results.push(s);console.log('PASS '+s);}
  await open('/home/user/Desktop/中文');w=await active(1);pt=await filePoint(w,'新文件.txt');await right(...pt);await context(5);await expectNotice(vm);await vm.key('ret');await nodePath('/home/user/Desktop/中文/新文件.txt');pass('Name conflicts report an error and preserve the source');
  await vm.key('ctrl','w');await vm.drag(62,170,280,400);const folder=await nodePath('/home/user/Desktop/中文');assert((await vm.memory(vm.symbols.desk_x+folder.id*4,4)).readInt32LE()>200);await vm.double(280,400);await active(1);await vm.key('ctrl','w');pass('Desktop icons can be repositioned and opened at their new position');
  await sleep(400);await vm.stop();let saved=volume(path.join(vm.run,'data.img'));assert.equal(saved.current.records.get('/home/user/Trash/新文件.txt').data.toString(),'中文\n你好');await vm.start();await nodePath('/home/user/Desktop/中文/新文件.txt','中文\n你好');await nodePath('/home/user/Trash/新文件.txt','中文\n你好');await open('/home/user/Desktop');await vm.shot('03-chinese-files');pass('Chinese filenames, text and file moves survive an actual reboot');
- await vm.key('ctrl','w');await vm.key('f2');await vm.type('echo ');await vm.key('ctrl','spc');await vm.type('zhongwen');await vm.key('spc');await vm.key('left');await vm.key('backspace');await vm.key('end');await vm.key('ctrl','spc');await vm.type(' > /home/user/Desktop/Terminal.txt\n');await nodePath('/home/user/Desktop/Terminal.txt','文\n');
- await vm.type('cat /home/user/Desktop/Terminal.txt\n');await vm.shot('04-chinese-terminal');const screen=await vm.memory(vm.symbols.terminal,80*26*4);assert(Array.from({length:80*26},(_,i)=>screen.readUInt32LE(i*4)&0x1fffff).includes('文'.charCodeAt(0)));pass('Terminal Pinyin input, Unicode line editing, shell output and file creation');
+ await vm.key('ctrl','w');await vm.key('f2');
+ const terminal=await waitFor(async()=>(await vm.state()).windows.find(w=>w.title==='SINO Shell'),'native Terminal');
+ await waitFor(async()=>(await terminalText(vm,terminal.id,false)).endsWith('gsh:/ $'),'Terminal prompt');
+ await vm.type('echo ');await vm.key('ctrl','spc');await vm.type('zhongwen');await vm.key('spc');
+ await vm.key('left');await vm.key('backspace');await vm.key('end');await vm.key('ctrl','spc');
+ await vm.type(' > /home/user/Desktop/Terminal.txt\n');
+ await waitFor(async()=>(await terminalText(vm,terminal.id,false)).includes('published in RAM'),'redirect published');
+ await nodePath('/home/user/Desktop/Terminal.txt','文\n');
+ await shellCommand(vm,terminal,'cat /home/user/Desktop/Terminal.txt','文\n');
+ await vm.shot('04-chinese-terminal');
+ pass('Terminal Pinyin input, Unicode line editing, shell output and file creation');
  fs.writeFileSync(path.join(vm.run,'report.json'),JSON.stringify({date:new Date().toISOString(),checks:results},null,2));
  }catch(e){console.error(e);try{console.error(await vm.state());await vm.shot('failure');}catch{}process.exitCode=1;}finally{await vm.stop();}})();

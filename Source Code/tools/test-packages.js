@@ -4,7 +4,7 @@ const {VM,sleep}=require('./vm-test'),{volume}=require('./test-volume');
  await vm.start({fresh:true});await vm.key('f2');await vm.type('run /boot/instest.snx\n');
  for(let i=0;i<150&&!vm.log().includes('INSTALL SELFTEST');i++)await sleep(50);
  assert(vm.log().includes('INSTALL SELFTEST PASS'),vm.log());results.push('Guest package validation, injected failure rollback, config/shortcut rollback, install, repair and uninstall');
- await vm.key('f8');await sleep(150);let w=(await vm.state()).windows.find(w=>w.app===9);assert(w,'separate installer window');
+ await vm.key('f8');await sleep(150);let w=(await vm.state()).windows.find(w=>w.app===9&&w.title!=='SINO Shell');assert(w,'separate installer window');
  async function next(){await vm.click(w.x+495,w.y+405);await sleep(120);}
  await vm.shot('01-welcome');await next();await vm.shot('02-license');await next();await vm.shot('03-path');await next();await vm.shot('04-components');const committed=(vm.log().match(/INSTALL: Transaction committed/g)||[]).length;await next();
  for(let i=0;i<150&&(vm.log().match(/INSTALL: Transaction committed/g)||[]).length<=committed;i++)await sleep(50);

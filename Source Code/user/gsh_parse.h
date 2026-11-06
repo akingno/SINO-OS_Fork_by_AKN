@@ -57,6 +57,23 @@ static int shell_parse(const char *input, u32 length, ShellWords *words) {
   }
   return 0;
 }
+/* A single unquoted output operator is recognized by the caller. */
+static inline u32 shell_output_operator(const char* input, u32 length) {
+  char quote = 0;
+  for (u32 i = 0; i < length; i++) {
+    char c = input[i];
+    if (c == '\\' && quote != '\'') {
+      i++;
+    } else if (c == quote) {
+      quote = 0;
+    } else if (!quote && (c == '\'' || c == '"')) {
+      quote = c;
+    } else if (!quote && c == '>') {
+      return i;
+    }
+  }
+  return length;
+}
 /* Normalize within an explicit grant root. Absolute syntax denotes that root.
  */
 static int shell_path(const char *cwd, const char *path, char out[128]) {

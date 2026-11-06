@@ -65,9 +65,23 @@ const legacy=process.argv.includes('--legacy');
    await waitFor(async()=>await vm.value('free_pages')===beforePages,'full window table reclaimed');assert.equal(await refs(),beforeRefs);
    pass('Window exhaustion reports visibly and all eight instances are reclaimable');
    const logStart=vm.log().length;
-   await shell(Array(8).fill('run /boot/spin.snx').join('; '));await vm.key('f4');assert.equal((await vm.state()).modal,2);await vm.key('ret');
-   const spins=[...vm.log().slice(logStart).matchAll(/PROCESS start spin.snx pid=0x([0-9A-F]+)/g)].map(m=>parseInt(m[1],16));assert.equal(spins.length,8);
-   await shell(spins.map(pid=>'kill '+pid).join('; '));await close();
+   const launched=()=>[...vm.log().slice(logStart).matchAll(/PROCESS start spin.snx pid=0x([0-9A-F]+)/g)].map(m=>parseInt(m[1],16));
+   for(let i=0;i<6;i++){
+    await shell('run /boot/spin.snx');
+    await waitFor(()=>launched().length===i+1,'spin fills process slot '+(i+1),20000);
+   }
+   await vm.key('f4');assert.equal((await vm.state()).modal,2);await vm.key('ret');
+   const spins=launched();assert.equal(spins.length,6);
+   const {terminalText}=require('./test-terminal-replacement');
+   const term=(await vm.state()).windows.find(w=>w.title==='SINO Shell');
+   for(const pid of spins){
+    await shell('kill '+pid);
+    await waitFor(async()=>{
+     const screen=await terminalText(vm,term.id,false);
+     return screen.includes('$ kill '+pid+'\n')&&screen.endsWith('gsh:/ $');
+    },'owned spin stops: '+pid,20000);
+   }
+   await close();
    await waitFor(async()=>await vm.value('free_pages')===beforePages,'full process table reclaimed');pass('Process exhaustion, preempted loops, failure notice and recovery');
    await vm.key('f4');w=await calculator(vm);await vm.type('6*7=');
    await vm.key('f7');

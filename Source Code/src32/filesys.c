@@ -18,6 +18,10 @@ static FileObject* value(Object* o) { return (FileObject*)o->value; }
 static int live(int n, u32 generation) {
   return n >= 0 && n < VFS_NODES && nodes[n].used && vfs_generation[n] == generation;
 }
+int filesys_is_boot_directory(Object* object) {
+  FileObject* dir = value(object);
+  return live(dir->node, dir->generation) && dir->node == vfs_lookup("/boot");
+}
 static FileObject* get(Handle* owner, u32 h, u32 type, u32 rights) {
   Object* o = handle_get(owner, h, type, rights);
   if (!o) return 0;
@@ -113,6 +117,9 @@ static int grant(Handle* owner, u32 caps, const char* path, u32 rights) {
   int h = reserve(owner, OBJ_DIRECTORY, rights, &f);
   if (h >= 0) bind(f, n);
   return h;
+}
+int filesys_boot_reader(Handle* owner) {
+  return grant(owner, 0, "/boot", FS_READ | FS_LOOKUP);
 }
 static int open_at(Handle* owner, u32 h, const char* path, const OpenRequest* r) {
   if (!r->rights || (r->rights & ~FS_RIGHTS) || (r->flags & ~15u) ||

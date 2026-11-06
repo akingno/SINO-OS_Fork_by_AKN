@@ -2,7 +2,7 @@
    Expected text is checked independently of the command's return status. */
 const fs = require('node:fs');
 const path = require('node:path');
-const shellSource = fs.readFileSync(path.join(__dirname, '../src32/shell.c'), 'utf8');
+const shellSource = fs.readFileSync(path.join(__dirname, '../src32/shell_bridge.c'), 'utf8');
 const commandTableMatch = shellSource.match(/static\s+const\s+char\s*\*\s*commands\s*\[\s*\]\s*=\s*\{([^}]+)\}/);
 if (!commandTableMatch) throw Error('Cannot locate the Shell public command table; review the help-coverage adapter.');
 const commandTable = commandTableMatch[1];

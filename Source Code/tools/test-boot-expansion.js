@@ -79,11 +79,11 @@ const pass = name => { checks.push(name); console.log('PASS ' + name); };
         assert.equal(await vm.value('storage_ready'),1);
         pass('installed HDD boots with optical media disconnected and full RAM image');
         await vm.key('f2'); await vm.type('cat /boot/extent.txt\n');
-        await waitFor(async()=>{
-            const cells=await vm.memory(vm.symbols.terminal,80*25*4);
-            let text=''; for(let i=0;i<cells.length;i+=4){const cp=cells.readUInt32LE(i)&0x1fffff;text+=cp<=0x10ffff?String.fromCodePoint(cp):' ';}
-            return text.includes('EXPANDED TAIL PASS');
-        },'read fragmented tail file');
+        const terminal = (await vm.state()).windows.find(w => w.title === 'SINO Shell');
+        assert(terminal);
+        const {terminalText} = require('./test-terminal-replacement');
+        await waitFor(async()=> (await terminalText(vm,terminal.id,false)).includes('EXPANDED TAIL PASS'),
+            'read fragmented tail file');
         pass('filesystem reads fragmented file beyond old capacity on installed HDD');
         await vm.type('run /boot/probe.snx /boot-extent\n');
         await waitFor(async()=>vm.log().includes('BOOT EXTENT RANGE PASS'),'cross cluster range API');

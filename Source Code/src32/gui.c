@@ -5,7 +5,6 @@
 #include "rtc.h"
 /* Native Platinum desktop and cooperative built-in applications. */
 #include "graphics.h"
-#include "console.h"
 #include "vfs.h"
 #include "storage.h"
 #include "settings.h"
@@ -72,8 +71,7 @@ static char ime_text[32];
 static int last_node = -999;
 static u32 last_click;
 static char clock_text[9];
-static u32 clock_pid;
-static u32 terminal[CON_ROWS * CON_COLS];
+static u32 clock_pid, desktop_terminal_pid;
 static const TextKey appnames[] = {
     GUI_LABEL_DESKTOP,           GUI_LABEL_FILES,    GUI_LABEL_TEXTEDIT,
     GUI_LABEL_CALCULATOR,        GUI_LABEL_PAINT,    GUI_LABEL_CLOCK,
@@ -501,6 +499,23 @@ static int launch(int app) {
           GUI_LABEL_CANNOT_START_CALCULATOR_CHECK_BOOT_FILES_OR_CLOSE_SOME_APPLICATIONS));
     return -1;
   }
+  if (app == TERM) {
+    if (desktop_terminal_pid && process_alive(desktop_terminal_pid)) {
+      for (int i = 0; i < NW; i++)
+        if (windows[i].used && windows[i].app == USERAPP &&
+            user_owner[i] == desktop_terminal_pid) {
+          focus(i);
+          return i;
+        }
+      return -1;
+    }
+    int pid = count < NW ? process_launch_args("/boot/term.snx", 0, "/write") : -1;
+    if (pid < 0)
+      notice(locale_text(GUI_LABEL_CANNOT_START_NATIVE_APPLICATION));
+    else
+      desktop_terminal_pid = (u32)pid;
+    return -1;
+  }
   if (app == SYSTEM)
     settings_open();
   if (app == INSTALL)
@@ -509,19 +524,17 @@ static int launch(int app) {
     folder_open(vfs_lookup("/home/user"));
     return gui_focus;
   }
-  if (app == TERM || app == SYSTEM || app == INSTALL)
+  if (app == SYSTEM || app == INSTALL)
     for (int i = 0; i < NW; i++)
       if (windows[i].used && windows[i].app == app) {
         focus(i);
         return i;
       }
-  int width = app == TERM      ? 600
-              : app == PAINT   ? 590
+  int width = app == PAINT   ? 590
               : app == SYSTEM  ? 740
               : app == INSTALL ? 900
                                : 660,
-      height = app == TERM      ? 552
-               : app == PAINT   ? 466
+      height = app == PAINT   ? 466
                : app == SYSTEM  ? 550
                : app == INSTALL ? 650
                                 : 460;
@@ -1263,29 +1276,6 @@ static void paint_draw(Window* w) {
       g_box(x - 2, 418, 31, 31, INK, colors[j]);
   }
 }
-static void terminal_draw(Window* w) {
-  static const u32 palette[16] = {0x171c25, 0x7489bc, 0x8bba9b, 0x7eb5c2,
-                                  0xc58088, 0xad91bd, 0xd6bd8a, 0xd6dce6,
-                                  0x7f899c, 0x94ade3, 0xa8d6a9, 0x99d4da,
-                                  0xf0a5a7, 0xd8b5e8, 0xf1dda5, 0xf8fafc};
-  u32 pos;
-  con_snapshot(terminal, &pos);
-  g_fill(2, 30, w->w - 4, w->h - 32, 0x171c25);
-  int visible = min(CON_ROWS, (w->h - 68) / 18), skip = CON_ROWS - visible;
-  for (int y = 0; y < visible; y++)
-    for (int x = 0; x < CON_COLS; x++) {
-      u32 c = terminal[(y + skip) * 80 + x];
-      if ((c & 0x1fffff) != 0x110000)
-        g_glyph(2, 20 + x * 7, 43 + y * 18, c & 0x1fffff,
-                palette[(c >> 24) & 15]);
-    }
-  if (pos != 0xffffffffu && gui_focus == (int)(w - windows) &&
-      (int)(pos / 80) >= skip)
-    g_fill(20 + (int)(pos % 80) * 7, 60 + ((int)(pos / 80) - skip) * 18, 6, 1,
-           0xc5d2ea);
-  g_text(0, 20, w->h - 31,
-         locale_text(GUI_LABEL_SINO_SH_CTRL_L_CLEAR_PAGE_UP_SCROLL), 0x7d8da6);
-}
 static void user_draw(int id) {
   UiCanvas* scene = user_scene[id];
   Window* w = &windows[id];
@@ -1386,9 +1376,6 @@ static void window_draw(int id) {
       break;
     case PAINT:
       paint_draw(w);
-      break;
-    case TERM:
-      terminal_draw(w);
       break;
     case SYSTEM:
       settings_draw(w->w, w->h);
@@ -1840,7 +1827,7 @@ static void drop_draw(void) {
 static int ime_editable(void) {
   return modal == 1 ||
          (!modal && gui_focus >= 0 &&
-          (windows[gui_focus].app == EDIT || windows[gui_focus].app == TERM ||
+          (windows[gui_focus].app == EDIT ||
            (windows[gui_focus].app == USERAPP &&
             !(user_guard[gui_focus] & WINDOW_NO_IME))));
 }
@@ -1860,14 +1847,6 @@ static void ime_commit(const char* text, int n) {
     memcpy(dialog + dialog_len, text, (u32)n);
     dialog_len += n;
     dialog[dialog_len] = 0;
-  } else if (gui_focus >= 0 && windows[gui_focus].app == TERM) {
-    char encoded[128];
-    if (n > 127)
-      return;
-    memcpy(encoded, text, (u32)n);
-    encoded[n] = 0;
-    shell_text(encoded);
-    changed(gui_focus);
   } else if (gui_focus >= 0 && windows[gui_focus].app == USERAPP) {
     for (int offset = 0; offset < n;) {
       u32 cp = utf_next(text, &offset);
@@ -1965,15 +1944,6 @@ static Rect ime_bounds(void) {
     if (w->app == USERAPP)
       return (Rect){max(8, min(GUI_WIDTH - 458, w->x + 20)),
                     max(32, min(GUI_HEIGHT - 84, w->y + w->h - 78)), 450, 64};
-    if (w->app == TERM) {
-      u32 pos;
-      con_snapshot(terminal, &pos);
-      if (pos != 0xffffffffu)
-        return (Rect){
-            max(8, min(GUI_WIDTH - 458, w->x + 20 + (int)(pos % 80) * 7)),
-            max(32, min(GUI_HEIGHT - 84, w->y + 65 + (int)(pos / 80) * 18)),
-            450, 64};
-    }
     int l, c;
     edit_position(w, w->caret, &l, &c);
     int pixel = 0;
@@ -2475,19 +2445,6 @@ static void keyboard(int key) {
     command(7);
     return;
   }
-  if (w && w->app == TERM) {
-    if (key == 0x149)
-      con_scroll(10);
-    else if (key == 0x151)
-      con_scroll(-10);
-    else {
-      shell_key(key);
-      if (key == 13)
-        all_changed();
-    }
-    changed(id);
-    return;
-  }
   if ((!w) && (key == 3 || key == 24 || key == 22)) {
     edit_command(key);
     return;
@@ -2562,11 +2519,6 @@ void gui_refresh(void) {
 }
 void gui_open_installer(void) {
   launch(INSTALL);
-}
-void gui_console_changed(void) {
-  for (int i = 0; i < NW; i++)
-    if (windows[i].used && windows[i].app == TERM)
-      changed(i);
 }
 void gui_init(void) {
   graphics_init();
@@ -2703,8 +2655,6 @@ void gui_step(void) {
             (UiEvent){MSG_SCROLL, (u32)gui_focus, 0, 0, e.wheel * 3});
       else if (w->app == EDIT)
         w->scroll = max(0, w->scroll + e.wheel * 3);
-      else if (w->app == TERM)
-        con_scroll(-e.wheel * 3);
       changed(gui_focus);
     }
     if (menu >= 0 && !modal) {

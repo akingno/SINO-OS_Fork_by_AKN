@@ -9,7 +9,6 @@ extern int gui_width, gui_height;
 extern int gui_active;
 void gui_init(void);
 void gui_step(void);
-void gui_console_changed(void);
 void gui_panic(const char *, u32, u32);
 void gui_tests(void);
 void gui_refresh(void);

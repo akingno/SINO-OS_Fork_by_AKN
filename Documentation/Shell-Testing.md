@@ -12,7 +12,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\test.ps1 -SelfTest -Suite 
 
 每次调用会编译专用 ISO，启动无窗口 QEMU，在本轮新建的 16 MiB 私有磁盘上执行命令，然后关闭测试 VM。开发桌面可以继续使用自己的磁盘。构建和测试期间持有当前 checkout 的 build.lock，以免其他开发入口覆盖共享中间产物。
 
-命令是单行 UTF-8，最大 255 字节。cwd 和 `$?` 在同一测试 VM 的连续请求中保留。命令走现有 Shell 的 execute 与 Sink，支持现有变量、管道、脚本及重定向语法。普通输出和错误使用现有合并语义。文件只保存在本轮私有盘中，需要跨请求验证时使用 SelfTest 或扩展同一测试会话。
+命令是单行 UTF-8，最大 255 字节。cwd 和 `$?` 在同一测试 VM 的连续请求中保留。命令走测试镜像中 src32/shell_bridge.c 的历史无窗口解释器，支持变量、管道、脚本及重定向语法。G6 桌面终端通过 Ring 3 Shell 运行，其命令和授权见 [桌面 Shell](../Source%20Code/docs/desktop-shell.md)。普通输出和错误使用现有合并语义。文件只保存在本轮私有盘中，需要跨请求验证时使用 SelfTest 或扩展同一测试会话。
 
 ## 执行结果
 

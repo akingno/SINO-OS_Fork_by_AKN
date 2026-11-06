@@ -1,3 +1,5 @@
+const {waitFor}=require('./calculator-test');
+const {shellCommand}=require('./test-terminal-replacement');
 /* Build the public demo disk exclusively from a fresh private virtual disk. */
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict'),crypto=require('node:crypto');
 const {VM,sleep,root}=require('./vm-test'),{volume}=require('./test-volume');
@@ -9,10 +11,17 @@ const hash=b=>crypto.createHash('sha256').update(b).digest('hex');
  const next=()=>vm.click(setup.x+setup.w-92,setup.y+setup.h-39);
  await next();await next();await next();assert.equal(await vm.value('install_step'),3);
  await vm.click(setup.x+609,setup.y+setup.h-96);assert.equal(await vm.value('region_count'),2);await next();await next();
- for(let i=0;i<500&&!await vm.value('install_complete');i++)await sleep(25);assert.equal(await vm.value('install_complete'),1);await vm.stop();
+ await waitFor(async()=>{
+  if((await vm.value('install_step'))<5)throw Error('Installer rejected the disk plan');
+  return await vm.value('install_complete')===1;
+ },'expanded image copy and readback',30000);await vm.stop();
  await vm.start({hardBoot:true});assert(!(await vm.q.call('query-block')).some(b=>b.inserted&&b.inserted.file.endsWith('.iso')));
  await vm.key('f2');for(const name of ['sysbasic','files','editor','tasks','hello']){let at=vm.log().length;await vm.type(`install /quiet:/boot/${name}.sxp\n`);await wait('QUIET INSTALL PASS',at);}
- await vm.type('mkdir /home/user/Projects\n');for(const ext of ['prj','frm','bas'])await vm.type(`cp /boot/first.${ext} /home/user/Projects/First.${ext}\n`);await vm.type('sync\n');await vm.key('ctrl','w');await vm.key('f11');
+ const shell=await find('SINO Shell');
+ await shellCommand(vm,shell,'mkdir /home/user/Projects');
+ for(const ext of ['prj','frm','bas'])
+  await shellCommand(vm,shell,`cp /boot/first.${ext} /home/user/Projects/First.${ext}`,'published in RAM');
+ await shellCommand(vm,shell,'sync','home snapshot durable');await vm.key('ctrl','w');await vm.key('f11');
  let ide=await find('SysBASIC 0.3'),click=(x,y)=>vm.click(ide.x+x,ide.y+y);await vm.key('ctrl','o');await vm.type('/home/user/Projects/First.prj');await vm.key('ret');await wait('SYSBASIC PROJECT LOADED');
  await vm.key('f5');await click(145+65,148+95);await wait('SYSBASIC: Value: 1');await vm.shot('first-project-running');await vm.key('esc');
  await click(700,71);await click(560,450);await wait('SYSBASIC EXECUTABLE BUILT');let app=await find('第一个程序');await vm.click(app.x+24+65,app.y+54+95);await wait('SYSBASIC APP: Value: 1');await vm.key('ctrl','w');

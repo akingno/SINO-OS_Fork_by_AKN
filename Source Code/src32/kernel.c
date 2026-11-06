@@ -251,6 +251,7 @@ void irq_dispatch(Frame* f) {
       f->eax = 32;
       return;
     }
+#if defined(SINO_SHELL_BRIDGE) || defined(SELFTEST)
     extern u32 native_base, native_size;
     extern int native_running;
     if (!native_running) {
@@ -267,6 +268,7 @@ void irq_dispatch(Frame* f) {
       f->eax = f->edx;
       return;
     }
+#endif
     f->eax = 0xffffffffu;
     return;
   }
@@ -276,7 +278,9 @@ void irq_dispatch(Frame* f) {
       ticks++;
       process_interrupt(f);
     }
+#ifdef SINO_SHELL_BRIDGE
     if (irq == 4) shell_bridge_irq();
+#endif
     if (irq == 1 || irq == 12) {
       u8 s = inb(0x64);
       if (s & 1) {
@@ -627,7 +631,10 @@ void kmain(void) {
   net_init();
   kernel_tests();
   net_tests();
-  shell_init();
+  vfs_init();
+#if defined(SINO_SHELL_BRIDGE) || defined(SELFTEST)
+  shell_command_init();
+#endif
   disk_init();
   storage_init();
   settings_init();
@@ -644,12 +651,16 @@ void kmain(void) {
 #endif
   if (vfs_lookup("/home/user/.sino/rollback/journal") >= 0)
     process_launch_args("/boot/setup.snx", CAP_HOME, "/recover-only");
+#ifdef SINO_SHELL_BRIDGE
   shell_bridge_init();
+#endif
   pr_debug("SINO desktop ready\n");
   for (;;) {
     rtc_poll();
     gui_step();
+#ifdef SINO_SHELL_BRIDGE
     shell_bridge_poll();
+#endif
     net_poll();
     process_step();
     cli();

@@ -106,8 +106,8 @@ Stage F now provides a headless text-session backend with controller/client
 handles, foreground input, line/raw mode, bounded echo/output and typed
 resize/key/EOF/hangup events. Client handles support StreamRead/Write/Ready and
 the existing bounded runtime helpers. See [terminal-sessions.md](terminal-sessions.md).
-F12 and `run /boot/term.snx` open the strict user Shell; F2, Terminal.app
-and the legacy menu route stay on the old Shell until G6.
+F2, Terminal.app and the SINO menu launch the Ring 3 terminal with a
+writable home workspace. F12 starts a read-only session. See [desktop-shell.md](desktop-shell.md).
 See [user-shell.md](user-shell.md) for commands, read-only home paths and results.
 
 G2 interactive startup and the narrow session broker use the existing terminal syscall. See [interactive-runs.md](interactive-runs.md) and user/interactive.h for atomic argv/directory/stdio binding, result and cleanup contracts.
@@ -115,8 +115,8 @@ G2 interactive startup and the narrow session broker use the existing terminal s
 G4 supplies strict read-only terminal file tools, `ls/stat/cat/view`, through
 the same Shell entry. Their range reads, revision checks, text decoding and
 paging remain in user/tview.c and file_text.h; see [file-tools.md](file-tools.md).
-Application welcome text belongs in user programs, while src32/shell.c still
-contains the legacy rescue/development Shell and its original banner.
+The user Shell owns its welcome banner. The former Ring 0 desktop terminal
+is archived outside the build. The host protocol uses src32/shell_bridge.c.
 
 G5a command metadata, user welcome and checked text scans live in user/shell_commands.h, shell_banner.h and text_scan.h. The default frontend is120 columns; the new read-only Calendar query leaves SYS_TIME unchanged. See [shell-tools.md](shell-tools.md).
 

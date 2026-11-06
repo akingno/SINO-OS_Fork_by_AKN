@@ -2,7 +2,7 @@
  */
 #include "stream.h"
 #include "gsh_parse.h"
-#include "shell_commands.h"
+#include "shell_echo.h"
 static CliInfo cli;
 static int put(const char *text) {
   u32 written;
@@ -23,6 +23,21 @@ int main(void) {
   }
   if (streq(command, "fault"))
     __asm__ volatile("ud2");
+  if (streq(command, "sleep")) {
+    i32 seconds;
+    if (cli.argc != 2 || shell_integer(cli.bytes + cli.offsets[1], &seconds) ||
+        seconds < 0 || seconds > 3600) {
+      put("sleep: expected 0..3600 seconds\n");
+      return 2;
+    }
+    SystemInfo info;
+    if (QuerySystemInfo(&info))
+      return 1;
+    u32 begin = StreamTicks(), duration = (u32)seconds * info.ticks_hz;
+    while (!StreamTimeoutExpired(StreamTicks(), begin, duration))
+      Yield(1);
+    return 0;
+  }
   if (streq(command, "exitcode")) {
     i32 code;
     if (cli.argc != 2 || shell_integer(cli.bytes + cli.offsets[1], &code))
@@ -30,44 +45,15 @@ int main(void) {
     return code;
   }
   if (streq(command, "echo")) {
-    u32 first = 1;
-    int newline = 1, escapes = 0;
-    while (first < cli.argc) {
-      const char *arg = cli.bytes + cli.offsets[first];
-      if (streq(arg, "-n"))
-        newline = 0;
-      else if (streq(arg, "-e"))
-        escapes = 1;
-      else
-        break;
-      first++;
+    char out[1024];
+    int bytes = shell_echo(cli.bytes, cli.offsets + 1, cli.argc - 1,
+                           out, sizeof(out));
+    if (bytes < 0) {
+      put("echo: unsupported escape\n");
+      return 2;
     }
-    if (escapes)
-      for (u32 i = first; i < cli.argc; i++)
-        for (const char *p = cli.bytes + cli.offsets[i]; *p; p++)
-          if (*p == '\\') {
-            p++;
-            if (!*p || (*p != 'n' && *p != 't' && *p != '\\')) {
-              put("echo: unsupported escape\n");
-              return 2;
-            }
-          }
-    for (u32 i = first; i < cli.argc; i++) {
-      if (i > first && put(" ") < 0)
-        return 1;
-      const char *p = cli.bytes + cli.offsets[i];
-      for (; *p; p++) {
-        char c = *p;
-        if (escapes && c == '\\') {
-          p++;
-          c = *p == 'n' ? '\n' : *p == 't' ? '\t' : '\\';
-        }
-        char out[2] = {c, 0};
-        if (put(out) < 0)
-          return 1;
-      }
-    }
-    return newline && put("\n") < 0;
+    u32 written;
+    return StreamWriteAllFor(cli.out, out, (u32)bytes, 300, &written) < 0;
   }
   if ((streq(command, "date") || streq(command, "time") ||
        streq(command, "uptime") || streq(command, "about") ||

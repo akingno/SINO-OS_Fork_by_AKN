@@ -1,8 +1,8 @@
 # G5b explicitly writable Shell workspace
 
-`run /boot/term.snx` remains read-only. Use
-`run /boot/term.snx /write` to explicitly select a writable session. Both
-use strict caps=0 gsh and tools; the frontend also retains caps=0.
+F2, the SINO menu and Terminal.app open the writable workspace. F12 opens a
+read-only session. The frontend also accepts the explicit /write argument.
+The Shell, tools and frontend have caps=0. See [desktop-shell.md](desktop-shell.md).
 
 ## Trusted grant and broker
 
@@ -69,3 +69,8 @@ not add pipelines, redirection, POSIX unlink lifetimes; [shell-editing.md](shell
 普通dev-20261105-210318-d95daeff编译通过：kernel152096 bytes，BSS末端1884832。普通镜像私有VM完成写/追加/cp/mv/sync，宿主核对快照精确字节，冷启动用当时的只读入口重新读取一致。截图已检查，VM已关闭。
 
 Final Stage2 gate: stage2-20261105-205846-66ec5f89, 8/8 groups,394 checks, failed0/not-run0/exit0. Inspect with stage2-summary.ps1.
+
+G6 adds boot-to-home copy. A dedicated writer startup receives its normal home
+target grant and a separate read-only boot source. `StartBootDirectory()` uses
+selector 1 of SYS_START_DIRECTORY. Selector 0 returns the primary grant.
+See [desktop-shell.md](desktop-shell.md).

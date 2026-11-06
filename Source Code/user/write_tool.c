@@ -1,7 +1,8 @@
 /* G5b strict workspace commands. All writes use explicit directory objects. */
 #include "stream.h"
+#include "shell_echo.h"
 static CliInfo cli;
-static int root;
+static int root, copy_root;
 static char target[128];
 static u8 buffer[512];
 static int put(const char *s) {
@@ -87,7 +88,8 @@ static int destination(const char *source, const char *dest) {
   copy(target + at, name);
   return 0;
 }
-static int replace(const char *path, int append, int copying) {
+static int replace(const char *path, int append, int copying,
+                   const char *payload, u32 payload_bytes) {
   FileStat old = {0};
   int s = stat_path(path, &old);
   if (s < 0 && s != S_NOTFOUND)
@@ -99,7 +101,8 @@ static int replace(const char *path, int append, int copying) {
   int source = 0;
   FileStat version = {0};
   if (copying || (append && s != S_NOTFOUND)) {
-    source = OpenAt(root, copying ? arg(1) : path, FS_READ, 0);
+    source = OpenAt(copying ? copy_root : root, copying ? arg(1) : path,
+                    FS_READ, 0);
     if (source < 0) {
       Close(stage);
       return error(source);
@@ -121,7 +124,13 @@ static int replace(const char *path, int append, int copying) {
       return error(s);
     }
   }
-  if (!copying) {
+  if (payload) {
+    s = FileWriteAt(stage, used, payload, payload_bytes);
+    if (s < 0 || (u32)s != payload_bytes) {
+      Close(stage);
+      return error(s < 0 ? s : S_IO);
+    }
+  } else if (!copying) {
     for (u32 i = 2; i < cli.argc; i++) {
       if (i > 2) {
         s = FileWriteAt(stage, used, " ", 1);
@@ -186,24 +195,38 @@ int main(void) {
     }
     return s < 0 ? error(s) : 0;
   }
-  if (streq(cmd, "cp") || streq(cmd, "mv")) {
+  if (streq(cmd, "cp") || streq(cmd, "mv") || streq(cmd, "cp-boot")) {
     if (cli.argc != 3)
       return 2;
+    int boot_copy = streq(cmd, "cp-boot");
+    copy_root = boot_copy ? StartBootDirectory() : root;
+    if (copy_root < 0)
+      return error(copy_root);
     int s = destination(arg(1), arg(2));
     if (s < 0)
       return error(s);
-    if (streq(arg(1), target))
+    if (!boot_copy && streq(arg(1), target))
       return error(S_INVALID);
     if (streq(cmd, "mv")) {
       s = RenameAt(root, arg(1), root, target);
       return s < 0 ? error(s) : 0;
     }
-    return replace(target, 0, 1);
+    return replace(target, 0, 1, 0, 0);
   }
   if (streq(cmd, "write") || streq(cmd, "append")) {
     if (cli.argc < 3)
       return 2;
-    return replace(arg(1), streq(cmd, "append"), 0);
+    return replace(arg(1), streq(cmd, "append"), 0, 0, 0);
+  }
+  if (streq(cmd, "echo>") || streq(cmd, "echo>>")) {
+    if (cli.argc < 2)
+      return 2;
+    char out[1024];
+    int bytes = shell_echo(cli.bytes, cli.offsets + 2, cli.argc - 2,
+                           out, sizeof(out));
+    if (bytes < 0)
+      return error(S_INVALID);
+    return replace(arg(1), streq(cmd, "echo>>"), 0, out, (u32)bytes);
   }
   return 2;
 }

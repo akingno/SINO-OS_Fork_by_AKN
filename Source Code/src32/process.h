@@ -11,6 +11,8 @@ int process_launch(const char *, u32);
 int process_launch_args(const char *, u32, const char *);
 /* Trusted kernel launch only. No user syscall can select compatibility mode. */
 int process_launch_strict(const char *, const char *);
+int process_workspace_frontend(u32);
+int process_desktop_run(u32, u32, const DesktopRun*);
 void process_completion_release(int);
 void process_stream_release(int);
 /* Trusted kernel entry points; the user syscall validates all pointers first. */

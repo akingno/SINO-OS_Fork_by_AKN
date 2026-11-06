@@ -6,6 +6,8 @@ typedef int (*FileAccess)(u32, u32, int);
 typedef int (*FileString)(u32, char*, u32);
 int filesys_call(Handle*, u32, u32, u32, u32, u32, FileAccess, FileString);
 int filesys_acquire_directory(Handle*, u32, u32);
+int filesys_is_boot_directory(Object*);
+int filesys_boot_reader(Handle*);
 void filesys_release(int);
 int filesys_workspace(Handle*);
 #endif
