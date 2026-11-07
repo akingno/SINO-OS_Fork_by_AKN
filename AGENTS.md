@@ -52,7 +52,7 @@ $env:SINO_TOOLCHAIN = Split-Path (Get-Command gcc.exe).Source
 $env:SINO_QEMU_DIR = 'C:\Program Files\qemu'
 ```
 
-完整回归（21 组）：`node 'Source Code/verify-system.js'`，按 `docs/testing.md` 准备镜像。
+完整回归（18 组）：`node 'Source Code/verify-system.js'`，按 `docs/testing.md` 准备镜像。
 
 Shell 宿主测试参数：`-ExpectedExitCode 1` 断言预期失败，`-TimeoutSeconds 5` 设置超时。报告在 `Build Output/dev/runs/shell-.../`。通道仅在 `-ShellBridge` 构建中启用。
 
@@ -97,7 +97,7 @@ Shell 宿主测试参数：`-ExpectedExitCode 1` 断言预期失败，`-TimeoutS
 | 时钟与 RTC | user/clock.c、src32/rtc.c、src32/process.c:SYS_TIME | tests/host/test-clock.js |
 | 文件管理器 | user/files.c、src32/gui.c、src32/process.c | tests/host/test-files.js、tests/host/test-desktop.js |
 | 画板隐藏 | src32/gui.c、src32/vfs.c、user/files.c | tests/host/test-paint-hidden.js |
-| Shell、软件包与 IDE | user/gsh.c、user/setup.c、user/ide.c、user/basic.c | tests/host/test-packages.js、tests/host/test-ide.js |
+| Shell、软件包 | user/gsh.c、user/setup.c | tests/host/test-packages.js |
 | 网络 | src32/net.h、src32/net.c:net_poll、user/netlib.c | tests/host/test-network.js（仅回环） |
 | 日志与语言资源 | src32/klog.c/.h、src32/locale.c/.h、resources/locale/ | tests/host/test-src32-refactor.js（43 项） |
 | QEMU 测试基础设施 | tools/vm-test.js、tools/qmp.js、verify-system.js | 按改动选择 |

@@ -60,15 +60,9 @@ The installed system contains FAT12 boot resources and SINO's own dual-snapshot 
 
 ## Modules added in version 0.10
 
-This release adds src32/process.c, object.c, api.h, and net.c for Ring 3, threads/preemption, handles/system calls, and a loopback protocol stack. user/ contains the independent installer, common runtime, file/editor/task applications, and SysBASIC. These C/assembly additions were written for this project; no Windows, VB6, Linux, or FreeDOS implementation was imported. Algorithms and interfaces refer to Intel SDM and RFC 791/792/768/9293/1035.
+This release adds src32/process.c, object.c, api.h, and net.c for Ring 3, threads/preemption, handles/system calls, and a loopback protocol stack. user/ contains the independent installer, common runtime, and file/editor applications. These C/assembly additions were written for this project; no Windows, VB6, Linux, or FreeDOS implementation was imported. Algorithms and interfaces refer to Intel SDM and RFC 791/792/768/9293/1035.
 
-Older built-in applications remain in kernel mode; only newer native programs have process isolation. SysBASIC and networking have explicit unfinished items in docs/REPORT.md, network.md, and ide.md. Fonts, Pinyin, firmware, QEMU, and build tools retain the third-party terms described above.
-
-## SysBASIC 0.2 and 0.3
-
-SysBASIC 0.2 (2026-10-24) added the classic docked workbench, output-mode chooser, embedded native resources, software-library integration, and regression tests. No Microsoft VB6 source, binaries, icons, or fonts were imported. BASIC remains an interpreter subset; the standalone output embeds its runtime and project instead of compiling BASIC into new x86 instructions.
-
-SysBASIC 0.3 (2026-10-24) added the keyboard decoder, independent modifier states, eight-handle designer, rectangle drawing, cancellation, First tutorial, and three-folder export. The public release does not bundle QEMU or its firmware/libraries; users install Windows QEMU separately. NASM remains included as a build tool under its BSD license. Font and Pinyin notices remain with the source and runtime resources.
+Older built-in applications remain in kernel mode; only newer native programs have process isolation. Networking has explicit unfinished items in docs/REPORT.md and network.md. Fonts, Pinyin, firmware, QEMU, and build tools retain the third-party terms described above.
 
 ## AKN fork (2026-11-02)
 

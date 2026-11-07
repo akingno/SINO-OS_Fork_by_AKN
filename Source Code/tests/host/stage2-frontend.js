@@ -180,9 +180,9 @@ async function run(context, api, persistOnly=false) {
         await type('head -n 1 /boot/readme.txt\n');
         await waitText(pid, 'SINO 0.10 Desktop and Hard-Disk Installation');
         await prompt();
-        await type('cp /boot/first.bas g6-boot.bas\n'); await prompt();
-        assert.equal(await command('cat /home/user/g6-boot.bas'), await command('cat /boot/first.bas'));
-        await command('rm /home/user/g6-boot.bas');
+        await type('cp /boot/readme.txt g6-boot.txt\n'); await prompt();
+        assert.equal(await command('cat /home/user/g6-boot.txt'), await command('cat /boot/readme.txt'));
+        await command('rm /home/user/g6-boot.txt');
         await type('echo denied > /boot/readme.txt\n'); await waitText(pid, 'path outside grant');
         await prompt();
         await type('run /boot/no-such.snx\n'); await waitText(pid, 'start failed -4');

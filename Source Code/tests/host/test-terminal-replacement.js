@@ -88,7 +88,7 @@ async function contract(vm, legacy, open, comparison) {
     } else {
         await vm.type('echo persisted > /home/user/g6-persist.txt\n');
         await prompt();
-        await shellCommand(vm, win, 'cp /boot/first.bas g6-first.bas', 'published in RAM');
+        await shellCommand(vm, win, 'cp /boot/readme.txt g6-readme.txt', 'published in RAM');
         await output('sync', 'home snapshot durable');
         await output('cat g6-persist.txt', '\npersisted\n');
         await output('head -n 1 /boot/readme.txt', 'SINO 0.10 Desktop and Hard-Disk Installation');
@@ -144,8 +144,8 @@ async function main() {
             console.log('PASS F2 Ring 3 Shell and desktop command contract');
             const records = volume(path.join(vm.run, 'data.img')).current.records;
             assert.equal(records.get('/home/user/g6-persist.txt').data.toString(), 'persisted\n');
-            assert.deepEqual(records.get('/home/user/g6-first.bas').data,
-                fs.readFileSync(path.join(__dirname, '../..', 'disk32', 'FIRST.BAS')));
+            assert.deepEqual(records.get('/home/user/g6-readme.txt').data,
+                fs.readFileSync(path.join(__dirname, '../..', 'disk32', 'README.TXT')));
             await desktopEntry(vm, async () => {
                 await vm.click(22, 13);
                 await vm.click(46, 48 + 5 * 28);

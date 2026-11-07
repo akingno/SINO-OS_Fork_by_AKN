@@ -77,7 +77,6 @@ Stage 2 全量门禁（8 组，含原生权限、资源回收、冷启动恢复�
 - [启动镜像布局](docs/boot-image.md)
 - [应用开发指南](docs/app-dev-guide.md)
 - [Shell 契约](docs/user-shell.md)
-- [SysBASIC 参考](docs/ide.md)
 - [网络](docs/network.md)
 
 ## 许可

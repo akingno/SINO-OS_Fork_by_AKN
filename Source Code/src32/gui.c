@@ -2387,13 +2387,6 @@ static void keyboard(int key) {
     process_launch("/boot/apps.snx", CAP_HOME);
     return;
   }
-  if (key == 0x157) {
-    if (vfs_lookup("/home/user/Programs/sysbasic/ide.snx") >= 0)
-      process_launch("/home/user/Programs/sysbasic/ide.snx", CAP_HOME);
-    else
-      process_launch_args("/boot/setup.snx", CAP_HOME, "/boot/sysbasic.sxp");
-    return;
-  }
   if (key == 0x20f) {
     if (count)
       focus(order[0]);

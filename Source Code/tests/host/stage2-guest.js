@@ -295,10 +295,10 @@ async function run(context, mode = 'native') {
         });
     }
     for (const [app, marker] of [
-        ['files', 'FILES SELFTEST PASS'], ['bstest', 'BASIC SELFTEST PASS']
+        ['files', 'FILES SELFTEST PASS']
     ]) {
         await check(`${app} existing user application contracts`, async () => {
-            await native(app, app === 'bstest' ? '' : '/selftest', marker);
+            await native(app, '/selftest', marker);
             assert.deepEqual(await resources(), baseline);
         });
     }

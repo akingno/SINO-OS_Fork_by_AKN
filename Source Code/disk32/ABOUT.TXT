@@ -15,6 +15,6 @@ Legacy built-in applications still share the kernel during migration.
 1024 x 768 x 32-bit VBE; 64 MB RAM; up to eight windows.
 
 F8 software installer / F9 applications / F10 tasks / F11 SysBASIC.
-Native packages: hello.sxp, files.sxp, editor.sxp, sysbasic.sxp.
+Native packages: hello.sxp, files.sxp, editor.sxp.
 SysBASIC 0.2 supports a documented BASIC subset, not the full VB language.
 Run nettest for local ICMP, UDP, TCP, DNS and HTTP checks.
