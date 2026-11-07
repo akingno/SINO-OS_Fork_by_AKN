@@ -70,7 +70,7 @@ Window/Scene/Event 提供 UI 展示。内核每画布最多验证复制 256 命�
 
 `run -s` 启动的进程默认拒绝一切，仅允许白名单中的系统调用。Shell、文件工具和新用户程序运行在此策略下。
 
-受保护只读 boot 节点（`/boot/calc.snx`、`/boot/term.snx` 等）的加载器在解析后移除所有能力位，不区分大小写或别名路径。
+受保护只读 boot 节点（`/boot/files.snx`、`/boot/term.snx` 等）的加载器在解析后移除所有能力位，不区分大小写或别名路径。
 
 ## 常用系统调用
 
@@ -135,8 +135,6 @@ Window/Scene/Event 提供 UI 展示。内核每画布最多验证复制 256 命�
 ## 示例应用
 
 - `user/hello.c`：最简示例
-- `user/calculator.c`：计算器（caps=0，44 命令场景）
-- `user/clock.c`：时钟（caps=0，69 命令场景，桌面单实例）
 - `user/files.c`：文件管理器（CAP_HOME，桌面集成）
 - `user/gsh.c`：SI-SHELL（caps=0，120×25 终端）
 

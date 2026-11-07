@@ -530,8 +530,7 @@ static int launch_policy(const char* path, u32 caps, const char* arguments,
   p->caps = caps & 7; /* Boot utilities have no write, network or management
                          grant, regardless of launcher. */
   if (nodes[n].readonly && nodes[n].boot >= 0 &&
-      (streq(executable, "/boot/calc.snx") ||
-       streq(executable, "/boot/term.snx")||streq(executable,"/boot/termqa.snx")))
+      (streq(executable, "/boot/term.snx")||streq(executable,"/boot/termqa.snx")))
     p->caps = 0;
   if (nodes[n].readonly && nodes[n].boot >= 0 &&
       streq(executable, "/boot/files.snx"))

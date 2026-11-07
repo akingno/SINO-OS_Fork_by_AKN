@@ -75,7 +75,6 @@ INT 0x80 提供有界的文件、进程、线程、事件、句柄、窗口和�
 | 应用 | 状态 | 入口 |
 | --- | --- | --- |
 | 文件管理器 | Ring 3（`files.snx`） | F1 / 菜单 / Files.app |
-| 计算器 | Ring 3（`calc.snx`，caps=0） | F4 / 菜单 / Calculator.app |
 | SI-SHELL | Ring 3（`gsh`，caps=0），120×25 终端 | F2 / 菜单 / Terminal.app（可写），F12（只读） |
 | 画板 | 已隐藏（内核特权问题），画稿保留 | 所有入口已禁用 |
 | 文本编辑器 | 仍在 Ring 0 | 文件打开 |

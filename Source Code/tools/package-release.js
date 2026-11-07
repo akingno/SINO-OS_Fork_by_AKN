@@ -15,8 +15,8 @@ for(const name of files)if(name.startsWith('源码/'))copy(path.join(repo,name),
 fs.writeFileSync(path.join(source,'.gitignore'),'build32/\nsino.img\nsino32-test.img\n');
 for(const name of ['launch.ps1','启动SINO.cmd','安装SINO.cmd'])copy(path.join(root,'release',name),path.join(runtime,name));
 copy(require('./paths').iso,path.join(runtime,'SINO.iso'));copy(path.join(seed,'system.img'),path.join(runtime,'Data/system.img'));
-for(const app of ['hello','sysbasic','files','editor','tasks'])copy(path.join(root,'build32/user',app+'.sxp'),path.join(runtime,'软件包',app+'.sxp'));
-for(const app of ['ide','basicrun','setup','apps','hello','files','editor','tasks'])copy(path.join(root,'build32/user',app+'.snx'),path.join(runtime,'原生程序',app+'.snx'));
+for(const app of ['hello','sysbasic','files','editor'])copy(path.join(root,'build32/user',app+'.sxp'),path.join(runtime,'软件包',app+'.sxp'));
+for(const app of ['ide','basicrun','setup','apps','hello','files','editor'])copy(path.join(root,'build32/user',app+'.snx'),path.join(runtime,'原生程序',app+'.snx'));
 for(const ext of ['prj','frm','bas','snx','sxp'])copy(path.join(seed,'First.'+ext),path.join(runtime,'示例','First.'+ext));
 for(const file of ['开始使用.txt','发布说明.md'])copy(path.join(root,'release',file),path.join(intro,file));
 // Do not include prior private-disk verification metadata or personal data inventories.

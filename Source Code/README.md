@@ -21,8 +21,6 @@ user/                 Ring 3 用户态程序
   tview.c             只读文件查看器
   write_tool.c        写工作区工具
   files.c             文件管理器
-  calculator.c        计算器
-  clock.c             时钟
   sdk.h               用户态 SDK（与 api.h 同步）
   runtime.c           用户态运行库
   linker.ld           用户态链接脚本（基址 0x40000000）

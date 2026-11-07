@@ -18,7 +18,7 @@
 #define NW 8
 #define DIALOG_X ((GUI_WIDTH - 474) / 2)
 #define DIALOG_Y ((GUI_HEIGHT - 238) / 2)
-enum { FILES = 1, EDIT, CALC, PAINT, TERM = 6, SYSTEM, INSTALL, USERAPP };
+enum { FILES = 1, EDIT, PAINT = 4, TERM = 6, SYSTEM, INSTALL, USERAPP };
 typedef struct {
   int used, app, x, y, w, h, minimized, dirty, folder, selected, first, node,
       modified;
@@ -75,8 +75,8 @@ static char clock_text[9];
 static u32 desktop_terminal_pid;
 static const TextKey appnames[] = {
     [0] = GUI_LABEL_DESKTOP,       [FILES] = GUI_LABEL_FILES,
-    [EDIT] = GUI_LABEL_TEXTEDIT,   [CALC] = GUI_LABEL_CALCULATOR,
-    [PAINT] = GUI_LABEL_PAINT,     [TERM] = GUI_LABEL_TERMINAL,
+    [EDIT] = GUI_LABEL_TEXTEDIT,   [PAINT] = GUI_LABEL_PAINT,
+    [TERM] = GUI_LABEL_TERMINAL,
     [SYSTEM] = GUI_LABEL_SETTINGS, [INSTALL] = GUI_LABEL_INSTALL_SINO,
     [USERAPP] = GUI_LABEL_NATIVE_APPLICATION};
 static const TextKey menus[] = {GUI_LABEL_SINO,   GUI_LABEL_FILE,
@@ -411,7 +411,7 @@ static void folder_open(int n) {
     notice(locale_text(GUI_STATUS_FILES_LAUNCH_FAILED));
 }
 static int app_from_name(const char* s) {
-  const char* names[] = {"Files.app",  "TextEdit.app", "Calculator.app",
+  const char* names[] = {"Files.app",  "TextEdit.app", "",
                          "Paint.app",  "",             "Terminal.app",
                          "System.app", "Install.app"};
   for (int i = 0; i < 8; i++)
@@ -467,12 +467,6 @@ static const char* node_label(int n) {
 static int launch(int app) {
   if (app == PAINT) {
     notice(locale_text(GUI_LABEL_PAINT_IS_UNAVAILABLE_DRAWINGS_ARE_PRESERVED));
-    return -1;
-  }
-  if (app == CALC) {
-    if (count >= NW || process_launch("/boot/calc.snx", 0) < 0)
-      notice(locale_text(
-          GUI_LABEL_CANNOT_START_CALCULATOR_CHECK_BOOT_FILES_OR_CLOSE_SOME_APPLICATIONS));
     return -1;
   }
   if (app == TERM) {
@@ -1369,7 +1363,7 @@ static void window_draw(int id) {
 }
 static int menu_count(void) {
   if (menu == 0)
-    return 7;
+    return 6;
   if (menu == 1)
     return 10;
   if (menu == 2)
@@ -1384,7 +1378,6 @@ static const char* menu_label(int m, int row) {
   const char* sino[] = {locale_text(GUI_LABEL_SETTINGS),
                         locale_text(GUI_LABEL_FILES),
                         locale_text(GUI_LABEL_TEXTEDIT),
-                        locale_text(GUI_LABEL_CALCULATOR),
                         locale_text(GUI_LABEL_TERMINAL),
                         locale_text(GUI_LABEL_APPLICATIONS),
                         locale_text(GUI_LABEL_INSTALL_SINO),
@@ -2064,10 +2057,10 @@ static void menu_choose(int m, int row) {
   if (row < 0)
     return;
   if (m == 0) {
-    int apps[] = {SYSTEM, FILES, EDIT, CALC, TERM};
-    if (row < 5)
+    int apps[] = {SYSTEM, FILES, EDIT, TERM};
+    if (row < 4)
       launch(apps[row]);
-    else if (row == 5)
+    else if (row == 4)
       process_launch("/boot/apps.snx", CAP_HOME);
     else
       launch(INSTALL);
@@ -2381,7 +2374,7 @@ static void keyboard(int key) {
   if (key == 0x13f)
     return;
   if (key >= 0x13b && key <= 0x141) {
-    const int apps[] = {FILES, TERM, EDIT, CALC, PAINT, 0, SYSTEM};
+    const int apps[] = {FILES, TERM, EDIT, 0, PAINT, 0, SYSTEM};
     if (apps[key - 0x13b])
       launch(apps[key - 0x13b]);
     return;
@@ -2392,10 +2385,6 @@ static void keyboard(int key) {
   }
   if (key == 0x143) {
     process_launch("/boot/apps.snx", CAP_HOME);
-    return;
-  }
-  if (key == 0x144) {
-    process_launch("/boot/tasks.snx", CAP_HOME | CAP_MANAGE);
     return;
   }
   if (key == 0x157) {

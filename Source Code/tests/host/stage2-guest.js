@@ -295,7 +295,6 @@ async function run(context, mode = 'native') {
         });
     }
     for (const [app, marker] of [
-        ['calc', 'CALCULATOR SELFTEST PASS'],
         ['files', 'FILES SELFTEST PASS'], ['bstest', 'BASIC SELFTEST PASS']
     ]) {
         await check(`${app} existing user application contracts`, async () => {

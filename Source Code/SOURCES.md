@@ -11,7 +11,7 @@ Project code is licensed under the repository's MIT license. This describes the 
 | Files, paths, copy, and move | src32/vfs.c |
 | ATA PIO, dual snapshots, CRC32, and recovery | src32/storage.c |
 | Window-surface cache, clipping, fonts, pointer, partial display updates | src32/graphics.c |
-| Desktop, window manager, Files, TextEdit, Calculator, Paint, Clock, Terminal views | src32/gui.c |
+| Desktop, window manager, Files, TextEdit, Paint, Terminal views | src32/gui.c |
 | Command interpreter, scripts, pipes, editing, and scrolling terminal | src32/shell.c, console.c |
 | Reproducible original-size bitmap fonts and custom pointer resources | tools/build-ui-assets.py |
 | Real QEMU input, display-memory, and disk validation | tools/vm-test.js, test-desktop.js, test-volume.js |

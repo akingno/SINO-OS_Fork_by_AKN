@@ -1,4 +1,4 @@
-const {calculator, expectDisplay} = require('../support/calculator-test');
+const {shellWindow, scene, waitFor} = require('../support/ui-test');
 const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
@@ -15,10 +15,9 @@ const {bootPayload} = require('../support/iso-boot');
         const blocks = await vm.q.call('query-block');
         assert(blocks.some(b => b.inserted && b.inserted.file.endsWith('sino.iso')));
         assert(!blocks.some(b => b.device === 'floppy0' && b.inserted));
-        await vm.key('f4');
-        await calculator(vm);
-        await vm.type('6*7=');
-        await expectDisplay(vm, await calculator(vm), '42.00');
+        await vm.key('f2');
+        const w = await shellWindow(vm);
+        await waitFor(async () => (await scene(vm, w)).some(c => c.kind === 9), 'shell renders after CD boot');
         await vm.shot('iso-boot');
         console.log('PASS: ISO9660 catalog checksum, exact boot payload and actual CD-only boot to native apps.');
     } finally {

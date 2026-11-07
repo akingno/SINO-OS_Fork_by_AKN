@@ -25,7 +25,6 @@ const apps = [
  ['iofault', 'tests/guest/probe.c', 2],
  ['spin', 'tests/guest/probe.c', 3],
  ['udfault', 'tests/guest/probe.c', 4],
- ['calc', 'user/calculator.c', 0],
  ['hello', 'user/hello.c', 0],
  ['setup', 'user/setup.c', 0],
  ['apps', 'user/apps.c', 0],
@@ -36,7 +35,6 @@ const apps = [
  ['ide', 'user/ide.c', 0],
  ['files', 'user/files.c', 0],
  ['editor', 'user/editor.c', 0],
- ['tasks', 'user/tasks.c', 0],
  ['memv2', 'tests/guest/memory_v2_test.c', 0, 2]
 ];
 for(const [name,source,mode,abi=1] of apps){
@@ -64,4 +62,4 @@ run(process.execPath,[path.join(root,"tools/package.js"),path.join(root,"package
 
 run(process.execPath,[path.join(root,"tools/package.js"),path.join(root,"packages/sysbasic.json"),path.join(out,"sysbasic.sxp")],{stdio:"inherit"});
 
-for(const name of ["files","editor","tasks"])run(process.execPath,[path.join(root,"tools/package.js"),path.join(root,`packages/${name}.json`),path.join(out,`${name}.sxp`)],{stdio:"inherit"});
+for(const name of ["files","editor"])run(process.execPath,[path.join(root,"tools/package.js"),path.join(root,`packages/${name}.json`),path.join(out,`${name}.sxp`)],{stdio:"inherit"});

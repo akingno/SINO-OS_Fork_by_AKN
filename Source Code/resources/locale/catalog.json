@@ -1157,24 +1157,10 @@
     "parameters": []
   },
   {
-    "key": "GUI_LABEL_CALCULATOR",
-    "module": "GUI",
-    "type": "LABEL",
-    "meaning": "Calculator",
-    "parameters": []
-  },
-  {
     "key": "GUI_LABEL_PAINT",
     "module": "GUI",
     "type": "LABEL",
     "meaning": "Paint",
-    "parameters": []
-  },
-  {
-    "key": "GUI_LABEL_CLOCK",
-    "module": "GUI",
-    "type": "LABEL",
-    "meaning": "Clock",
     "parameters": []
   },
   {
@@ -1311,24 +1297,10 @@
     "parameters": []
   },
   {
-    "key": "GUI_LABEL_CANNOT_START_CLOCK_CHECK_BOOT_FILES_OR_CLOSE_SOME_APPLICATIONS",
-    "module": "GUI",
-    "type": "LABEL",
-    "meaning": "Cannot start Clock. Check boot files or close some applications.",
-    "parameters": []
-  },
-  {
     "key": "GUI_LABEL_PAINT_IS_UNAVAILABLE_DRAWINGS_ARE_PRESERVED",
     "module": "GUI",
     "type": "LABEL",
     "meaning": "Paint is unavailable; drawings are preserved.",
-    "parameters": []
-  },
-  {
-    "key": "GUI_LABEL_CANNOT_START_CALCULATOR_CHECK_BOOT_FILES_OR_CLOSE_SOME_APPLICATIONS",
-    "module": "GUI",
-    "type": "LABEL",
-    "meaning": "Cannot start Calculator. Check boot files or close some applications.",
     "parameters": []
   },
   {

@@ -128,7 +128,7 @@ stay outside the pool. The 64 MiB QEMU configuration still boots.
 ## Trusted selection and old application compatibility
 
 PROCESS_COMPAT=0 retains existing behavior. All existing launch paths continue
-to use it. Existing caps=0 calculators/clocks retain their old public read APIs;
+to use it. Existing caps=0 applications retain their old public read APIs;
 caps=0 alone must not be described as a confidentiality sandbox.
 
 PROCESS_STRICT=1 is selected only by trusted kernel launch code through

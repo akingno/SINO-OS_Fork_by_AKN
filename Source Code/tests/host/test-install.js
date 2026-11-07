@@ -1,4 +1,4 @@
-const {waitFor}=require('../support/calculator-test');
+const {waitFor}=require('../support/ui-test');
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
 const {VM,sleep,root}=require('../../tools/vm-test'),{volume}=require('../../tools/test-volume');
 const vm=new VM('install-qa',4567),checks=[];

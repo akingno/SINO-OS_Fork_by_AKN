@@ -1,5 +1,5 @@
 const {files,rowPoint,expectNotice}=require('../support/files-test');
-const {scene,waitFor}=require('../support/calculator-test');
+const {scene,waitFor}=require('../support/ui-test');
 const {terminalText,shellCommand}=require('./test-terminal-replacement');
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {VM,sleep,root}=require('../../tools/vm-test');

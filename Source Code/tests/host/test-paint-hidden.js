@@ -1,6 +1,6 @@
 const {files:filesWindow}=require('../support/files-test');
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
-const {VM,sleep}=require('../../tools/vm-test'),{waitFor,scene}=require('../support/calculator-test');
+const {VM,sleep}=require('../../tools/vm-test'),{waitFor,scene}=require('../support/ui-test');
 const {seedPaintDisk,nodes,fileBytes}=require('../support/paint-fixture'),{volume}=require('../../tools/test-volume');
 const legacy=process.argv.includes('--legacy');
 (async()=>{const vm=new VM(legacy?'paint-baseline':'paint-hidden-qa'),checks=[];const pass=s=>{checks.push(s);console.log('PASS '+s);};const expected=seedPaintDisk(path.join(vm.run,'data.img'));
@@ -27,7 +27,7 @@ const legacy=process.argv.includes('--legacy');
    const sketch=all.find(n=>n.name==='Sketch.snp');await vm.double((await vm.memory(vm.symbols.desk_x+sketch.id*4,4)).readInt32LE()+45,(await vm.memory(vm.symbols.desk_y+sketch.id*4,4)).readInt32LE()+20);assert.equal((await vm.state()).modal,2);await noPaint();await vm.key('esc');pass('Double-clicking a real desktop drawing gives the paused notice');
    await open('/Applications');let w=await filesWindow(vm),seen=[];
    for(let i=0;i<20;i++){await vm.key('down');w=await filesWindow(vm);const name=all.find(n=>n.id===w.selected)?.name;if(name)seen.push(name);}
-   assert(seen.includes('Calculator.app'));assert(!seen.includes('Paint.app'));assert(!seen.includes('OldPaint.lnk'));await vm.key('ctrl','w');pass('Application library excludes legacy aliases and retains other applications');
+   assert(seen.includes('Terminal.app'));assert(!seen.includes('Paint.app'));assert(!seen.includes('OldPaint.lnk'));await vm.key('ctrl','w');pass('Application library excludes legacy aliases and retains other applications');
    await vm.key('f2');let installed=0;for(const app of ['editor','files']){await vm.type(`install /quiet:/boot/${app}.sxp\n`);await waitFor(async()=>(vm.log().match(/QUIET INSTALL PASS/g)||[]).length>installed,'install '+app);installed++;}
    await vm.type('run /home/user/Programs/files/files.snx /home/user/Desktop\n');w=await filesWindow(vm);
    let commands=await scene(vm,w);assert(!commands.some(c=>c.text==='Paint.app'||c.text==='OldPaint.lnk'));const row=commands.find(c=>c.text==='Sketch.snp');assert(row);await vm.click(w.x+200,w.y+row.y+8);await vm.key('ret');

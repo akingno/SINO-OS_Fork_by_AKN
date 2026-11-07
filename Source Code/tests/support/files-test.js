@@ -1,6 +1,6 @@
 /* Read public native scenes/ownership; legacy mode is only for the baseline. */
 const assert=require('node:assert/strict');
-const {waitFor,scene,owner}=require('./calculator-test');
+const {waitFor,scene,owner}=require('./ui-test');
 async function files(vm,id,legacy=false){return waitFor(async()=>{
  const s=await vm.state();for(const w of s.windows){
   if(id===undefined?w.id!==s.focus:w.id!==id)continue;
