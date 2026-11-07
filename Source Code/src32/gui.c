@@ -1,7 +1,5 @@
 #include "locale.h"
 #include "klog.h"
-/* Paint has been hidden 261103. Legacy drawing code is retained but cannot be
- * launched. */
 #include "rtc.h"
 /* Native Platinum desktop and cooperative built-in applications. */
 #include "graphics.h"
@@ -17,15 +15,14 @@
 #define NW 8
 #define DIALOG_X ((GUI_WIDTH - 474) / 2)
 #define DIALOG_Y ((GUI_HEIGHT - 238) / 2)
-enum { FILES = 1, EDIT, PAINT = 4, TERM = 6, SYSTEM, USERAPP = 9 };
+enum { FILES = 1, EDIT, TERM = 6, SYSTEM, USERAPP = 9 };
 typedef struct {
   int used, app, x, y, w, h, minimized, dirty, folder, selected, first, node,
       modified;
   int caret, anchor, scroll, hscroll, len, zoomed, ox, oy, ow, oh;
   char title[64], path[VFS_PATH], text[EDIT_CAP + 1];
   i32 value, acc;
-  int op, entry, decimal, digits, error, color, eraser, px, py;
-  u8* paint[10];
+  int op, entry, decimal, digits, error;
   u32 node_generation;
 } Window;
 u32 gui_key_epoch, gui_mouse_epoch, gui_window_renders;
@@ -57,7 +54,7 @@ static Rect damage;
 static int damaged, desktop_dirty = 1;
 static char undo_text[NW][EDIT_CAP + 1];
 static int undo_len[NW], undo_caret[NW], undo_valid[NW];
-static int selecting = -1, painting = -1;
+static int selecting = -1;
 static char file_clipboard[VFS_PATH];
 static int file_cut;
 static int context_open, context_x, context_y, context_row = -1,
@@ -74,18 +71,14 @@ static char clock_text[9];
 static u32 desktop_terminal_pid;
 static const TextKey appnames[] = {
     [0] = GUI_LABEL_DESKTOP,       [FILES] = GUI_LABEL_FILES,
-    [EDIT] = GUI_LABEL_TEXTEDIT,   [PAINT] = GUI_LABEL_PAINT,
+    [EDIT] = GUI_LABEL_TEXTEDIT,
     [TERM] = GUI_LABEL_TERMINAL,
     [SYSTEM] = GUI_LABEL_SETTINGS,
-    [USERAPP] = GUI_LABEL_NATIVE_APPLICATION};
+    [USERAPP] = GUI_LABEL_USER_APPLICATION};
 static const TextKey menus[] = {GUI_LABEL_SINO,   GUI_LABEL_FILE,
                                 GUI_LABEL_EDIT,   GUI_LABEL_DISPLAY,
                                 GUI_LABEL_WINDOW, GUI_LABEL_TOOLS};
 static int menux[] = {10, 167, 213, 260, 311, 387};
-static const u32 colors[16] = {0xffffff, 0x202126, 0x737982, 0xc4c7cb,
-                               0xa42d36, 0xe66b43, 0xe6b552, 0xf6df9b,
-                               0x326a51, 0x67a76d, 0x70b7b4, 0x34758d,
-                               0x355e9a, 0x839bd0, 0x755484, 0xc18da4};
 static int min(int a, int b) {
   return a < b ? a : b;
 }
@@ -103,53 +96,7 @@ static int suffix(const char* s, const char* end) {
   u32 a = strlen(s), b = strlen(end);
   return a >= b && streq(s + a - b, end);
 }
-/* Paint has been hidden 261103. Recognize old entries without deleting user
- * files. */
-static int suffix_fold(const char* s, const char* end) {
-  u32 a = strlen(s), b = strlen(end);
-  if (a < b)
-    return 0;
-  for (u32 i = 0; i < b; i++) {
-    char x = s[a - b + i], y = end[i];
-    if (x >= 'A' && x <= 'Z')
-      x += 32;
-    if (y >= 'A' && y <= 'Z')
-      y += 32;
-    if (x != y)
-      return 0;
-  }
-  return 1;
-}
-static int paint_name(const char* s) {
-  return strlen(s) == 9 && suffix_fold(s, "paint.app");
-}
-static int paint_document(const char* s) {
-  return suffix_fold(s, ".snp");
-}
-static int hidden_paint_node(int n) {
-  if (nodes[n].dir)
-    return 0;
-  if (paint_name(nodes[n].name))
-    return 1;
-  if (suffix_fold(nodes[n].name, ".lnk")) {
-    char link[200];
-    int bytes = vfs_read(n, (u8*)link, 199);
-    if (bytes > 0) {
-      link[bytes] = 0;
-      char* leaf = link;
-      for (int i = 0; link[i]; i++) {
-        if (link[i] == '\n' || link[i] == '\r') {
-          link[i] = 0;
-          break;
-        }
-        if (link[i] == '/' || link[i] == '\\')
-          leaf = link + i + 1;
-      }
-      return paint_name(leaf);
-    }
-  }
-  return 0;
-}
+
 static Rect bounds(Window* w) {
   return (Rect){w->x, w->y, w->w + 5, w->h + 5};
 }
@@ -182,7 +129,7 @@ static void all_changed(void) {
                       (UiEvent){MSG_FILES_CHANGED, (u32)i, 0, 0, 0});
   for (int i = 0; i < NW; i++) {
     Window* w = &windows[i];
-    if (w->used && w->node >= 0 && (w->app == EDIT || w->app == PAINT)) {
+    if (w->used && w->node >= 0 && w->app == EDIT) {
       if (!nodes[w->node].used ||
           vfs_generation[w->node] != w->node_generation) {
         w->node = -1;
@@ -332,7 +279,7 @@ static void desktop_draw(void) {
   desk_count = 0;
   int d = vfs_lookup("/home/user/Desktop");
   for (int i = 1; i < VFS_NODES && desk_count < 32; i++)
-    if (nodes[i].used && nodes[i].parent == d && !hidden_paint_node(i)) {
+    if (nodes[i].used && nodes[i].parent == d) {
       int k = desk_count;
       desk_nodes[desk_count++] = i;
       if (desk_generation[i] != vfs_generation[i]) {
@@ -363,12 +310,9 @@ static void focus(int id) {
   changed(id);
   invalidate((Rect){0, 0, GUI_WIDTH, 31});
 }
-/* Paint has been hidden 261103. Reject direct legacy window allocation as well.
- */
+
 static int new_window(int app, const char* title, int width, int height) {
-  if (app == FILES)
-    return -1;
-  if (app == PAINT)
+  if (app != EDIT && app != SYSTEM && app != USERAPP)
     return -1;
   int id;
   for (id = 0; id < NW; id++)
@@ -394,7 +338,6 @@ static int new_window(int app, const char* title, int width, int height) {
   w->anchor = -1;
   undo_valid[id] = 0;
   w->entry = 1;
-  w->color = 1;
   copy(w->title, title);
   order[count++] = id;
   focus(id);
@@ -411,7 +354,7 @@ static void folder_open(int n) {
 }
 static int app_from_name(const char* s) {
   const char* names[] = {"Files.app",  "TextEdit.app", "",
-                         "Paint.app",  "",             "Terminal.app",
+                         "",           "",             "Terminal.app",
                          "System.app"};
   for (u32 i = 0; i < sizeof(names) / sizeof(names[0]); i++)
     if (names[i][0] && streq(s, names[i]))
@@ -461,13 +404,8 @@ static const char* node_label(int n) {
   }
   return nodes[n].name;
 }
-/* Paint has been hidden 261103. This guard also protects retained
- * file/compatibility paths. */
+
 static int launch(int app) {
-  if (app == PAINT) {
-    notice(locale_text(GUI_LABEL_PAINT_IS_UNAVAILABLE_DRAWINGS_ARE_PRESERVED));
-    return -1;
-  }
   if (app == TERM) {
     if (desktop_terminal_pid && process_alive(desktop_terminal_pid)) {
       for (int i = 0; i < NW; i++)
@@ -480,7 +418,7 @@ static int launch(int app) {
     }
     int pid = count < NW ? process_launch_args("/boot/term.snx", 0, "/write") : -1;
     if (pid < 0)
-      notice(locale_text(GUI_LABEL_CANNOT_START_NATIVE_APPLICATION));
+      notice(locale_text(GUI_LABEL_CANNOT_START_SHELL));
     else
       desktop_terminal_pid = (u32)pid;
     return -1;
@@ -497,35 +435,20 @@ static int launch(int app) {
         focus(i);
         return i;
       }
-  int width = app == PAINT ? 590 : app == SYSTEM ? 740 : 660,
-      height = app == PAINT ? 466 : app == SYSTEM ? 550 : 460;
+  int width = app == SYSTEM ? 740 : 660,
+      height = app == SYSTEM ? 550 : 460;
   int id = new_window(app, locale_text(appnames[app]), width, height);
   if (id < 0)
     return -1;
   Window* w = &windows[id];
   if (app == EDIT)
     copy(w->title, locale_text(GUI_LABEL_UNTITLED));
-  if (app == PAINT) {
-    copy(w->title, locale_text(GUI_LABEL_UNTITLED_DRAWING));
-    for (int i = 0; i < 10; i++) {
-      w->paint[i] = page_alloc();
-      if (!w->paint[i]) {
-        notice(locale_text(GUI_LABEL_NOT_ENOUGH_DRAWING_MEMORY));
-        return -1;
-      }
-      memset(w->paint[i], 0, 4096);
-    }
-  }
   return id;
 }
 static void open_node(int n) {
   if (n < 0 || !nodes[n].used)
     return;
-  if (!nodes[n].dir &&
-      (hidden_paint_node(n) || paint_document(nodes[n].name))) {
-    notice(locale_text(GUI_LABEL_PAINT_IS_UNAVAILABLE_DRAWINGS_ARE_PRESERVED));
-    return;
-  }
+
   if (suffix(nodes[n].name, ".lnk")) {
     char link[200];
     int bytes = vfs_read(n, (u8*)link, 199);
@@ -545,7 +468,7 @@ static void open_node(int n) {
     char path[VFS_PATH];
     vfs_path(n, path);
     if (process_launch(path, CAP_HOME) < 0)
-      notice(locale_text(GUI_LABEL_CANNOT_START_NATIVE_APPLICATION));
+      notice(locale_text(GUI_LABEL_CANNOT_START_USER_APPLICATION));
     return;
   }
   if (nodes[n].dir) {
@@ -557,11 +480,11 @@ static void open_node(int n) {
     launch(app);
     return;
   }
-  if (nodes[n].size > EDIT_CAP && !suffix(nodes[n].name, ".snp")) {
+  if (nodes[n].size > EDIT_CAP) {
     notice(locale_text(GUI_LABEL_TEXTEDIT_SUPPORTS_FILES_UP_TO_16_KB));
     return;
   }
-  int id = launch(suffix(nodes[n].name, ".snp") ? PAINT : EDIT);
+  int id = launch(EDIT);
   if (id < 0)
     return;
   Window* w = &windows[id];
@@ -569,24 +492,13 @@ static void open_node(int n) {
   w->node_generation = vfs_generation[n];
   vfs_path(n, w->path);
   copy(w->title, nodes[n].name);
-  if (w->app == PAINT) {
-    static u8 data[40968];
-    int len = vfs_read(n, data, sizeof(data));
-    if (len != 40968 || data[0] != 'S' || data[1] != 'N' || data[2] != 'P' ||
-        data[3] != '1') {
-      notice(locale_text(GUI_LABEL_THIS_IS_NOT_A_SINO_PAINT_DRAWING));
-      return;
-    }
-    for (int j = 0; j < 40960; j++)
-      w->paint[j / 4096][j % 4096] = data[j + 8] & 15;
-  } else {
-    w->len = vfs_read(n, (u8*)w->text, EDIT_CAP);
-    if (w->len < 0) {
-      w->len = 0;
-      notice(vfs_message());
-    }
-    w->text[w->len] = 0;
+  w->len = vfs_read(n, (u8*)w->text, EDIT_CAP);
+  if (w->len < 0) {
+    w->len = 0;
+    notice(vfs_message());
   }
+  w->text[w->len] = 0;
+
   changed(id);
 }
 static void prompt(int what, int id, const char* title, const char* initial) {
@@ -633,9 +545,6 @@ static void close_now(int id) {
       count--;
       break;
     }
-  for (int j = 0; j < 10; j++)
-    if (w->paint[j])
-      page_free(w->paint[j]);
   w->used = 0;
   gui_focus = -1;
   for (int p = count - 1; p >= 0; p--)
@@ -663,31 +572,17 @@ static void close_window(int id) {
   } else
     close_now(id);
 }
-/* Paint has been hidden 261103. Retain legacy SNP save code for a future
- * migration. */
+
 static int save_window(int id) {
   Window* w = &windows[id];
   if (w->node < 0 || !nodes[w->node].used ||
       vfs_generation[w->node] != w->node_generation ||
       nodes[w->node].readonly) {
     prompt(4, id, locale_text(GUI_LABEL_SAVE_AS_FULL_PATH),
-           w->path[0]        ? w->path
-           : w->app == PAINT ? "/home/user/Desktop/Drawing.snp"
-                             : "/home/user/Desktop/Untitled.txt");
+           w->path[0] ? w->path : "/home/user/Desktop/Untitled.txt");
     return 0;
   }
-  int ok;
-  if (w->app == PAINT) {
-    static u8 data[40968];
-    memset(data, 0, 8);
-    copy((char*)data, "SNP1");
-    data[5] = 1;
-    data[6] = 160;
-    for (int j = 0; j < 40960; j++)
-      data[j + 8] = w->paint[j / 4096][j % 4096];
-    ok = vfs_write(w->node, data, sizeof(data), 0);
-  } else
-    ok = vfs_write(w->node, (u8*)w->text, (u32)w->len, 0);
+  int ok = vfs_write(w->node, (u8*)w->text, (u32)w->len, 0);
   if (ok < 0) {
     notice(vfs_message());
     return 0;
@@ -737,15 +632,13 @@ static void command(int cmd) {
              locale_text(GUI_LABEL_UNTITLED_TXT));
       break;
     case 4:
-      if (w && (w->app == EDIT || w->app == PAINT))
+      if (w && w->app == EDIT)
         save_window(id);
       break;
     case 5:
-      if (w && (w->app == EDIT || w->app == PAINT))
+      if (w && w->app == EDIT)
         prompt(4, id, locale_text(GUI_LABEL_SAVE_AS_FULL_PATH),
-               w->path[0]        ? w->path
-               : w->app == PAINT ? "/home/user/Desktop/Drawing.snp"
-                                 : "/home/user/Desktop/Untitled.txt");
+               w->path[0] ? w->path : "/home/user/Desktop/Untitled.txt");
       break;
     case 6:
       if (desk_selected >= 0)
@@ -1169,63 +1062,7 @@ static void edit_command(int key) {
     all_changed();
   }
 }
-/* Paint has been hidden 261103. Retained painting implementation; no user
- * launch entry. */
-static u8 paint_get(Window* w, int x, int y) {
-  int p = y * 256 + x;
-  return w->paint[p / 4096][p % 4096];
-}
-static void paint_dot(Window* w, int x, int y) {
-  if (x < 0 || x >= 256 || y < 0 || y >= 160 || !w->paint[0])
-    return;
-  int r = w->eraser ? 3 : 0;
-  for (int j = max(0, y - r); j <= min(159, y + r); j++)
-    for (int i = max(0, x - r); i <= min(255, x + r); i++) {
-      int p = j * 256 + i;
-      w->paint[p / 4096][p % 4096] = (u8)(w->eraser ? 0 : w->color);
-    }
-  w->modified = 1;
-}
-static void paint_stroke(Window* w, int x, int y) {
-  int a = w->px, b = w->py, xx = x > a ? x - a : a - x, sx = a < x ? 1 : -1,
-      yy = y > b ? b - y : y - b, sy = b < y ? 1 : -1, e = xx + yy;
-  for (;;) {
-    paint_dot(w, a, b);
-    if (a == x && b == y)
-      break;
-    int p = e * 2;
-    if (p >= yy) {
-      e += yy;
-      a += sx;
-    }
-    if (p <= xx) {
-      e += xx;
-      b += sy;
-    }
-  }
-  w->px = x;
-  w->py = y;
-}
-static void paint_draw(Window* w) {
-  g_fill(2, 30, w->w - 4, 42, 0xe4e5e8);
-  button(12, 38, 60, locale_text(GUI_LABEL_SAVE));
-  button(82, 38, 78,
-         w->eraser ? locale_text(GUI_LABEL_ERASER)
-                   : locale_text(GUI_LABEL_PENCIL));
-  button(170, 38, 65, locale_text(GUI_LABEL_CLEAR));
-  g_text(0, 251, 42, locale_text(GUI_LABEL_256_X_160_PIXELS), 0x717884);
-  g_box(35, 83, 514, 322, 0x767c86, 0xffffff);
-  if (w->paint[0])
-    for (int y = 0; y < 160; y++)
-      for (int x = 0; x < 256; x++)
-        g_fill(36 + x * 2, 84 + y * 2, 2, 2, colors[paint_get(w, x, y) & 15]);
-  for (int j = 0; j < 16; j++) {
-    int x = 16 + j * 34;
-    g_box(x, 420, 27, 27, w->color == j ? THEME_BLUE : 0x8b919b, colors[j]);
-    if (w->color == j)
-      g_box(x - 2, 418, 31, 31, THEME_INK, colors[j]);
-  }
-}
+
 static void user_draw(int id) {
   UiCanvas* scene = user_scene[id];
   Window* w = &windows[id];
@@ -1324,9 +1161,6 @@ static void window_draw(int id) {
     case EDIT:
       edit_draw(w);
       break;
-    case PAINT:
-      paint_draw(w);
-      break;
     case SYSTEM:
       settings_draw(w->w, w->h);
       break;
@@ -1391,13 +1225,29 @@ static const char* menu_label(int m, int row) {
   return windows[order[row]].title;
 }
 static void topbar(void) {
+  const char* app_name = gui_focus >= 0
+                             ? locale_text(appnames[windows[gui_focus].app])
+                             : locale_text(GUI_LABEL_DESKTOP);
+  if (gui_focus >= 0 && windows[gui_focus].app == USERAPP &&
+      windows[gui_focus].title[0])
+    app_name = windows[gui_focus].title;
+  char app_label[68];
+  copy(app_label, app_name);
+  int limit = menux[1] - 57 - 12;
+  if (g_width(3, app_label) > limit) {
+    int n = (int)strlen(app_label);
+    while (n > 0) {
+      n = utf_prev(app_label, n);
+      app_label[n] = 0;
+      if (g_width(3, app_label) + g_width(3, "...") <= limit)
+        break;
+    }
+    copy(app_label + n, "...");
+  }
   g_fill(0, 0, GUI_WIDTH, 30, THEME_MENUBAR_BG);
   g_line(0, 0, (GUI_WIDTH - 1), 0, 0xffffff);
   g_line(0, 29, (GUI_WIDTH - 1), 29, THEME_MENUBAR_LINE);
-  g_text(3, 57, 5,
-         gui_focus >= 0 ? locale_text(appnames[windows[gui_focus].app])
-                        : locale_text(GUI_LABEL_DESKTOP),
-         THEME_INK);
+  g_text(3, 57, 5, app_label, THEME_INK);
   for (int i = 0; i < 6; i++) {
     int wid = g_width(3, locale_text(menus[i])) + 12;
     if (menu == i)
@@ -2208,27 +2058,6 @@ static void click(int x, int y, u32 time) {
         edit_reveal(w);
         changed(id);
       }
-    } else if (w->app == PAINT) {
-      if (yy >= 38 && yy < 65) {
-        if (xx < 75)
-          save_window(id);
-        else if (xx < 165)
-          w->eraser = !w->eraser;
-        else if (xx < 240) {
-          for (int j = 0; j < 10; j++)
-            if (w->paint[j])
-              memset(w->paint[j], 0, 4096);
-          w->modified = 1;
-        }
-      } else if (inside(xx, yy, 16, 418, 544, 33))
-        w->color = min(15, (xx - 16) / 34);
-      else if (inside(xx, yy, 36, 84, 512, 320)) {
-        w->px = (xx - 36) / 2;
-        w->py = (yy - 84) / 2;
-        paint_dot(w, w->px, w->py);
-        painting = id;
-      }
-      changed(id);
     } else if (w->app == USERAPP) {
       {
         process_message(user_owner[id],
@@ -2333,12 +2162,11 @@ static void keyboard(int key) {
     menu = -1;
     invalidate((Rect){0, 0, GUI_WIDTH, GUI_HEIGHT});
     return;
-  } /* Paint has been hidden 261103. Keep app-owned F5 handling above this
-       global shortcut. */
+  }
   if (key == 0x13f)
     return;
   if (key >= 0x13b && key <= 0x141) {
-    const int apps[] = {FILES, TERM, EDIT, 0, PAINT, 0, SYSTEM};
+    const int apps[] = {FILES, TERM, EDIT, 0, 0, 0, SYSTEM};
     if (apps[key - 0x13b])
       launch(apps[key - 0x13b]);
     return;
@@ -2350,7 +2178,7 @@ static void keyboard(int key) {
   }
   if (key == 0x158) {
     if (process_launch("/boot/term.snx", 0) < 0)
-      notice("New terminal unavailable");
+      notice(locale_text(GUI_LABEL_CANNOT_START_SHELL));
     return;
   }
   int id = gui_focus;
@@ -2417,7 +2245,7 @@ void gui_refresh(void) {
       w->h = min(w->h, GUI_HEIGHT - 48);
       w->x = max(0, min(w->x, GUI_WIDTH - w->w - 5));
       w->y = max(32, min(w->y, GUI_HEIGHT - w->h - 5));
-      if (w->app != EDIT && w->app != PAINT && w->app != USERAPP)
+      if (w->app != EDIT && w->app != USERAPP)
         copy(w->title, locale_text(appnames[w->app]));
     }
   for (int i = 0; i < VFS_NODES; i++) {
@@ -2499,14 +2327,7 @@ void gui_step(void) {
       right_click(e.x, e.y);
     if ((e.buttons & 1) && !(old_buttons & 1))
       click(e.x, e.y, e.time);
-    else if ((e.buttons & 1) && painting == gui_focus && gui_focus >= 0 &&
-             drag < 0 && resize < 0 && !modal) {
-      Window* w = &windows[gui_focus];
-      if (w->app == PAINT && inside(e.x, e.y, w->x + 36, w->y + 84, 512, 320)) {
-        paint_stroke(w, (e.x - w->x - 36) / 2, (e.y - w->y - 84) / 2);
-        changed(gui_focus);
-      }
-    }
+
     if ((e.buttons & 1) && press_node >= 0 && !modal) {
       if (!dnd && (max(e.x - press_x, press_x - e.x) > 5 ||
                    max(e.y - press_y, press_y - e.y) > 5)) {
@@ -2551,8 +2372,6 @@ void gui_step(void) {
         selecting = -1;
       }
     }
-    if (!(e.buttons & 1))
-      painting = -1;
     if (e.wheel && gui_focus >= 0) {
       Window* w = &windows[gui_focus];
       if (w->app == USERAPP)

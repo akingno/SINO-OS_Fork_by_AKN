@@ -72,7 +72,7 @@ $env:SINO_TOOLCHAIN = Split-Path (Get-Command gcc.exe).Source
 $env:SINO_QEMU_DIR = 'C:\Program Files\qemu'
 ```
 
-含 GUI 的完整回归（15 组，仅按需运行）：`node 'Source Code/verify-system.js'`，按 `docs/testing.md` 准备镜像。
+含 GUI 的完整回归（14 组，仅按需运行）：`node 'Source Code/verify-system.js'`，按 `docs/testing.md` 准备镜像。
 
 发行启动文件在 `Source Code/release/`：将 `SINO.iso`、`Start SINO.cmd`、`launch.ps1` 放在同一目录，从 ISO 启动，个人文件写入 `Data/data.img`。旧安装向导、装包与预装硬盘发布流程已删除。启动器 GUI 专项入口为 `Source Code/tests/host/test-launcher.ps1`（按需运行，可用 `SINO_ISO` 指定镜像）。
 
@@ -80,7 +80,7 @@ Shell 宿主测试参数：`-ExpectedExitCode 1` 断言预期失败，`-TimeoutS
 
 ## 系统地图（路径相对 Source Code/）
 
-32 位 x86 BIOS，单体内核。桌面和剩余旧工具在 Ring 0。文件管理器（F1）、计算器（F4）、时钟（F6）已迁到 Ring 3。SI-SHELL（F2 / Terminal.app 可写，F12 只读）完全在 Ring 3 运行。画板已隐藏。文本编辑器仍在 Ring 0。主循环依次推进 RTC、桌面、网络、用户线程。
+32 位 x86 BIOS，单体内核。桌面和剩余旧工具在 Ring 0。文件管理器（F1）、计算器（F4）、时钟（F6）已迁到 Ring 3。SI-SHELL（F2 / Terminal.app 可写，F12 只读）完全在 Ring 3 运行。画图及 SNP 专用实现已删除。文本编辑器仍在 Ring 0。主循环依次推进 RTC、桌面、网络、用户线程。
 
 | 任务 | 起读文件 / 符号 | 对应验证入口 |
 | --- | --- | --- |
@@ -117,7 +117,6 @@ Shell 宿主测试参数：`-ExpectedExitCode 1` 断言预期失败，`-TimeoutS
 | 计算器 | user/calculator.c、src32/api.h、src32/process.c | tests/host/test-calculator.js |
 | 时钟与 RTC | user/clock.c、src32/rtc.c、src32/process.c:SYS_TIME | tests/host/test-clock.js |
 | 文件管理器 | user/files.c、src32/gui.c、src32/process.c | tests/host/test-files.js、tests/host/test-desktop.js |
-| 画板隐藏 | src32/gui.c、src32/vfs.c、user/files.c | tests/host/test-paint-hidden.js |
 | 网络 | src32/net.h、src32/net.c:net_poll、user/netlib.c | tests/host/test-network.js（仅回环） |
 | 日志与语言资源 | src32/klog.c/.h、src32/locale.c/.h、resources/locale/ | tests/host/test-src32-refactor.js（43 项） |
 | QEMU 测试基础设施 | tools/vm-test.js、tools/qmp.js、verify-system.js | 按改动选择 |

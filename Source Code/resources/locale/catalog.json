@@ -478,10 +478,10 @@
     "parameters": []
   },
   {
-    "key": "SETTINGS_LABEL_NATIVE_APPS_USE_USER_MODE_LEGACY_APPS_REMAIN_IN_KERNEL",
+    "key": "SETTINGS_LABEL_USER_APPS_RUN_IN_USER_MODE_LEGACY_APPS_REMAIN_IN_KERNEL",
     "module": "SETTINGS",
     "type": "LABEL",
-    "meaning": "Native apps use user mode; legacy apps remain in kernel.",
+    "meaning": "User-space apps run in Ring 3; legacy built-in apps remain in the kernel.",
     "parameters": []
   },
   {
@@ -555,13 +555,6 @@
     "parameters": []
   },
   {
-    "key": "GUI_LABEL_PAINT",
-    "module": "GUI",
-    "type": "LABEL",
-    "meaning": "Paint",
-    "parameters": []
-  },
-  {
     "key": "GUI_LABEL_TERMINAL",
     "module": "GUI",
     "type": "LABEL",
@@ -576,10 +569,10 @@
     "parameters": []
   },
   {
-    "key": "GUI_LABEL_NATIVE_APPLICATION",
+    "key": "GUI_LABEL_USER_APPLICATION",
     "module": "GUI",
     "type": "LABEL",
-    "meaning": "Native application",
+    "meaning": "User-space application",
     "parameters": []
   },
   {
@@ -688,31 +681,10 @@
     "parameters": []
   },
   {
-    "key": "GUI_LABEL_PAINT_IS_UNAVAILABLE_DRAWINGS_ARE_PRESERVED",
-    "module": "GUI",
-    "type": "LABEL",
-    "meaning": "Paint is unavailable; drawings are preserved.",
-    "parameters": []
-  },
-  {
     "key": "GUI_LABEL_UNTITLED",
     "module": "GUI",
     "type": "LABEL",
     "meaning": "Untitled",
-    "parameters": []
-  },
-  {
-    "key": "GUI_LABEL_UNTITLED_DRAWING",
-    "module": "GUI",
-    "type": "LABEL",
-    "meaning": "Untitled Drawing",
-    "parameters": []
-  },
-  {
-    "key": "GUI_LABEL_NOT_ENOUGH_DRAWING_MEMORY",
-    "module": "GUI",
-    "type": "LABEL",
-    "meaning": "Not enough drawing memory.",
     "parameters": []
   },
   {
@@ -723,10 +695,10 @@
     "parameters": []
   },
   {
-    "key": "GUI_LABEL_CANNOT_START_NATIVE_APPLICATION",
+    "key": "GUI_LABEL_CANNOT_START_USER_APPLICATION",
     "module": "GUI",
     "type": "LABEL",
-    "meaning": "Cannot start native application",
+    "meaning": "Cannot start user-space application",
     "parameters": []
   },
   {
@@ -734,13 +706,6 @@
     "module": "GUI",
     "type": "LABEL",
     "meaning": "TextEdit supports files up to 16 KB.",
-    "parameters": []
-  },
-  {
-    "key": "GUI_LABEL_THIS_IS_NOT_A_SINO_PAINT_DRAWING",
-    "module": "GUI",
-    "type": "LABEL",
-    "meaning": "This is not a SINO Paint drawing.",
     "parameters": []
   },
   {
@@ -944,34 +909,6 @@
     "module": "GUI",
     "type": "LABEL",
     "meaning": "The destination path is too long.",
-    "parameters": []
-  },
-  {
-    "key": "GUI_LABEL_ERASER",
-    "module": "GUI",
-    "type": "LABEL",
-    "meaning": "Eraser",
-    "parameters": []
-  },
-  {
-    "key": "GUI_LABEL_PENCIL",
-    "module": "GUI",
-    "type": "LABEL",
-    "meaning": "Pencil",
-    "parameters": []
-  },
-  {
-    "key": "GUI_LABEL_CLEAR",
-    "module": "GUI",
-    "type": "LABEL",
-    "meaning": "Clear",
-    "parameters": []
-  },
-  {
-    "key": "GUI_LABEL_256_X_160_PIXELS",
-    "module": "GUI",
-    "type": "LABEL",
-    "meaning": "256 x 160 pixels",
     "parameters": []
   },
   {
@@ -1293,6 +1230,13 @@
     "module": "GUI",
     "type": "STATUS",
     "meaning": "Protected source.",
+    "parameters": []
+  },
+  {
+    "key": "GUI_LABEL_CANNOT_START_SHELL",
+    "module": "GUI",
+    "type": "LABEL",
+    "meaning": "Cannot start SINO Shell",
     "parameters": []
   }
 ]

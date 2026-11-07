@@ -551,8 +551,6 @@ void vfs_init(void) {
   if (desktop < 0 || trash < 0 || apps < 0)
     panic("Desktop directories", 0, 0);
   nodes[desktop].pinned = nodes[trash].pinned = 1;
-  /* Paint has been hidden 261103. Do not register its built-in application
-   * entry. */
   const char* app_names[] = {"TextEdit", "Terminal", "Files", "System"};
   for (u32 i = 0; i < sizeof(app_names) / sizeof(app_names[0]); i++) {
     char path[VFS_PATH];

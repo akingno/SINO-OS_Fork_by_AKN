@@ -141,13 +141,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\run.ps1 -Program /boot/cli
 
 构建新 ISO，在严格进程中运行单个程序，取得独立 stdout/stderr 和最终状态。输入 ≤ 4 KiB，详见 [bounded-cli.md](bounded-cli.md)。
 
-## GUI/系统完整回归（15 组，仅按需）
+## GUI/系统完整回归（14 组，仅按需）
 
 ```
 node 'Source Code/verify-system.js'
 ```
 
-需准备普通和 SELFTEST 两种镜像；该入口包含 GUI，不属于日常验收。15 组覆盖：启动/应用、指针/键盘、文件/拖放、中文/拼音、设置/模式、网络、画板隐藏/文件管理器、桌面终端替换。其中 `tests/host/test-iso.js` 通过 QMP 启动 Shell 并保存截图。
+需准备普通和 SELFTEST 两种镜像；该入口包含 GUI，不属于日常验收。14 组覆盖：启动/应用、指针/键盘、文件/拖放、中文/拼音、设置/模式、网络、文件管理器、桌面终端替换。其中 `tests/host/test-iso.js` 通过 QMP 启动 Shell 并保存截图。
 
 ## src32 基础设施契约测试
 

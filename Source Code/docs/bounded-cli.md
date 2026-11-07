@@ -224,4 +224,4 @@ deadline/cancel, failed descriptors, replay/session isolation, truncated/oversiz
 frames, and disconnect cleanup while an unrelated user process remains runnable.
 Old Shell/app/storage/network/cold-boot checks remain. This is not full POSIX,
 hardware UART validation, exhaustive page-allocation fault injection, or the
-excluded Paint/editor/visual regression gate.
+excluded GUI editor/visual regression gate.

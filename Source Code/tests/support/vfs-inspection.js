@@ -1,0 +1,4 @@
+/* Read-only guest VFS inspection shared by file integration tests. */
+async function nodes(vm){const b=await vm.memory(vm.symbols.nodes,124*128),all=[];for(let i=0;i<128;i++){const p=b.subarray(i*124,(i+1)*124);if(p.readInt32LE(32))all[i]={id:i,name:p.subarray(0,32).toString().split('\0')[0],parent:p.readInt32LE(36),size:p.readUInt32LE(56),pages:Array.from({length:16},(_,j)=>p.readUInt32LE(60+j*4))};}function pathname(i){return i?pathname(all[i].parent)+'/'+all[i].name:'';}return all.filter(Boolean).map(n=>({...n,path:pathname(n.id)||'/'}));}
+async function fileBytes(vm,name){const n=(await nodes(vm)).find(n=>n.path===name);if(!n)throw Error('Missing fixture: '+name);const chunks=[];for(let i=0;i<Math.ceil(n.size/4096);i++)chunks.push(await vm.memory(n.pages[i],Math.min(4096,n.size-i*4096)));return Buffer.concat(chunks);}
+module.exports={nodes,fileBytes};

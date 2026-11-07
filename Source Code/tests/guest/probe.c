@@ -211,7 +211,7 @@ int main(void) {
     contracts_headless();
     return 0;
   }
-  int w = Window("原生用户态测试 / Ring 3", 520, 290);
+  int w = Window("用户态测试 / Ring 3", 520, 290);
   check(w > 0, "window");
   check(UiLanguage() == 0 || UiLanguage() == 1, "language query");
   check(WindowTitle(w, "Title ABI") == 0, "window title");
@@ -310,7 +310,7 @@ int main(void) {
         "unknown draw command");
   Log("CLOCK GRAPHICS ABI PASS: canvas signed lines ellipse bounds\n");
   ui_begin(&scene);
-  ui_text(&scene, 24, 60, "真正运行在 Ring 3 的独立原生应用");
+  ui_text(&scene, 24, 60, "运行在 Ring 3 的用户态测试程序");
   ui_text(&scene, 24, 98, "页表隔离、线程、句柄、文件 API 已通过测试。");
   ui_button(&scene, 24, 160, 170, "关闭测试程序");
   check(Scene(w, &scene) == 0, "original ABI scene");

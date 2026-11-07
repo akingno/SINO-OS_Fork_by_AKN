@@ -78,13 +78,12 @@ infrastructure 还编译 7 个宿主模型：`test-terminal-model.c`、`test-gsh
 
 ## 原有系统/GUI 专项：仅按需
 
-以下仍是独立系统检查，部分包含键鼠、截图或 GUI。`verify-system.js` 组合 15 个组；`verify-desktop.js` 组合其中 9 个组，两者不相加成 24 套测试。
+以下仍是独立系统检查，部分包含键鼠、截图或 GUI。`verify-system.js` 组合 14 个组；`verify-desktop.js` 组合其中 9 个组，其中重复的 9 个组不额外计为新覆盖。
 
 | 入口（tests/host/） | 范围 |
 | --- | --- |
 | `test-keyboard.js` | 宿主键盘逻辑 |
 | `test-files.js` | 文件管理器集成 |
-| `test-paint-hidden.js` | 画板入口隐藏 |
 | `test-iso.js` | 普通 ISO 与桌面启动 |
 | `test-terminal-replacement.js` | 桌面终端入口替换 |
 | `run-selftest.js` | SELFTEST 镜像内核检查 |

@@ -281,7 +281,7 @@ void settings_draw(int w, int h) {
     g_text(
         0, x, 321,
         locale_text(
-            SETTINGS_LABEL_NATIVE_APPS_USE_USER_MODE_LEGACY_APPS_REMAIN_IN_KERNEL),
+            SETTINGS_LABEL_USER_APPS_RUN_IN_USER_MODE_LEGACY_APPS_REMAIN_IN_KERNEL),
         0x667388);
     g_text(
         0, x, 359,

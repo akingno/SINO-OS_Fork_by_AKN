@@ -6,6 +6,10 @@ session. From a writable Shell, `run /boot/term.snx` opens a read-only window
 and `run /boot/term.snx /write` explicitly opens another writable window.
 The frontend and strict command interpreter run in separate Ring 3 processes.
 Each window owns its scrollback, input line, command history and current directory.
+The desktop menu bar shows the focused user application's window title, so the
+Shell appears as SINO Shell. Long titles are shortened at UTF-8 boundaries to fit
+before the File menu. Direct Shell launch failures use a Shell-specific message;
+other SNX launch failures use the generic user-space application message.
 
 The logical `/` remains the session's `/home/user` grant. File commands
 accept `/home/user/...` and `~/...` aliases. Read commands with an explicit

@@ -6,7 +6,7 @@ async function files(vm,id,legacy=false){return waitFor(async()=>{
   if(id===undefined?w.id!==s.focus:w.id!==id)continue;
   if(legacy&&w.app===1)return w;
   if(w.app!==9)continue;const pid=await owner(vm,w);
-  if(vm.log().includes('PROCESS start files.snx pid=0x'+pid.toString(16).toUpperCase().padStart(8,'0'))&&(await scene(vm,w)).some(c=>c.text.startsWith('/'))){const commands=await scene(vm,w),folderPath=commands.find(c=>c.x===12&&c.y===w.h-25)?.text;const all=await require('./paint-fixture').nodes(vm),parent=all.find(n=>n.path===folderPath);const sel=commands.find(c=>c.kind===1&&c.color===0x355e9a);const name=sel&&commands.find(c=>c.x===181&&c.y===sel.y+3)?.text;return {...w,pid,folderPath,folder:parent?.id,selected:all.find(n=>n.parent===parent?.id&&n.name===name)?.id??-1};}
+  if(vm.log().includes('PROCESS start files.snx pid=0x'+pid.toString(16).toUpperCase().padStart(8,'0'))&&(await scene(vm,w)).some(c=>c.text.startsWith('/'))){const commands=await scene(vm,w),folderPath=commands.find(c=>c.x===12&&c.y===w.h-25)?.text;const all=await require('./vfs-inspection').nodes(vm),parent=all.find(n=>n.path===folderPath);const sel=commands.find(c=>c.kind===1&&c.color===0x355e9a);const name=sel&&commands.find(c=>c.x===181&&c.y===sel.y+3)?.text;return {...w,pid,folderPath,folder:parent?.id,selected:all.find(n=>n.parent===parent?.id&&n.name===name)?.id??-1};}
  }
 },'Files user window');}
 async function rowPoint(vm,w,name,legacy=false){

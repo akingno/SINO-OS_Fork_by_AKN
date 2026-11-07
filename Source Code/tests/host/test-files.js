@@ -2,7 +2,7 @@ const {seedFilesDisk}=require('../support/files-fixture');
 const {waitFor,scene,shellWindow}=require('../support/ui-test');
 const {expectNotice}=require('../support/files-test');
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
-const {VM,sleep}=require('../../tools/vm-test'),{files,rowPoint}=require('../support/files-test'),{nodes,fileBytes:readFileBytes}=require('../support/paint-fixture');
+const {VM,sleep}=require('../../tools/vm-test'),{files,rowPoint}=require('../support/files-test'),{nodes,fileBytes:readFileBytes}=require('../support/vfs-inspection');
 const fileBytes=async(vm,p)=>waitFor(async()=>{try{return await readFileBytes(vm,p)}catch{return false}},'file available '+p);
 const legacy=process.argv.includes('--legacy');
 (async()=>{const vm=new VM(legacy?'files-baseline':'files-qa'),checks=[];const pass=s=>{checks.push(s);console.log('PASS '+s);};

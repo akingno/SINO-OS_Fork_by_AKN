@@ -1,4 +1,4 @@
-/* Ring 3 Files owns directory policy and UI. Paint has been hidden 261103. */
+/* Ring 3 Files owns directory policy and UI. */
 #include "sdk.h"
 #define ITEMS 128
 static FileInfo items[ITEMS], scratch[ITEMS];
@@ -81,27 +81,7 @@ static const char *folder_title(void) {
     return tr("废纸篓", "Trash");
   return leaf(folder);
 }
-static int hidden(const char *path, const FileInfo *info) {
-  if (info->dir)
-    return 0;
-  if (strlen(info->name) == 9 && suffix(info->name, "paint.app"))
-    return 1;
-  if (suffix(info->name, ".lnk")) {
-    char b[200];
-    int n = Read(path, b, 199);
-    if (n > 0) {
-      b[n] = 0;
-      for (int i = 0; b[i]; i++)
-        if (b[i] == '\n' || b[i] == '\r') {
-          b[i] = 0;
-          break;
-        }
-      const char *p = leaf(b);
-      return strlen(p) == 9 && suffix(p, "paint.app");
-    }
-  }
-  return 0;
-}
+
 static int exists(const char *p) {
   u8 b;
   int r = Read(p, &b, 1);
@@ -118,8 +98,7 @@ static void append(const char *base, int links) {
   for (int i = 0; i < n && count < ITEMS; i++) {
     if (links && !suffix(scratch[i].name, ".lnk"))
       continue;
-    if (!join(paths[count], base, scratch[i].name) ||
-        hidden(paths[count], &scratch[i]))
+    if (!join(paths[count], base, scratch[i].name))
       continue;
     items[count++] = scratch[i];
   }
