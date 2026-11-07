@@ -2,6 +2,7 @@ param(
     [string]$Command,
     [int]$ExpectedExitCode = 0,
     [switch]$SelfTest,
+    [switch]$Full,
     [ValidateSet('transport', 'commands')][string]$Suite = 'transport',
     [ValidateRange(1, 120)][int]$TimeoutSeconds = 15
 )
@@ -10,6 +11,13 @@ if ($SelfTest -and $PSBoundParameters.ContainsKey('Command')) { throw 'Choose Co
 if (-not $SelfTest -and -not $PSBoundParameters.ContainsKey('Command')) { throw 'Provide -Command or -SelfTest.' }
 if (-not $SelfTest -and ([Text.Encoding]::UTF8.GetByteCount($Command) -gt 255 -or $Command -match "[\x00\r\n]")) {
     throw 'Command must be one line of at most 255 UTF-8 bytes.'
+}
+if ($SelfTest) {
+    $functionalSuite = if ($Suite -eq 'commands') { 'shell-commands' } else { 'shell-transport' }
+    $planArguments = @('--validate', $functionalSuite)
+    if ($Full) { $planArguments += '--full' }
+    & node (Join-Path $PSScriptRoot 'Source Code/tests/host/test-core.js') @planArguments
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 $devRoot = Join-Path $PSScriptRoot 'Build Output\dev'
 New-Item -ItemType Directory -Path $devRoot -Force | Out-Null

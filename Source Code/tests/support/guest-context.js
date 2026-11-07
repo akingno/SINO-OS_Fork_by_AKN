@@ -5,6 +5,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const {execFileSync} = require('node:child_process');
 const host = require('../../tools/host-tools');
+const {createCaseRecorder} = require('./case-recorder');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const hash = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 
@@ -52,18 +53,7 @@ function createGuest(context) {
         assert.equal(actual.overflow, false, text + ': output overflow');
         return output;
     }
-    async function check(name, action) {
-        const item = {id:report.cases.length + 1, name, result:'FAIL'};
-        report.cases.push(item);
-        const started = Date.now();
-        try {
-            await action(item);
-            healthy();
-            item.result = 'PASS';
-            console.log('PASS ' + name);
-        } catch (error) { item.error = error.message; throw error; }
-        finally { item.milliseconds = Date.now() - started; }
-    }
+    const check = createCaseRecorder(job.casePlan, report, healthy);
     async function memory(address, bytes) {
         assert(Number.isInteger(address), 'missing symbol address');
         await qmp.hmp(`pmemsave 0x${address.toString(16)} ${bytes} "inspection.bin"`);

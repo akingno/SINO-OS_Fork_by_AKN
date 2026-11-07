@@ -58,6 +58,7 @@ async function boot(executable, directory, buildId) {
 }
 
 async function main(args) {
+    if (args.length === 1 && args[0] === '--list') { console.log('boot.ordinary  ISO identity, FAT12, timer and ordinary boot (1 case)'); return; }
     assert.equal(args.length, 1, 'Usage: node tests/host/test-boot.js <BuildOnly run directory>');
     const directory = path.resolve(args[0]);
     const build = JSON.parse(fs.readFileSync(path.join(directory, 'build.json'), 'utf8'));
@@ -72,6 +73,8 @@ async function main(args) {
     fs.writeFileSync(path.join(run, 'SINO.iso'), iso, {flag:'wx'});
     console.log(`Boot logs: ${run}`);
     await boot(executable, run, build.buildId);
+    fs.writeFileSync(path.join(run, 'boot-report.json'), JSON.stringify({result:'PASS',
+        buildId:build.buildId, cases:[{id:'boot.ordinary', result:'PASS'}]}, null, 2));
     console.log(`PASS headless CD boot for ${build.buildId} with FAT12, timer IRQ0 and ShellBridge disabled`);
 }
 

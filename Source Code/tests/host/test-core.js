@@ -7,7 +7,7 @@ const {spawn} = require('node:child_process');
 const host = require('../../tools/host-tools');
 const {sources} = require('../../tools/dev-run');
 const catalog = require('../support/regression-catalog');
-const {select} = require('../support/regression-selection');
+const {createPlan, assertCaseIds} = require('../support/regression-plan');
 const {runVM} = require('../support/regression-vm');
 const sourceRoot = path.resolve(__dirname, '../..');
 const repoRoot = path.dirname(sourceRoot);
@@ -33,25 +33,26 @@ async function command(executable, args, output, env = {}) {
     });
 }
 
-function plan(selection) {
-    const names = select(selection);
-    const ready = new Set();
-    for (const name of names) {
-        const definition = catalog[name];
-        assert(definition, 'Missing functional suite: ' + name);
-        assert(!definition.seedFrom || ready.has(definition.seedFrom), 'Missing earlier seed owner: ' + name);
-        ready.add(name);
-    }
-    return names;
+function plan(selection, full = false) {
+    return createPlan(selection, {full}).names;
 }
-
-async function run(directory, suite = 'core') {
+function printPlan(selection, preview = false, full = false) {
+    const result = createPlan(selection, {full:preview || full});
+    console.log('Plan: ' + result.names.length + ' groups; ' + result.count + ' unique cases');
+    for (const name of result.names) {
+        console.log('  ' + name + ': ' + catalog[name].checks);
+        if (preview) for (const item of catalog[name].cases) console.log('    ' + item.id + '  ' + item.name);
+    }
+    return result;
+}
+async function run(directory, suite = 'core', {full = false} = {}) {
     const relative = path.relative(path.join(repoRoot, 'Build Output/dev/runs'), directory);
     assert(relative && !relative.startsWith('..') && !path.isAbsolute(relative) &&
         /^regression-[^/\\]+$/.test(relative), 'Use the repository regression.ps1 entry.');
-    const names = plan(suite);
+    const executionPlan = createPlan(suite, {full});
+    const names = executionPlan.names;
     const reportFile = path.join(directory, 'regression-report.json');
-    const report = {version:3, suite, result:'FAIL', startedAt:new Date().toISOString(),
+    const report = {version:4, suite, plannedCases:executionPlan.count, full, result:'FAIL', startedAt:new Date().toISOString(),
         scope:names.some(name => catalog[name].gui) ? 'explicit GUI selection' : 'headless functional regression',
         suites:names.map(name => ({name, result:'NOT-RUN'})), testHashes:{}};
     writeJSON(reportFile, report);
@@ -79,6 +80,7 @@ async function run(directory, suite = 'core') {
                 const result = definition.host ? await definition.host({directory, command, readJSON}) :
                     await runVM({directory, build, name:item.name, definition, seeds});
                 Object.assign(item, result);
+                assertCaseIds(item.caseIds || [], definition.cases);
                 assert(item.checks > 0, item.name + ': no checks executed');
                 item.result = 'PASS';
                 console.log('PASS ' + item.name + ': ' + item.checks + ' checks');
@@ -110,14 +112,15 @@ async function run(directory, suite = 'core') {
 }
 
 function cli() {
-    if (process.argv.length !== 4) { console.error('Use regression.ps1 from the repository root.'); process.exitCode = 1; return; }
-    if (process.argv[2] === '--validate') {
-        try { console.log('Selected suites: ' + plan(process.argv[3]).join(', ')); }
+    const args = process.argv.slice(2), full = args[2] === '--full';
+    if (args.length !== 2 && !(args.length === 3 && full)) { console.error('Use regression.ps1 from the repository root.'); process.exitCode = 1; return; }
+    if (args[0] === '--validate' || args[0] === '--list') {
+        try { printPlan(args[1], args[0] === '--list', full); }
         catch (error) { console.error(error.message); process.exitCode = 1; }
         return;
     }
-    run(path.resolve(process.argv[2]), process.argv[3]).then(code => {process.exitCode = code;})
+    run(path.resolve(args[0]), args[1], {full}).then(code => {process.exitCode = code;})
         .catch(error => {console.error(error); process.exitCode = 1;});
 }
 if (require.main === module) cli();
-module.exports = {cli, run, plan};
+module.exports = {cli, run, plan, printPlan};

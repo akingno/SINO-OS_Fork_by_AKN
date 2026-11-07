@@ -249,7 +249,7 @@ Stage C's separate v2 managed protocol reports the final result and captures.
 
 ## Verification
 
-Run repository-root `regression.ps1`. The new poltest.snx executes in actual
+Run repository-root `regression.ps1 -Suite policy`. The new poltest.snx executes in actual
 CPL3, checks fixed wire layouts, output canaries, invalid capacities/flags,
 readonly/guard-page output, every denied legacy entry, meaningful private-file
 and deputy requests, spawn downgrade routes, local events/rights/threads and

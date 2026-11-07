@@ -53,13 +53,13 @@ node 'Source Code/tests/host/test-boot.js' 'Build Output/dev/runs/<本轮构建�
 从仓库根目录：
 
 ```
-powershell -NoProfile -ExecutionPolicy Bypass -File .\test.ps1 -SelfTest
+powershell -NoProfile -ExecutionPolicy Bypass -File .\test.ps1 -SelfTest -Full
 ```
 
 构建带命令通道的专用 ISO，在私有无窗口 VM 中运行自测。参数：
 
 - `-Command 'echo hello'`：执行单条命令
-- `-SelfTest -Suite commands`：112 项命令与语法检查
+- `-SelfTest -Suite commands -Full`：112 项命令与语法检查
 - `-ExpectedExitCode 1`：断言预期失败
 - `-TimeoutSeconds 5`：单命令超时
 
@@ -70,10 +70,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\test.ps1 -SelfTest
 日常开发先做普通镜像启动检查，再选与修改直接相关的专项。完整基础回归按需运行：
 
 ```powershell
-.\regression.ps1 -Suite core
+.\regression.ps1 -Suite core -Full
 ```
 
-`core` 由 19 个功能组组成，包含基础设施、RTC、Shell 通道/命令、进程、策略、完成记录、CLI、文件、管道、文本会话、交互代理、回环网络、独立持久化及测试器失败拒绝。它不调用终端窗口、QMP 键鼠、绘制场景或截图接口。宿主的终端/编辑模型属于无 GUI 逻辑测试，仍保留。
+`core` 由 23 个功能组、261 个用例组成，包含基础设施、RTC、Shell 通道/命令、进程、策略、完成记录、CLI、文件、管道、文本会话、交互代理、回环网络、独立持久化及测试器失败拒绝。它不调用终端窗口、QMP 键鼠、绘制场景或截图接口。宿主的终端/编辑模型属于无 GUI 逻辑测试，仍保留。
 
 独立验证持久化：
 
@@ -97,7 +97,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\test.ps1 -SelfTest
 .\regression.ps1 -Suite 'policy,files'
 ```
 
-`process` 为 16 项（含自己的冷启动），`policy` 为 2 项，`completion` 为 5 项，`files` 为 2 项（含自己的冷启动），`cli`、`pipes`、`terminal`、`interactive`、`network` 各 1 项；`managed-cli` 为 12 项。逗号组合共享同一次构建，各业务组仍在独立空白私有 VM 中执行。读回组只能使用自己写入组的私有盘副本，原盘哈希必须不变。未知名称或相互重叠的选择在构建前拒绝。
+`process` 为 8 项（含自己的冷启动），`policy` 为 2 项，`completion` 为 5 项，`files` 为 2 项（含自己的冷启动），`cli`、`pipes`、`terminal`、`interactive`、`network` 各 1 项；`managed-cli` 为 12 项。逗号组合共享同一次构建，各业务组仍在独立空白私有 VM 中执行。读回组只能使用自己写入组的私有盘副本，原盘哈希必须不变。未知名称在构建前拒绝；重叠选择按固定用例 ID 合并，每个用例只运行一次。
 
 目录职责：
 
@@ -107,7 +107,20 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\test.ps1 -SelfTest
 - `tests/support/regression-suites.js`、`regression-catalog.js`：组合关系、业务入口、显式冷启动种子。
 - `tests/host/test-core.js`、`tests/support/regression-vm.js`：调度、私有 VM 生命周期、构建身份及结果检查。
 
-报告按独立业务组展示；格式版本为 3。`test-report-summary.js --group contracts|selections|io` 分别验证 18/4/4 项报告契约，默认全部 26 项。
+报告按独立业务组展示；格式版本为 4，包含计划总数和实际执行的固定用例 ID。`test-report-summary.js --group contracts|selections|io` 分别验证 18/4/4 项报告契约，默认全部 26 项。
+
+## 用例计划、数量限制与压力测试
+
+```powershell
+.\regression.ps1 -Suite 'process,files,process' -List
+.\regression.ps1 -Suite stress
+```
+
+`-List` 只显示去重后的组、固定 ID 和用例数。默认总计最多 50 项、单组最多 20 项；超过时在构建前拒绝。用户显式手动全量运行可用 `-Full`，开发步骤自动验收仍遵守约定上限。`core`、50 项基础设施、25 项 Shell 通道和 112 项 Shell 命令都需要这个显式全量参数。普通单命令 `test.ps1 -Command ...` 不受整套自测影响；`test.ps1 -SelfTest` 同样先检查数量。
+
+`stress` 有 9 项（基线准备 + 8 次恢复），从普通进程套件移出。完成、终端和 Shell 等待专项已删除重复的基础整套探针和其他专项的相同唤醒用例；SDK 专项中的普通内核 Shell 语法重复检查由 112 项命令套件负责。64 MiB 与 1 GiB 内存场景仍分别保留，不能以探针名相同为由合并。
+
+一个探针执行算一个用例，其内部断言或命名条件另行保留。RTC 的反复缓存读取不再被当作上百个独立用例；内存模式由 13/18 个条件改为 9/5 次真实执行，覆盖条件均保留。当前全部入口与数量见 [test-catalog.md](test-catalog.md)。
 
 ## 终端 GUI 集成（仅按需）
 
@@ -147,12 +160,12 @@ node 'Source Code/tests/host/test-src32-refactor.js'
 
 | 入口（位于 tests/host/） | 范围 | 用例数 |
 | --- | --- | --- |
-| `test-memory.js images <构建目录>` | 64 MiB / 1 GiB、高页、当前 SNX v1/v2、冷启动 | 13 |
-| `test-memory.js anonymous <构建目录>` | 匿名映射、配额、I/O、故障与 OOM | 18 |
-| `test-pipe-waits.js <构建目录>` | 管道阻塞与回收 | 11 |
-| `test-completion-waits.js <构建目录>` | 完成记录阻塞等待 | 12 |
-| `test-terminal-waits.js <构建目录>` | 终端阻塞读取 | 14 |
-| `test-shell-waits.js <构建目录>` | SDK 与 Shell 等待集成 | 18 |
+| `test-memory.js images <构建目录>` | 64 MiB / 1 GiB、高页、当前 SNX v1/v2、冷启动 | 9 |
+| `test-memory.js anonymous <构建目录>` | 匿名映射、配额、I/O、故障与 OOM | 5 |
+| `test-pipe-waits.js <构建目录>` | 管道阻塞与回收 | 10 |
+| `test-completion-waits.js <构建目录>` | 完成记录阻塞等待 | 8 |
+| `test-terminal-waits.js <构建目录>` | 终端阻塞读取 | 11 |
+| `test-shell-waits.js <构建目录>` | SDK 与 Shell 等待集成 | 5 |
 
 内存测试仅使用当前构建，不再比较历史阶段二进制。Shell 等待测试需要构建目录内的 `kernel-normal.exe`；历史收尾模式已合并到这一个功能入口。可用 `regression.ps1 -Suite persistence` 的构建目录运行这些专项。
 

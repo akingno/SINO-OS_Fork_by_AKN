@@ -6,9 +6,6 @@ function select(value) {
     const selected = value.split(',').map(name => name.trim());
     assert(selected.length && selected.every(name => Object.hasOwn(profiles, name)),
         'Unknown regression selection: ' + value);
-    const names = selected.flatMap(name => profiles[name]);
-    assert.equal(new Set(names).size, names.length,
-        'Selections overlap; choose each functional suite once.');
-    return names;
+    return [...new Set(selected.flatMap(name => profiles[name]))];
 }
 module.exports = {select};

@@ -217,7 +217,7 @@ Stage D adds a separate 64-byte RunSpecV2 for an explicit directory grant; the
 48-byte v1 and host v2 protocol remain unchanged. See [file-objects.md](file-objects.md).
 The core regression covers directory-grant contracts. Host run.ps1 does not supply grants.
 
-regression.ps1 includes real CPL3 CLI tests and a dedicated managed-protocol VM:
+regression.ps1 -Suite 'cli,managed-cli' includes real CPL3 CLI tests and a dedicated managed-protocol VM:
 exact/max sizes, NUL/UTF-8, short reads and EOF, pointer/role/rights failures,
 separate stderr, output limits, retained fault output, negative exits, quotas,
 deadline/cancel, failed descriptors, replay/session isolation, truncated/oversize

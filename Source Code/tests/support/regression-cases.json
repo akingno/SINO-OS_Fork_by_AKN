@@ -1,0 +1,1276 @@
+{
+  "shell-transport": [
+    {
+      "id": "shell.transport.de24bbb7fdbb",
+      "name": "echo hello"
+    },
+    {
+      "id": "shell.transport.df4f8fd20011",
+      "name": "echo 你好"
+    },
+    {
+      "id": "shell.transport.ba2baee51840",
+      "name": "pwd"
+    },
+    {
+      "id": "shell.transport.a00625b77753",
+      "name": "echo one two | wc"
+    },
+    {
+      "id": "shell.transport.8ec32876690d",
+      "name": "echo alpha > bridge.txt; cat < bridge.txt"
+    },
+    {
+      "id": "shell.transport.3affe9b84c39",
+      "name": "echo beta >> bridge.txt; cat bridge.txt | grep beta"
+    },
+    {
+      "id": "shell.transport.cbc505f5ae84",
+      "name": "cd /tmp; pwd"
+    },
+    {
+      "id": "shell.transport.54b3403a0539",
+      "name": "cd /home/user; pwd"
+    },
+    {
+      "id": "shell.transport.fa68d60087a7",
+      "name": "cat missing-bridge-file"
+    },
+    {
+      "id": "shell.transport.29f9e4afd0f6",
+      "name": "echo $?"
+    },
+    {
+      "id": "shell.transport.a631049896f9",
+      "name": "echo \"unterminated"
+    },
+    {
+      "id": "shell.transport.9d0c5686cd50",
+      "name": "bridge-no-such-command"
+    },
+    {
+      "id": "shell.transport.dbc184049a21",
+      "name": "echo SCR1 PASS"
+    },
+    {
+      "id": "shell.transport.9538ca63eb0b",
+      "name": "echo recovered"
+    },
+    {
+      "id": "shell.transport.8d9c910ef260",
+      "name": ""
+    },
+    {
+      "id": "shell.transport.2aa8d0e67d01",
+      "name": "echo invalid\nline"
+    },
+    {
+      "id": "shell.transport.1dad8d4c74cc",
+      "name": "echo xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    {
+      "id": "shell.transport.9dddb6925442",
+      "name": "echo after-invalid"
+    },
+    {
+      "id": "shell.transport.9ed48e64fe19",
+      "name": "echo xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx > chunk.txt"
+    },
+    {
+      "id": "shell.transport.24bcdf08f6d9",
+      "name": "echo -e \"cat chunk.txt >> large.txt\\ncat chunk.txt >> large.txt\\ncat chunk.txt >> large.txt\\ncat chunk.txt >> large.txt\\ncat chunk.txt >> large.txt\\ncat chunk.txt >> large.txt\\ncat chunk.txt >> large.txt\\ncat chunk.txt >> large.txt\" > repeat.sh"
+    },
+    {
+      "id": "shell.transport.b25023e034d7",
+      "name": "source repeat.sh; source repeat.sh; source repeat.sh; source repeat.sh; source repeat.sh; source repeat.sh"
+    },
+    {
+      "id": "shell.transport.1c437f5e1856",
+      "name": "cat large.txt"
+    },
+    {
+      "id": "shell.transport.21c061658e37",
+      "name": "echo after-overflow"
+    },
+    {
+      "id": "shell.transport.cfb1613017dc",
+      "name": "source /boot/demo.sh"
+    },
+    {
+      "id": "shell.transport.116ee1a55eea",
+      "name": "sync"
+    }
+  ],
+  "shell-commands": [
+    {
+      "id": "shell.commands.529a61b9453e",
+      "name": "help"
+    },
+    {
+      "id": "shell.commands.c809b038df52",
+      "name": "help"
+    },
+    {
+      "id": "shell.commands.01554dd0fe7a",
+      "name": "help"
+    },
+    {
+      "id": "shell.commands.4113ca20e128",
+      "name": "help"
+    },
+    {
+      "id": "shell.commands.81d0c1a89b78",
+      "name": "help"
+    },
+    {
+      "id": "shell.commands.ba2baee51840",
+      "name": "pwd"
+    },
+    {
+      "id": "shell.commands.841f2d41878e",
+      "name": "whoami"
+    },
+    {
+      "id": "shell.commands.ae13b3a5b859",
+      "name": "uname"
+    },
+    {
+      "id": "shell.commands.063898c80625",
+      "name": "uname -a"
+    },
+    {
+      "id": "shell.commands.e3168e317fdb",
+      "name": "ver"
+    },
+    {
+      "id": "shell.commands.4303f7070856",
+      "name": "hostname"
+    },
+    {
+      "id": "shell.commands.0c4bc861e1e1",
+      "name": "hostname shell-qa"
+    },
+    {
+      "id": "shell.commands.8125503c12f8",
+      "name": "echo $HOSTNAME"
+    },
+    {
+      "id": "shell.commands.7d297bf9cfa6",
+      "name": "hostname bad_name"
+    },
+    {
+      "id": "shell.commands.0f59307df398",
+      "name": "hostname sino"
+    },
+    {
+      "id": "shell.commands.d513b02fc4e3",
+      "name": "env"
+    },
+    {
+      "id": "shell.commands.b56275799045",
+      "name": "echo \"$USER $HOME $PWD\""
+    },
+    {
+      "id": "shell.commands.39580f935e97",
+      "name": "echo '$HOME'"
+    },
+    {
+      "id": "shell.commands.48fb53638eed",
+      "name": "which echo"
+    },
+    {
+      "id": "shell.commands.04f949e89a8d",
+      "name": "which install"
+    },
+    {
+      "id": "shell.commands.f584115c7df6",
+      "name": "which nonexistent"
+    },
+    {
+      "id": "shell.commands.b522cc10374b",
+      "name": "mem"
+    },
+    {
+      "id": "shell.commands.d9d76d62bf94",
+      "name": "free"
+    },
+    {
+      "id": "shell.commands.e1c4e26d83b7",
+      "name": "df"
+    },
+    {
+      "id": "shell.commands.1ad51330a7fa",
+      "name": "uptime"
+    },
+    {
+      "id": "shell.commands.ed5befd5faeb",
+      "name": "date"
+    },
+    {
+      "id": "shell.commands.dfce00d44d1c",
+      "name": "time"
+    },
+    {
+      "id": "shell.commands.b9d53d924036",
+      "name": "about"
+    },
+    {
+      "id": "shell.commands.59dd5e15cb7d",
+      "name": "credits"
+    },
+    {
+      "id": "shell.commands.28af4bb30cf3",
+      "name": "history"
+    },
+    {
+      "id": "shell.commands.b6cf7eb21aa4",
+      "name": "clear"
+    },
+    {
+      "id": "shell.commands.43ec592afc65",
+      "name": "mkdir -p /home/user/qa/sub"
+    },
+    {
+      "id": "shell.commands.c28eaad0c0ff",
+      "name": "cd /home/user/qa/sub; pwd"
+    },
+    {
+      "id": "shell.commands.bd153a054dfd",
+      "name": "cd ..; pwd"
+    },
+    {
+      "id": "shell.commands.cfba93d259dd",
+      "name": "cd -"
+    },
+    {
+      "id": "shell.commands.175adcdd58f6",
+      "name": "cd ~; pwd"
+    },
+    {
+      "id": "shell.commands.b7a78c199062",
+      "name": "cd qa; pwd"
+    },
+    {
+      "id": "shell.commands.0771fb9de240",
+      "name": "touch empty.txt .hidden"
+    },
+    {
+      "id": "shell.commands.f1d8918e03b2",
+      "name": "ls"
+    },
+    {
+      "id": "shell.commands.3f4cf500f602",
+      "name": "ls -a"
+    },
+    {
+      "id": "shell.commands.3facb9138e75",
+      "name": "ls -la"
+    },
+    {
+      "id": "shell.commands.ae8994b94612",
+      "name": "ls -z"
+    },
+    {
+      "id": "shell.commands.b6bef0aa91de",
+      "name": "echo alpha beta > notes.txt"
+    },
+    {
+      "id": "shell.commands.332353e48619",
+      "name": "echo gamma >> notes.txt"
+    },
+    {
+      "id": "shell.commands.536852f3aaf3",
+      "name": "cat notes.txt"
+    },
+    {
+      "id": "shell.commands.ef798a7ea490",
+      "name": "head -n 1 notes.txt"
+    },
+    {
+      "id": "shell.commands.149a4662df0f",
+      "name": "tail -n 1 notes.txt"
+    },
+    {
+      "id": "shell.commands.4f96fc79eafc",
+      "name": "head -n 0 notes.txt"
+    },
+    {
+      "id": "shell.commands.38a23a669f2a",
+      "name": "tail -n 0 notes.txt"
+    },
+    {
+      "id": "shell.commands.e7636b2f01cc",
+      "name": "head -n x notes.txt"
+    },
+    {
+      "id": "shell.commands.1e9b2eda9265",
+      "name": "wc notes.txt"
+    },
+    {
+      "id": "shell.commands.be54a339c9a4",
+      "name": "wc -l notes.txt"
+    },
+    {
+      "id": "shell.commands.130d463cf647",
+      "name": "wc -w notes.txt"
+    },
+    {
+      "id": "shell.commands.d3c86d4bcbbd",
+      "name": "wc -c notes.txt"
+    },
+    {
+      "id": "shell.commands.112f22061038",
+      "name": "wc -z notes.txt"
+    },
+    {
+      "id": "shell.commands.e4430042208a",
+      "name": "grep -n beta notes.txt"
+    },
+    {
+      "id": "shell.commands.f162b2e7bb31",
+      "name": "grep absent notes.txt"
+    },
+    {
+      "id": "shell.commands.0e70648609db",
+      "name": "cat < notes.txt | grep gamma | wc -l"
+    },
+    {
+      "id": "shell.commands.3a62b214f76a",
+      "name": "grep beta notes.txt > matches.txt; cat matches.txt"
+    },
+    {
+      "id": "shell.commands.938a38a58dc3",
+      "name": "echo -n AB > hex.txt; hexdump hex.txt"
+    },
+    {
+      "id": "shell.commands.c296d41b164e",
+      "name": "write written.txt first line; append written.txt second line; cat written.txt"
+    },
+    {
+      "id": "shell.commands.17f6562e0bdb",
+      "name": "cp notes.txt copied.txt; mv copied.txt renamed.txt; cat renamed.txt"
+    },
+    {
+      "id": "shell.commands.7ce96655cef4",
+      "name": "stat notes.txt"
+    },
+    {
+      "id": "shell.commands.c464fcc4a9d0",
+      "name": "stat notes.txt"
+    },
+    {
+      "id": "shell.commands.16adcf75f073",
+      "name": "stat ."
+    },
+    {
+      "id": "shell.commands.81193544d6d5",
+      "name": "stat /home/user"
+    },
+    {
+      "id": "shell.commands.b8f5c1add565",
+      "name": "stat /boot/readme.txt"
+    },
+    {
+      "id": "shell.commands.dbabfd15d262",
+      "name": "stat /boot"
+    },
+    {
+      "id": "shell.commands.76128b610cb5",
+      "name": "stat /Applications/Terminal.app"
+    },
+    {
+      "id": "shell.commands.7a2ceb4ac532",
+      "name": "touch /tmp/stat-check; stat /tmp/stat-check"
+    },
+    {
+      "id": "shell.commands.576052a43deb",
+      "name": "stat /tmp"
+    },
+    {
+      "id": "shell.commands.65af1a0fad93",
+      "name": "mkdir /home/user2; touch /home/user2/check; stat /home/user2/check"
+    },
+    {
+      "id": "shell.commands.4cdf46154b5a",
+      "name": "stat no-such-stat-file"
+    },
+    {
+      "id": "shell.commands.ac121f4b66e8",
+      "name": "stat"
+    },
+    {
+      "id": "shell.commands.6e41ec3d61e1",
+      "name": "sync; stat notes.txt"
+    },
+    {
+      "id": "shell.commands.8255cd657d38",
+      "name": "tree ."
+    },
+    {
+      "id": "shell.commands.bc12267a0d2c",
+      "name": "find . renamed"
+    },
+    {
+      "id": "shell.commands.f9911ed70181",
+      "name": "echo 你好 > 中文.txt; cat 中文.txt"
+    },
+    {
+      "id": "shell.commands.d27714a9e423",
+      "name": "echo \"hello world\" > \"two words.txt\"; cat \"two words.txt\""
+    },
+    {
+      "id": "shell.commands.f67d004cde10",
+      "name": "echo -e \"one\\ntwo\" > escaped.txt; cat escaped.txt"
+    },
+    {
+      "id": "shell.commands.fae7cf07f8d2",
+      "name": "echo literal # ignored; touch never-created"
+    },
+    {
+      "id": "shell.commands.666e1532fbb7",
+      "name": "cat never-created"
+    },
+    {
+      "id": "shell.commands.29f9e4afd0f6",
+      "name": "echo $?"
+    },
+    {
+      "id": "shell.commands.a631049896f9",
+      "name": "echo \"unterminated"
+    },
+    {
+      "id": "shell.commands.a89e488fc12e",
+      "name": "echo a | | wc"
+    },
+    {
+      "id": "shell.commands.7394c6d7a6f9",
+      "name": "echo a > a.txt > b.txt"
+    },
+    {
+      "id": "shell.commands.e7217b279f1f",
+      "name": "echo a >"
+    },
+    {
+      "id": "shell.commands.770df67315f0",
+      "name": "echo a > a.txt | wc"
+    },
+    {
+      "id": "shell.commands.4944264669e2",
+      "name": "cat"
+    },
+    {
+      "id": "shell.commands.ef78f0a669fb",
+      "name": "cat absent"
+    },
+    {
+      "id": "shell.commands.c408bc1325cd",
+      "name": "echo forbidden > /boot/readme.txt"
+    },
+    {
+      "id": "shell.commands.bbe4b1e506f8",
+      "name": "echo unchanged > protected.txt; cat absent > protected.txt; cat protected.txt"
+    },
+    {
+      "id": "shell.commands.9f70e029c917",
+      "name": "echo 'echo script-ok' > job.sh; source job.sh"
+    },
+    {
+      "id": "shell.commands.9ee57a2d6d16",
+      "name": ". job.sh"
+    },
+    {
+      "id": "shell.commands.7a5ce9950fe1",
+      "name": "echo 'source loop.sh' > loop.sh; source loop.sh"
+    },
+    {
+      "id": "shell.commands.225cceec409b",
+      "name": "DIR"
+    },
+    {
+      "id": "shell.commands.2fba82e22356",
+      "name": "TYPE notes.txt"
+    },
+    {
+      "id": "shell.commands.0d9fe914295c",
+      "name": "MD alias-dir; COPY notes.txt alias.txt; REN alias.txt alias-renamed.txt; TYPE alias-renamed.txt"
+    },
+    {
+      "id": "shell.commands.6641f2afafa8",
+      "name": "DEL alias-renamed.txt; rmdir alias-dir"
+    },
+    {
+      "id": "shell.commands.058b4e2a6664",
+      "name": "CLS"
+    },
+    {
+      "id": "shell.commands.06344a8b8bd8",
+      "name": "VER"
+    },
+    {
+      "id": "shell.commands.0d3fb0a21ff4",
+      "name": "rmdir sub; rm empty.txt .hidden"
+    },
+    {
+      "id": "shell.commands.012703f1e2a1",
+      "name": "mkdir occupied; touch occupied/file; rmdir occupied"
+    },
+    {
+      "id": "shell.commands.96e8890e1242",
+      "name": "rm occupied/file; rmdir occupied"
+    },
+    {
+      "id": "shell.commands.cbabcc852330",
+      "name": "ps"
+    },
+    {
+      "id": "shell.commands.17515b845ddd",
+      "name": "run /boot/hello.f32"
+    },
+    {
+      "id": "shell.commands.3087fc55bcde",
+      "name": "run /boot/probe.snx"
+    },
+    {
+      "id": "shell.commands.a9b924d13421",
+      "name": "sleep 1"
+    },
+    {
+      "id": "shell.commands.bd0500d4fb8b",
+      "name": "sleep invalid"
+    },
+    {
+      "id": "shell.commands.50f988d1f9e6",
+      "name": "kill 99999"
+    },
+    {
+      "id": "shell.commands.74ecf9caf5ec",
+      "name": "run /boot/missing.snx"
+    },
+    {
+      "id": "shell.commands.01f4d16e031f",
+      "name": "sync"
+    }
+  ],
+  "process": [
+    {
+      "id": "process.boot-and-kernel-object-contracts",
+      "name": "boot and kernel object contracts"
+    },
+    {
+      "id": "process.headless-ring-3-abi-permissions-threads-handles-and-binary-vfs",
+      "name": "headless Ring 3 ABI, permissions, threads, handles and binary VFS"
+    },
+    {
+      "id": "process.fault-fault-is-contained-and-resources-are-reclaimed",
+      "name": "fault fault is contained and resources are reclaimed"
+    },
+    {
+      "id": "process.iofault-fault-is-contained-and-resources-are-reclaimed",
+      "name": "iofault fault is contained and resources are reclaimed"
+    },
+    {
+      "id": "process.udfault-fault-is-contained-and-resources-are-reclaimed",
+      "name": "udfault fault is contained and resources are reclaimed"
+    },
+    {
+      "id": "process.user-preemption-permits-a-second-process-and-shell-progress",
+      "name": "user preemption permits a second process and Shell progress"
+    },
+    {
+      "id": "process.full-process-table-rejects-launch-and-cancellation-releases-every-slot",
+      "name": "full process table rejects launch and cancellation releases every slot"
+    }
+  ],
+  "process-stress": [
+    {
+      "id": "process-stress.prepare-the-stress-probe-resource-baseline",
+      "name": "prepare the stress probe resource baseline"
+    },
+    {
+      "id": "process-stress.normal-exit-resource-recovery-1-8",
+      "name": "normal exit resource recovery 1/8"
+    },
+    {
+      "id": "process-stress.normal-exit-resource-recovery-2-8",
+      "name": "normal exit resource recovery 2/8"
+    },
+    {
+      "id": "process-stress.normal-exit-resource-recovery-3-8",
+      "name": "normal exit resource recovery 3/8"
+    },
+    {
+      "id": "process-stress.normal-exit-resource-recovery-4-8",
+      "name": "normal exit resource recovery 4/8"
+    },
+    {
+      "id": "process-stress.normal-exit-resource-recovery-5-8",
+      "name": "normal exit resource recovery 5/8"
+    },
+    {
+      "id": "process-stress.normal-exit-resource-recovery-6-8",
+      "name": "normal exit resource recovery 6/8"
+    },
+    {
+      "id": "process-stress.normal-exit-resource-recovery-7-8",
+      "name": "normal exit resource recovery 7/8"
+    },
+    {
+      "id": "process-stress.normal-exit-resource-recovery-8-8",
+      "name": "normal exit resource recovery 8/8"
+    }
+  ],
+  "process-reboot": [
+    {
+      "id": "process-reboot.cold-boot-preserves-process-probe-binary-bytes",
+      "name": "cold boot preserves process probe binary bytes"
+    }
+  ],
+  "policy": [
+    {
+      "id": "policy.legacy-versioned-queries-preserve-compatibility",
+      "name": "legacy versioned queries preserve compatibility"
+    },
+    {
+      "id": "policy.strict-policy-denies-every-ambient-entry-and-downgrade",
+      "name": "strict policy denies every ambient entry and downgrade"
+    }
+  ],
+  "completion": [
+    {
+      "id": "completion.durable-results-rights-exhaustion-and-launch-rollback",
+      "name": "durable results, rights, exhaustion and launch rollback"
+    },
+    {
+      "id": "completion.external-termination-remains-distinct-from-cancellation",
+      "name": "external termination remains distinct from cancellation"
+    },
+    {
+      "id": "completion.observer-lifecycle-orphan",
+      "name": "observer lifecycle: orphan"
+    },
+    {
+      "id": "completion.observer-lifecycle-abandon",
+      "name": "observer lifecycle: abandon"
+    },
+    {
+      "id": "completion.observer-lifecycle-observer-fault",
+      "name": "observer lifecycle: observer-fault"
+    }
+  ],
+  "cli": [
+    {
+      "id": "cli.bounded-cli-inputs-streams-capture-quota-and-rollback",
+      "name": "bounded CLI inputs, streams, capture, quota and rollback"
+    }
+  ],
+  "files": [
+    {
+      "id": "files.directory-grants-range-io-private-publication-and-durable-save",
+      "name": "directory grants, range IO, private publication and durable save"
+    }
+  ],
+  "files-reboot": [
+    {
+      "id": "files-reboot.cold-boot-preserves-published-file-bytes",
+      "name": "cold boot preserves published file bytes"
+    }
+  ],
+  "pipes": [
+    {
+      "id": "pipes.bounded-pipes-concurrent-streaming-close-and-deadline-recovery",
+      "name": "bounded pipes, concurrent streaming, close and deadline recovery"
+    }
+  ],
+  "terminal": [
+    {
+      "id": "terminal.terminal-isolation-foreground-input-and-recovery",
+      "name": "terminal isolation, foreground input and recovery"
+    }
+  ],
+  "interactive": [
+    {
+      "id": "interactive.interactive-launch-and-broker-contracts",
+      "name": "interactive launch and broker contracts"
+    }
+  ],
+  "network": [
+    {
+      "id": "network.loopback-network-runs-in-ring-3-and-releases-its-handles",
+      "name": "loopback network runs in Ring 3 and releases its handles"
+    }
+  ],
+  "managed-cli": [
+    {
+      "id": "managed-cli.v2-handshake-advertises-bounded-limits",
+      "name": "v2 handshake advertises bounded limits"
+    },
+    {
+      "id": "managed-cli.v2-preserves-argv-boundaries-empty-values-and-utf-8",
+      "name": "v2 preserves argv boundaries, empty values and UTF-8"
+    },
+    {
+      "id": "managed-cli.v2-exact-input-output-capacity-and-independent-binary-stderr",
+      "name": "v2 exact input/output capacity and independent binary stderr"
+    },
+    {
+      "id": "managed-cli.v2-maximum-packed-arguments-fit-exactly",
+      "name": "v2 maximum packed arguments fit exactly"
+    },
+    {
+      "id": "managed-cli.v2-actual-negative-exit-and-fault-output-are-distinct",
+      "name": "v2 actual negative exit and fault output are distinct"
+    },
+    {
+      "id": "managed-cli.v2-output-and-stderr-overflows-are-explicit-incomplete-results",
+      "name": "v2 output and stderr overflows are explicit incomplete results"
+    },
+    {
+      "id": "managed-cli.v2-guest-deadline-differs-from-host-transport-timeout",
+      "name": "v2 guest deadline differs from host transport timeout"
+    },
+    {
+      "id": "managed-cli.v2-two-asynchronous-runs-targeted-cancellation-and-quota",
+      "name": "v2 two asynchronous runs, targeted cancellation and quota"
+    },
+    {
+      "id": "managed-cli.v2-malformed-descriptors-reject-without-retaining-resources",
+      "name": "v2 malformed descriptors reject without retaining resources"
+    },
+    {
+      "id": "managed-cli.v2-replay-and-old-session-cannot-operate-on-a-new-session",
+      "name": "v2 replay and old session cannot operate on a new session"
+    },
+    {
+      "id": "managed-cli.v2-framing-recovers-after-a-corrupt-prefix",
+      "name": "v2 framing recovers after a corrupt prefix"
+    },
+    {
+      "id": "managed-cli.v2-disconnect-lease-cancels-only-its-managed-tasks",
+      "name": "v2 disconnect lease cancels only its managed tasks"
+    }
+  ],
+  "persistence-write": [
+    {
+      "id": "persistence-write.headless-probe-commits-exact-binary-bytes",
+      "name": "headless probe commits exact binary bytes"
+    },
+    {
+      "id": "persistence-write.headless-command-channel-commits-text-bytes",
+      "name": "headless command channel commits text bytes"
+    }
+  ],
+  "persistence-read": [
+    {
+      "id": "persistence-read.cold-boot-recovers-exact-binary-bytes",
+      "name": "cold boot recovers exact binary bytes"
+    },
+    {
+      "id": "persistence-read.cold-boot-recovers-exact-text-bytes",
+      "name": "cold boot recovers exact text bytes"
+    }
+  ],
+  "runner-rejects-failure": [
+    {
+      "id": "runner-rejects-failure.intentional-guest-failure-must-reject-the-gate",
+      "name": "intentional guest failure must reject the gate"
+    }
+  ],
+  "pipe-waits": [
+    {
+      "id": "pipe-waits.read-wake",
+      "name": "read-wake"
+    },
+    {
+      "id": "pipe-waits.write-wake",
+      "name": "write-wake"
+    },
+    {
+      "id": "pipe-waits.read-eof",
+      "name": "read-eof"
+    },
+    {
+      "id": "pipe-waits.write-closed",
+      "name": "write-closed"
+    },
+    {
+      "id": "pipe-waits.read-timeout",
+      "name": "read-timeout"
+    },
+    {
+      "id": "pipe-waits.contended-read",
+      "name": "contended-read"
+    },
+    {
+      "id": "pipe-waits.local-close",
+      "name": "local-close"
+    },
+    {
+      "id": "pipe-waits.unmap",
+      "name": "unmap"
+    },
+    {
+      "id": "pipe-waits.wire",
+      "name": "wire"
+    },
+    {
+      "id": "pipe-waits.blocked-process-timeout-releases-pipe",
+      "name": "blocked process timeout releases pipe"
+    }
+  ],
+  "completion-waits": [
+    {
+      "id": "completion-waits.exit",
+      "name": "exit"
+    },
+    {
+      "id": "completion-waits.run-exit",
+      "name": "run-exit"
+    },
+    {
+      "id": "completion-waits.run-timeout",
+      "name": "run-timeout"
+    },
+    {
+      "id": "completion-waits.timeout",
+      "name": "timeout"
+    },
+    {
+      "id": "completion-waits.multi-cancel",
+      "name": "multi-cancel"
+    },
+    {
+      "id": "completion-waits.local-close",
+      "name": "local-close"
+    },
+    {
+      "id": "completion-waits.unmap",
+      "name": "unmap"
+    },
+    {
+      "id": "completion-waits.wire",
+      "name": "wire"
+    }
+  ],
+  "terminal-waits": [
+    {
+      "id": "terminal-waits.raw",
+      "name": "raw"
+    },
+    {
+      "id": "terminal-waits.canonical",
+      "name": "canonical"
+    },
+    {
+      "id": "terminal-waits.eof",
+      "name": "eof"
+    },
+    {
+      "id": "terminal-waits.hangup",
+      "name": "hangup"
+    },
+    {
+      "id": "terminal-waits.controller",
+      "name": "controller"
+    },
+    {
+      "id": "terminal-waits.timeout",
+      "name": "timeout"
+    },
+    {
+      "id": "terminal-waits.foreground",
+      "name": "foreground"
+    },
+    {
+      "id": "terminal-waits.snapshot",
+      "name": "snapshot"
+    },
+    {
+      "id": "terminal-waits.unmap",
+      "name": "unmap"
+    },
+    {
+      "id": "terminal-waits.local-close",
+      "name": "local-close"
+    },
+    {
+      "id": "terminal-waits.wire",
+      "name": "wire"
+    }
+  ],
+  "shell-waits": [
+    {
+      "id": "shell-waits.headless-shell-result-wait",
+      "name": "headless Shell result wait"
+    },
+    {
+      "id": "shell-waits.headless-shell-broker-failure",
+      "name": "headless Shell broker failure"
+    },
+    {
+      "id": "shell-waits.sdk-terminal-read-wait",
+      "name": "SDK terminal read wait"
+    },
+    {
+      "id": "shell-waits.thread-slot-reuse",
+      "name": "thread slot reuse"
+    },
+    {
+      "id": "shell-waits.shell-broker-wait-interrupted-by-hangup",
+      "name": "Shell broker wait interrupted by hangup"
+    }
+  ],
+  "files-gui": [
+    {
+      "id": "files-gui.file-manager-window-selftest-and-resource-recovery",
+      "name": "file manager window selftest and resource recovery"
+    }
+  ],
+  "frontend-gui": [
+    {
+      "id": "frontend-gui.g1-independent-ring-3-frontend-and-shared-text-model",
+      "name": "G1 independent Ring 3 frontend and shared text model"
+    },
+    {
+      "id": "frontend-gui.g1-two-focused-windows-isolate-input-and-ime-commits",
+      "name": "G1 two focused windows isolate input and IME commits"
+    },
+    {
+      "id": "frontend-gui.g1-raw-keys-utf-8-output-controls-and-output-backpressure",
+      "name": "G1 raw keys, UTF-8 output, controls and output backpressure"
+    },
+    {
+      "id": "frontend-gui.g1-simple-window-size-mapping-and-coalesced-session-resize",
+      "name": "G1 simple window size mapping and coalesced session resize"
+    },
+    {
+      "id": "frontend-gui.g1-directed-ctrl-c-leaves-the-other-session-alive",
+      "name": "G1 directed Ctrl+C leaves the other session alive"
+    },
+    {
+      "id": "frontend-gui.g1-frontend-fault-and-controller-loss-reclaim-bounded-probe",
+      "name": "G1 frontend fault and controller loss reclaim bounded probe"
+    },
+    {
+      "id": "frontend-gui.g1-client-fault-and-external-termination-display-typed-results",
+      "name": "G1 client fault and external termination display typed results"
+    },
+    {
+      "id": "frontend-gui.g1-session-exhaustion-fails-cleanly-and-repeated-close-recovers",
+      "name": "G1 session exhaustion fails cleanly and repeated close recovers"
+    },
+    {
+      "id": "frontend-gui.g1-full-pending-input-remains-closable-without-waiting-for-the-client",
+      "name": "G1 full pending input remains closable without waiting for the client"
+    },
+    {
+      "id": "frontend-gui.g6-f2-uses-a-writable-ring-3-shell-and-the-detached-app-route",
+      "name": "G6 F2 uses a writable Ring 3 Shell and the detached app route"
+    },
+    {
+      "id": "frontend-gui.g2-desktop-broker-restores-foreground-after-exit-fault-and-cancel",
+      "name": "G2 desktop broker restores foreground after exit, fault and cancel"
+    },
+    {
+      "id": "frontend-gui.g2-last-controller-loss-cancels-noncooperative-owned-tasks",
+      "name": "G2 last controller loss cancels noncooperative owned tasks"
+    }
+  ],
+  "shell-gui": [
+    {
+      "id": "shell-gui.g3-shell-builtins-quoting-empty-argv-and-syntax-errors",
+      "name": "G3 Shell builtins, quoting, empty argv and syntax errors"
+    },
+    {
+      "id": "shell-gui.g3-per-session-cwd-root-confinement-and-chinese-argv",
+      "name": "G3 per-session cwd, root confinement and Chinese argv"
+    },
+    {
+      "id": "shell-gui.g3-typed-exit-status-worker-fault-cancellation-and-recovery",
+      "name": "G3 typed exit status, worker fault, cancellation and recovery"
+    },
+    {
+      "id": "shell-gui.g3-startup-exhaustion-reports-a-final-error-and-accepts-another-command",
+      "name": "G3 startup exhaustion reports a final error and accepts another command"
+    },
+    {
+      "id": "shell-gui.g3-ctrl-c-discards-a-prompt-line-and-long-canonical-input-stays-bounded",
+      "name": "G3 Ctrl+C discards a prompt line and long canonical input stays bounded"
+    }
+  ],
+  "file-tools-gui": [
+    {
+      "id": "file-tools-gui.g4-readonly-commands-cwd-paths-options-and-confinement",
+      "name": "G4 readonly commands, cwd paths, options and confinement"
+    },
+    {
+      "id": "file-tools-gui.g4-pager-raw-keys-pages-quit-eof-cancel-and-two-sessions",
+      "name": "G4 pager raw keys, pages, quit, EOF, cancel and two sessions"
+    },
+    {
+      "id": "file-tools-gui.g4-chinese-paths-long-line-paging-resize-and-close-release-file-handles",
+      "name": "G4 Chinese paths, long-line paging, resize and close release file handles"
+    },
+    {
+      "id": "file-tools-gui.g4-detects-file-revision-changes-while-paged-and-recovers",
+      "name": "G4 detects file revision changes while paged and recovers"
+    }
+  ],
+  "shell-tools-gui": [
+    {
+      "id": "shell-tools-gui.g5a-user-banner-120-column-output-command-help-and-aliases",
+      "name": "G5a user banner, 120-column output, command help and aliases"
+    },
+    {
+      "id": "shell-tools-gui.g5a-explicit-head-line-count-uses-the-same-existing-welcome-file",
+      "name": "G5a explicit head line count uses the same existing welcome file"
+    },
+    {
+      "id": "shell-tools-gui.g5a-public-information-commands-report-real-values",
+      "name": "G5a public information commands report real values"
+    },
+    {
+      "id": "shell-tools-gui.g5a-text-tools-handle-options-raw-counts-and-bounded-long-lines",
+      "name": "G5a text tools handle options, raw counts and bounded long lines"
+    }
+  ],
+  "workspace-gui": [
+    {
+      "id": "workspace-gui.g5b-explicit-readonly-session-refuses-write-requests",
+      "name": "G5b explicit readonly session refuses write requests"
+    },
+    {
+      "id": "workspace-gui.g5b-strict-workspace-file-lifecycle-append-copy-and-busy-protection",
+      "name": "G5b strict workspace file lifecycle, append, copy and Busy protection"
+    },
+    {
+      "id": "workspace-gui.g5b-copy-cancellation-and-size-failure-discard-private-stages",
+      "name": "G5b copy cancellation and size failure discard private stages"
+    }
+  ],
+  "line-edit-gui": [
+    {
+      "id": "line-edit-gui.shell-raw-edit-cursor-delete-history-completion-and-clear",
+      "name": "Shell raw edit cursor, delete, history, completion and clear"
+    }
+  ],
+  "gui-persistence-write": [
+    {
+      "id": "gui-persistence-write.gui-shell-commits-its-own-cold-boot-fixture",
+      "name": "GUI Shell commits its own cold-boot fixture"
+    }
+  ],
+  "gui-persistence-read": [
+    {
+      "id": "gui-persistence-read.cold-boot-preserves-gui-shell-committed-bytes",
+      "name": "cold boot preserves GUI Shell committed bytes"
+    }
+  ],
+  "infrastructure": [
+    {
+      "id": "storage.no-disk",
+      "name": "storage.no-disk"
+    },
+    {
+      "id": "storage.blank-init",
+      "name": "storage.blank-init"
+    },
+    {
+      "id": "storage.clean-sync",
+      "name": "storage.clean-sync"
+    },
+    {
+      "id": "storage.commit",
+      "name": "storage.commit"
+    },
+    {
+      "id": "storage.header-failure",
+      "name": "storage.header-failure"
+    },
+    {
+      "id": "storage.payload-failure",
+      "name": "storage.payload-failure"
+    },
+    {
+      "id": "storage.payload-flush-failure",
+      "name": "storage.payload-flush-failure"
+    },
+    {
+      "id": "storage.commit-failure",
+      "name": "storage.commit-failure"
+    },
+    {
+      "id": "storage.commit-flush-failure",
+      "name": "storage.commit-flush-failure"
+    },
+    {
+      "id": "storage.retry-clears-error",
+      "name": "storage.retry-clears-error"
+    },
+    {
+      "id": "storage.retry-payload",
+      "name": "storage.retry-payload"
+    },
+    {
+      "id": "storage.retry-flush",
+      "name": "storage.retry-flush"
+    },
+    {
+      "id": "storage.retry-commit",
+      "name": "storage.retry-commit"
+    },
+    {
+      "id": "storage.retry-commit-flush",
+      "name": "storage.retry-commit-flush"
+    },
+    {
+      "id": "storage.full-volume",
+      "name": "storage.full-volume"
+    },
+    {
+      "id": "storage.volume-read-safe",
+      "name": "storage.volume-read-safe"
+    },
+    {
+      "id": "storage.volume-read-reason",
+      "name": "storage.volume-read-reason"
+    },
+    {
+      "id": "storage.volume-create-write-safe",
+      "name": "storage.volume-create-write-safe"
+    },
+    {
+      "id": "storage.volume-create-write-reason",
+      "name": "storage.volume-create-write-reason"
+    },
+    {
+      "id": "storage.volume-create-flush-safe",
+      "name": "storage.volume-create-flush-safe"
+    },
+    {
+      "id": "storage.volume-create-flush-reason",
+      "name": "storage.volume-create-flush-reason"
+    },
+    {
+      "id": "storage.initial-snapshot-retryable",
+      "name": "storage.initial-snapshot-retryable"
+    },
+    {
+      "id": "storage.initial-snapshot-no-success-log",
+      "name": "storage.initial-snapshot-no-success-log"
+    },
+    {
+      "id": "storage.background-retry-spacing",
+      "name": "storage.background-retry-spacing"
+    },
+    {
+      "id": "storage.background-failure-log",
+      "name": "storage.background-failure-log"
+    },
+    {
+      "id": "klog.explicit-length",
+      "name": "klog.explicit-length"
+    },
+    {
+      "id": "klog.hex-compatibility",
+      "name": "klog.hex-compatibility"
+    },
+    {
+      "id": "klog.no-prefix-or-newline",
+      "name": "klog.no-prefix-or-newline"
+    },
+    {
+      "id": "locale.complete-catalog",
+      "name": "locale.complete-catalog"
+    },
+    {
+      "id": "locale.language-fallback",
+      "name": "locale.language-fallback"
+    },
+    {
+      "id": "locale.invalid-key",
+      "name": "locale.invalid-key"
+    },
+    {
+      "id": "locale.vfs-node-limit",
+      "name": "locale.vfs-node-limit"
+    },
+    {
+      "id": "locale.vfs-node-limit-en",
+      "name": "locale.vfs-node-limit-en"
+    },
+    {
+      "id": "locale.user-text-preserved",
+      "name": "locale.user-text-preserved"
+    },
+    {
+      "id": "locale.folder-properties",
+      "name": "locale.folder-properties"
+    },
+    {
+      "id": "locale.format-overflow",
+      "name": "locale.format-overflow"
+    },
+    {
+      "id": "locale.format-zero-capacity",
+      "name": "locale.format-zero-capacity"
+    },
+    {
+      "id": "locale.live-language",
+      "name": "locale.live-language"
+    },
+    {
+      "id": "locale.generator-roundtrip",
+      "name": "locale.generator-roundtrip"
+    },
+    {
+      "id": "locale.reject-missing",
+      "name": "locale.reject-missing"
+    },
+    {
+      "id": "locale.reject-duplicate",
+      "name": "locale.reject-duplicate"
+    },
+    {
+      "id": "locale.reject-parameters",
+      "name": "locale.reject-parameters"
+    },
+    {
+      "id": "runner.runtime-source-unchanged",
+      "name": "runner.runtime-source-unchanged"
+    },
+    {
+      "id": "model.terminal",
+      "name": "model.terminal"
+    },
+    {
+      "id": "model.gsh-parser",
+      "name": "model.gsh-parser"
+    },
+    {
+      "id": "model.file-text",
+      "name": "model.file-text"
+    },
+    {
+      "id": "model.text-scan",
+      "name": "model.text-scan"
+    },
+    {
+      "id": "model.line-edit",
+      "name": "model.line-edit"
+    },
+    {
+      "id": "model.line-model",
+      "name": "model.line-model"
+    },
+    {
+      "id": "model.ui-queue",
+      "name": "model.ui-queue"
+    }
+  ],
+  "rtc-driver": [
+    {
+      "id": "rtc.driver",
+      "name": "RTC sampler, decoder and cache"
+    }
+  ]
+}

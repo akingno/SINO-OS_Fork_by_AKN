@@ -33,13 +33,17 @@
 
 ```powershell
 .\regression.ps1 -Suite persistence   # 独立持久化检查，4 项
-.\regression.ps1 -Suite core          # 非 GUI 基础回归，仅按需全量运行
+.\regression.ps1 -Suite core -Full    # 非 GUI 基础回归，仅显式手动全量运行
 .\regression.ps1 -Suite terminal-gui  # GUI，仅在明确要求时运行
 ```
 
-日常优先选择单个功能：`-Suite process`（16 项）、`policy`（2 项）、`completion`（5 项）、`files`（2 项）、`cli`、`pipes`、`terminal`、`interactive`、`network`（各 1 项）。可用 `-Suite 'policy,files'` 组合互不重叠的功能，只构建一次；未知名称或重复选择会在构建前拒绝。`process`、`files` 和 `persistence` 各自包含自己的写入与冷启动读取，不能依赖其他业务套件准备数据。GUI 可单选 `frontend-gui`、`shell-gui`、`file-tools-gui`、`shell-tools-gui`、`workspace-gui`、`line-edit-gui`、`files-gui`。
+日常优先选择单个功能：`-Suite process`（8 项）、`policy`（2 项）、`completion`（5 项）、`files`（2 项）、`cli`、`pipes`、`terminal`、`interactive`、`network`（各 1 项）。可用 `-Suite 'policy,files'` 组合互不重叠的功能，只构建一次；未知名称在构建前拒绝；重复或重叠选择按固定用例 ID 自动去重。`process`、`files` 和 `persistence` 各自包含自己的写入与冷启动读取，不能依赖其他业务套件准备数据。GUI 可单选 `frontend-gui`、`shell-gui`、`file-tools-gui`、`shell-tools-gui`、`workspace-gui`、`line-edit-gui`、`files-gui`。
 
 套件组合仅放在 `tests/support/regression-suites.js` 和 `regression-catalog.js`；业务用例放在 `tests/host/suites/` 或对应 GUI 文件，禁止互相调用。通道、内存观察、GUI 操作分别由 `guest-context.js`、`gui-context.js` 提供，业务套件自行建立资源基线和夹具。新增业务套件只注册自己的入口，不修改其他业务套件。
+
+执行前用 `regression.ps1 -Suite 'process,files' -List` 查看去重后的用例 ID、组数和数量，不构建、不启动 VM。固定用例清单在 `tests/support/regression-cases.json`；实际报告按 ID 核对，漏跑、重复或额外用例不能通过。默认超过总计 50 项或单组 20 项时在构建前停止。`-Full` 仅供用户显式手动全量验收，开发步骤的自动验收仍遵守 50/20 上限。
+
+`-Suite stress` 为 9 项进程恢复压力测试（1 次显式基线准备 + 8 次恢复循环），不属于 `core`。聚焦等待专项为 `pipe-waits`（10）、`completion-waits`（8）、`terminal-waits`（11）、`shell-waits`（5），不会重复调用基础整套探针。`core` 共 23 组、261 个用例；终端 GUI 共 32 个用例。内部断言和同一探针的多个条件单独记录，不计作额外用例。完整清单见 [当前测试目录](Source Code/docs/test-catalog.md)。
 
 ## 常用命令（Windows PowerShell，仓库根目录）
 
@@ -51,9 +55,9 @@
 | 无界面启动检查 | `node 'Source Code/tests/host/test-boot.js' 'Build Output/dev/runs/<本轮构建编号>'` | 使用 BuildOnly 目录，核对 ISO 和启动日志 |
 | 编译并验证 Ring 3 | `powershell -NoProfile -ExecutionPolicy Bypass -File .\dev.ps1 -VerifyOnly` | 无窗口启动，通过键盘运行 probe 并保存截图 |
 | 执行客户机命令 | `powershell -NoProfile -ExecutionPolicy Bypass -File .\test.ps1 -Command 'echo hello'` | 在私有无窗口 VM 中执行 |
-| Shell 通道自测 | `powershell -NoProfile -ExecutionPolicy Bypass -File .\test.ps1 -SelfTest` | 验证文本、文件、管道、状态及协议 |
-| Shell 命令检查 | `powershell -NoProfile -ExecutionPolicy Bypass -File .\test.ps1 -SelfTest -Suite commands` | 112 项命令与语法检查 |
-| 全量基础回归 | `powershell -NoProfile -ExecutionPolicy Bypass -File .\regression.ps1 -Suite core` | 按功能组合的非 GUI 回归，仅按需全量运行 |
+| Shell 通道自测 | `powershell -NoProfile -ExecutionPolicy Bypass -File .\test.ps1 -SelfTest -Full` | 验证文本、文件、管道、状态及协议 |
+| Shell 命令检查 | `powershell -NoProfile -ExecutionPolicy Bypass -File .\test.ps1 -SelfTest -Suite commands -Full` | 112 项命令与语法检查 |
+| 全量基础回归 | `powershell -NoProfile -ExecutionPolicy Bypass -File .\regression.ps1 -Suite core -Full` | 按功能组合的非 GUI 回归，仅按需全量运行 |
 | 查看回归结果 | `.\test-summary.ps1 -RunDirectory 'Build Output/dev/runs/<编号>'` | 不重跑，正常通过不展开 |
 | 运行独立 CLI | `.\run.ps1 -Program /boot/clitest.snx -Arguments echo` | 严格进程，独立 stdout/stderr |
 | 找接口 | `rg -n 'SYS_READ' 'Source Code/src32/process.c' 'Source Code/user/sdk.h'` | 替换符号和文件 |
@@ -90,14 +94,14 @@ Shell 宿主测试参数：`-ExpectedExitCode 1` 断言预期失败，`-TimeoutS
 | 调度、故障回收 | src32/process.c:process_step / release、src32/entry.asm | `regression.ps1 -Suite process`；tests/host/test-usermode.js 含 GUI |
 | 系统调用与权限 | src32/api.h → src32/process.c:syscall → src32/object.c；同步 user/sdk.h | `regression.ps1 -Suite policy`；契约 docs/os-interface.md |
 | 完成记录 | src32/process.c:release / SYS_SPAWN_TRACKED / SYS_PROCESS_RESULT | `regression.ps1 -Suite completion`；契约 docs/os-interface.md |
-| 进程完成阻塞等待 | src32/process.c:release / user_completion_result / retry_wait；tests/guest/completion_tests.c | `tests/host/test-completion-waits.js <ShellBridge 构建目录>`（12 项）；契约 docs/os-interface.md |
+| 进程完成阻塞等待 | src32/process.c:release / user_completion_result / retry_wait；tests/guest/completion_tests.c | `tests/host/test-completion-waits.js <ShellBridge 构建目录>`（8 项）；契约 docs/os-interface.md |
 | 有限 CLI | src32/process.c:process_run_start、run_bridge.c、shell_bridge.c | `regression.ps1 -Suite cli` / `managed-cli`；run.ps1；契约 docs/bounded-cli.md |
 | 目录授权与文件对象 | src32/filesys.c、vfs.c、process.c:RunSpecV2；tests/guest/file_tests.c | `regression.ps1 -Suite files`；契约 docs/file-objects.md |
 | 管道与标准流 | src32/pipe.c/.h、object.c、process.c:RunSpecV3；tests/guest/pipe_tests.c | `regression.ps1 -Suite pipes`；契约 docs/stream-pipes.md |
-| 管道阻塞读写 | src32/process.c:transfer_pipe / retry_wait、src32/pipe.c:pipe_release | `tests/host/test-pipe-waits.js <ShellBridge 构建目录>`（11 项）；契约 docs/stream-pipes.md |
+| 管道阻塞读写 | src32/process.c:transfer_pipe / retry_wait、src32/pipe.c:pipe_release | `tests/host/test-pipe-waits.js <ShellBridge 构建目录>`（10 项）；契约 docs/stream-pipes.md |
 | 文本会话后端 | src32/terminal.c/.h、process.c:SYS_TERMINAL；tests/guest/terminal_tests.c | `regression.ps1 -Suite terminal`；契约 docs/terminal-sessions.md |
-| 终端阻塞读取 | src32/terminal.c:wake_readers、process.c:SYS_TERMINAL / retry_wait；tests/guest/terminal_tests.c | `tests/host/test-terminal-waits.js <ShellBridge 构建目录>`（14 项）；契约 docs/terminal-sessions.md |
-| 阻塞等待 SDK 与 Shell | user/stream.h、user/sdk.h、user/interactive.h、user/gsh.c:external | `tests/host/test-shell-waits.js <ShellBridge 构建目录>`（18 项，目录须含同次构建的 kernel-normal.exe）；契约 docs/os-interface.md |
+| 终端阻塞读取 | src32/terminal.c:wake_readers、process.c:SYS_TERMINAL / retry_wait；tests/guest/terminal_tests.c | `tests/host/test-terminal-waits.js <ShellBridge 构建目录>`（11 项）；契约 docs/terminal-sessions.md |
+| 阻塞等待 SDK 与 Shell | user/stream.h、user/sdk.h、user/interactive.h、user/gsh.c:external | `tests/host/test-shell-waits.js <ShellBridge 构建目录>`（5 项，目录须含同次构建的 kernel-normal.exe）；契约 docs/os-interface.md |
 | 终端前端 | user/terminal_frontend.c、terminal_model.h | `regression.ps1 -Suite terminal-gui`（GUI 按需）；tests/host/terminal-gui.js |
 | 交互启动代理 | src32/interactive.h、process.c、terminal.c；tests/guest/interactive_tests.c | `regression.ps1 -Suite interactive`；契约 docs/interactive-runs.md |
 | Shell | user/gsh.c、gsh_parse.h、gcmd.c；tests/host/shell-gui.js | regression.ps1；契约 docs/user-shell.md |

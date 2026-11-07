@@ -62,15 +62,17 @@ docs/                 技术契约文档
 
 Shell 命令通道测试：
 
-    powershell -NoProfile -ExecutionPolicy Bypass -File ..\test.ps1 -SelfTest
+    powershell -NoProfile -ExecutionPolicy Bypass -File ..\test.ps1 -SelfTest -Full
 
 非 GUI 基础回归（按功能组合，仅按需全量运行）：
 
-    powershell -NoProfile -ExecutionPolicy Bypass -File ..\regression.ps1 -Suite core
+    powershell -NoProfile -ExecutionPolicy Bypass -File ..\regression.ps1 -Suite core -Full
 
 可用 `regression.ps1 -Suite process`、`-Suite files` 或 `-Suite 'policy,files'` 独立选择与组合功能。
 
 独立持久化检查使用 `regression.ps1 -Suite persistence`（4 项）；终端窗口交互使用 `-Suite terminal-gui`，仅按需运行。历史阶段入口已移除。
+
+运行前可用 `regression.ps1 -Suite process -List` 查看固定 ID 和数量；重复选择自动去重。压力恢复循环移到 `-Suite stress`（9 项）。完整入口清单见 [当前测试目录](docs/test-catalog.md)。
 
 详细说明见 [docs/testing.md](docs/testing.md)。
 

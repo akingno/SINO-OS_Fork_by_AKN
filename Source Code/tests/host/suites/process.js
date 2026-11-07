@@ -20,12 +20,6 @@ async function run(api) {
             'only the 257-byte persistent binary retains one page');
         report.resourceBaseline = baseline;
     });
-    for (let i = 1; i <= 8; i++) {
-        await check(`normal exit resource recovery ${i}/8`, async () => {
-            await native('probe', '/contracts', 'CONTRACT PROBE PASS checks=');
-            assert.deepEqual(await resources(), baseline);
-        });
-    }
     for (const [app, vector] of [['fault', 14], ['iofault', 13], ['udfault', 6]]) {
         await check(`${app} fault is contained and resources are reclaimed`, async () => {
             const before = await value('process_faults');

@@ -2,6 +2,8 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const {select} = require('../support/regression-selection');
+const catalog = require('../support/regression-catalog');
+const {assertCaseIds} = require('../support/regression-plan');
 const compact = value => String(value || '').replace(/\s+/g, ' ').slice(0, 360);
 function analyze(report) {
     const errors = [], suites = Array.isArray(report.suites) ? report.suites : [];
@@ -10,7 +12,9 @@ function analyze(report) {
     catch (error) { errors.push(error.message); }
     const summary = {passed:0, failed:0, notRun:0, checks:0};
     const seen = new Set();
-    if (report.version !== 3) errors.push('Unsupported report version');
+    if (report.version !== 4) errors.push('Unsupported report version');
+    const planned = names.reduce((sum, name) => sum + catalog[name].checks, 0);
+    if (report.plannedCases !== planned) errors.push('Planned case count mismatch');
     if (!['PASS', 'FAIL'].includes(report.result)) errors.push('Missing final result');
     for (const suite of suites) {
         if (!suite || !names.includes(suite.name) || seen.has(suite.name)) {
@@ -22,6 +26,9 @@ function analyze(report) {
             if (!Number.isSafeInteger(suite.checks) || suite.checks <= 0)
                 errors.push(suite.name + ': missing positive check count');
             else summary.checks += suite.checks;
+            try { assertCaseIds(suite.caseIds || [], catalog[suite.name].cases); }
+            catch (error) { errors.push(suite.name + ': ' + compact(error.message)); }
+            if (suite.checks !== catalog[suite.name].checks) errors.push(suite.name + ': executed count mismatch');
             if (suite.error) errors.push(suite.name + ': PASS contains an error');
         } else if (suite.result === 'FAIL') summary.failed++;
         else {

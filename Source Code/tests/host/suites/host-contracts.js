@@ -39,7 +39,9 @@ async function infrastructure({directory, command, readJSON}) {
       const exe=path.join(folder,name+'.exe');await command(host.tool('gcc'),[path.join(hostRoot,'test-'+name+'.c'),'-std=c11','-O2','-Wall','-Wextra','-Werror','-Wno-unused-function','-o',exe],path.join(folder,name+'-build.txt'));
       const output=path.join(folder,name+'-output.txt');await command(exe,[],output);assert.equal(fs.readFileSync(output,'utf8').trim(),marker);
     }
-    return {checks:result.checks.length + 7, modelOutput, parserOutput, fileTextOutput, scanOutput,
+    const caseIds = result.checks.map(item => item.id).concat(['model.terminal', 'model.gsh-parser',
+        'model.file-text', 'model.text-scan', 'model.line-edit', 'model.line-model', 'model.ui-queue']);
+    return {checks:caseIds.length, caseIds, modelOutput, parserOutput, fileTextOutput, scanOutput,
         report:path.join(folder, 'src32-refactor-report.json')};
 }
 async function rtc({directory, command}) {
@@ -50,6 +52,6 @@ async function rtc({directory, command}) {
     await command(exe, [], output);
     const match = fs.readFileSync(output, 'utf8').match(/RTC DRIVER PASS: (\d+) assertions/);
     assert(match && Number(match[1]) >= 40, 'actual RTC driver assertions');
-    return {checks:Number(match[1]), output};
+    return {checks:1, caseIds:['rtc.driver'], assertions:Number(match[1]), output};
 }
 module.exports = {infrastructure, rtc};

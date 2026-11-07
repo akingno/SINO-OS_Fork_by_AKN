@@ -1,0 +1,121 @@
+{
+  "images": [
+    {
+      "id": "memory.images.64-mib-boots-with-its-existing-pool-and-16-mib-image-oom-rolls-back",
+      "name": "64 MiB boots with its existing pool and 16 MiB image OOM rolls back",
+      "conditions": [
+        "64 MiB boots with its existing pool and 16 MiB image OOM rolls back"
+      ]
+    },
+    {
+      "id": "memory.images.1-gib-publishes-e820-high-pages-after-the-formal-cr3-switch",
+      "name": "1 GiB publishes E820 high pages after the formal CR3 switch",
+      "conditions": [
+        "1 GiB publishes E820 high pages after the formal CR3 switch"
+      ]
+    },
+    {
+      "id": "memory.images.current-v1-binary-preserves-argv-and-typed-completion",
+      "name": "current v1 binary preserves argv and typed completion",
+      "conditions": [
+        "current v1 binary preserves argv and typed completion"
+      ]
+    },
+    {
+      "id": "memory.images.v1-startup-guards-and-thread-stack-reuse-remain-valid",
+      "name": "v1 startup guards and thread stack reuse remain valid",
+      "conditions": [
+        "v1 startup guards and thread stack reuse remain valid"
+      ]
+    },
+    {
+      "id": "memory.images.v2-startup-strings-and-high-argument-stack-protection",
+      "name": "v2 startup strings and high argument/stack protection",
+      "conditions": [
+        "v2 startup strings and high argument/stack protection",
+        "wide zeroed BSS crosses the old image and dynamic boundaries",
+        "v2 thread entry policy and relocated worker stack",
+        "13 MiB anonymous heap skips the image and verifies every byte",
+        "large workload allocates real high pages and returns to baseline"
+      ]
+    },
+    {
+      "id": "memory.images.strict-file-pipe-and-lazy-cross-page-buffer-roundtrip",
+      "name": "strict file, pipe and lazy cross-page buffer roundtrip",
+      "conditions": [
+        "strict file, pipe and lazy cross-page buffer roundtrip"
+      ]
+    },
+    {
+      "id": "memory.images.real-headless-gsh-runs-a-strict-worker-and-restores-its-prompt",
+      "name": "real headless gsh runs a strict worker and restores its prompt",
+      "conditions": [
+        "real headless gsh runs a strict worker and restores its prompt"
+      ]
+    },
+    {
+      "id": "memory.images.private-disk-commits-binary-bytes-on-the-1-gib-image",
+      "name": "private disk commits binary bytes on the 1 GiB image",
+      "conditions": [
+        "private disk commits binary bytes on the 1 GiB image"
+      ]
+    },
+    {
+      "id": "memory.images.cold-boot-on-the-same-iso-recovers-the-exact-binary-bytes",
+      "name": "cold boot on the same ISO recovers the exact binary bytes",
+      "conditions": [
+        "cold boot on the same ISO recovers the exact binary bytes"
+      ]
+    }
+  ],
+  "anonymous": [
+    {
+      "id": "memory.anonymous.strict-feature-discovery",
+      "name": "strict feature discovery",
+      "conditions": [
+        "strict feature discovery",
+        "zero, overflow and reserved map arguments",
+        "rounded aligned independent regions",
+        "zero-filled pages and independent writes",
+        "malformed and interior unmap leave data intact",
+        "released address and double-unmap rejected",
+        "first-fit reuse starts zeroed",
+        "32-region quota and slot reuse",
+        "exit releases outstanding regions"
+      ]
+    },
+    {
+      "id": "memory.anonymous.exact-16-mib-quota-and-one-byte-excess",
+      "name": "exact 16 MiB quota and one-byte excess",
+      "conditions": [
+        "exact 16 MiB quota and one-byte excess",
+        "unaligned and external unmap rejected",
+        "last byte of the exact region is accessible",
+        "full unmap returns quota and space"
+      ]
+    },
+    {
+      "id": "memory.anonymous.strict-granted-cross-page-file-i-o",
+      "name": "strict granted cross-page file I/O",
+      "conditions": [
+        "strict granted cross-page file I/O",
+        "anonymous pipe I/O and teardown"
+      ]
+    },
+    {
+      "id": "memory.anonymous.released-address-faults-and-exit-reclaims-the-remaining-region",
+      "name": "released address faults and exit reclaims the remaining region",
+      "conditions": [
+        "released address faults and exit reclaims the remaining region"
+      ]
+    },
+    {
+      "id": "memory.anonymous.physical-oom-leaves-output-intact",
+      "name": "physical OOM leaves output intact",
+      "conditions": [
+        "physical OOM leaves output intact",
+        "physical OOM preserves pending pipe bytes"
+      ]
+    }
+  ]
+}

@@ -7,11 +7,16 @@ const {analyze} = require('./test-summary');
 const {select} = require('../support/regression-selection');
 const group = process.argv[2] === '--group' && process.argv.length === 4 ? process.argv[3] : 'all';
 assert(['all','contracts','selections','io'].includes(group), 'Unknown report test group');
-const fixture = (suite = 'core') => ({version:3, suite, result:'PASS', finishedAt:'2026-11-05T00:00:00Z',
-    build:{sourceSha256:'a'.repeat(64), isoSha256:'b'.repeat(64), kernelSha256:'c'.repeat(64)},
-    suites:select(suite).map(name => ({name, result:'PASS', checks:1,
-        ...(name === 'runner-rejects-failure' ? {expectedFailure:true} : {})})),
-    summary:{passed:select(suite).length, failed:0, notRun:0, checks:select(suite).length}});
+const catalog = require('../support/regression-catalog');
+const fixture = (suite = 'core') => {
+    const suites = select(suite).map(name => ({name, result:'PASS', checks:catalog[name].checks,
+        caseIds:catalog[name].cases.map(item => item.id),
+        ...(name === 'runner-rejects-failure' ? {expectedFailure:true} : {})}));
+    const total = suites.reduce((n, item) => n + item.checks, 0);
+    return {version:4, suite, plannedCases:total, result:'PASS', finishedAt:'2026-11-05T00:00:00Z',
+        build:{sourceSha256:'a'.repeat(64), isoSha256:'b'.repeat(64), kernelSha256:'c'.repeat(64)},
+        suites, summary:{passed:suites.length, failed:0, notRun:0, checks:total}};
+};
 let checks = 0;
 function check(ok) { assert(ok); checks++; }
 if (group === 'all' || group === 'contracts') {
@@ -49,7 +54,7 @@ try {
     const failed = report.suites.find(item => item.name === 'files');
     failed.result = 'FAIL'; failed.checks = 0;
     const passed = report.suites.length - 1;
-    report.summary = {passed, failed:1, notRun:0, checks:passed};
+    report.summary = {passed, failed:1, notRun:0, checks:report.suites.filter(item => item.result === 'PASS').reduce((n,item) => n+item.checks,0)};
     fs.writeFileSync(file, JSON.stringify(report));
     fs.mkdirSync(path.join(folder, 'files'));
     fs.writeFileSync(path.join(folder, 'files/shell-report.json'), JSON.stringify({error:'wrong output',

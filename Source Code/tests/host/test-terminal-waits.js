@@ -1,9 +1,2 @@
-const {runSuite} = require('../support/wait-tests');
-
-runSuite('terminal', [
-    ['legacy terminal', 'termtest', 'suite', 'TERMINAL SUITE PASS'],
-    ...['raw', 'canonical', 'eof', 'hangup', 'controller', 'timeout', 'foreground',
-        'snapshot', 'unmap', 'local-close', 'wire']
-        .map(mode => [mode, 'termtest', 'b:' + mode, 'TERMINAL BLOCK PASS']),
-    ['completion wake', 'comptest', 'w:exit', 'COMPLETION BLOCK PASS']
-], ['read-wake']);
+/* Existing-build entry; cases and planning are shared with regression.ps1. */
+require('../support/regression-cli').existing('terminal-waits');

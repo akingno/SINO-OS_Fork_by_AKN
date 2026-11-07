@@ -169,7 +169,7 @@ writer cancellation/timeout, runtime deadline/progress and synthetic tick wrap.
 The host checks final results, intentional fault counts and object/page baselines.
 
 The pipe-wait runner `tests/host/test-pipe-waits.js <ShellBridge build directory>`
-uses a private guest disk. It covers the legacy pipe probe, blocked read and write,
+uses a private guest disk. It covers blocked read and write,
 final peer close, timeout, competing readers, local handle reuse, buffer unmap,
 wire validation and process timeout cleanup. It checks the free-page count after
 each case and saves the aggregate result in `shell-report.json`.

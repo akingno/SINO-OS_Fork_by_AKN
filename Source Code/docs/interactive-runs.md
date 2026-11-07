@@ -126,7 +126,7 @@ successful return, worker fault recovery, two simultaneous foreground workers,
 directed cancellation, normal close and frontend #UD with noncooperative workers.
 The host compares exact page/object baselines after cleanup.
 
-Headless contracts run through `regression.ps1 -Suite core`. QMP integration runs only through `regression.ps1 -Suite terminal-gui`; inspect either selection with `test-summary.ps1`.
+Headless broker contracts run through `regression.ps1 -Suite interactive`. QMP integration runs only through `regression.ps1 -Suite terminal-gui`; inspect either selection with `test-summary.ps1`.
 Per-allocation OOM injection, exhaustive malformed-wire tests, the complete GUI
 gate and physical hardware validation retain their separate verification scope.
 

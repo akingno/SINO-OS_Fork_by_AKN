@@ -5,15 +5,18 @@ const gui = ['files-gui', 'frontend-gui', 'shell-gui', 'file-tools-gui', 'shell-
     'workspace-gui', 'line-edit-gui', 'gui-persistence-write', 'gui-persistence-read'];
 const profiles = {
     core: ['infrastructure', 'rtc-driver', 'shell-transport', 'shell-commands',
-        ...native, 'managed-cli', 'persistence-write', 'persistence-read', 'runner-rejects-failure'],
+        ...native, 'managed-cli', 'persistence-write', 'persistence-read', 'runner-rejects-failure',
+        'pipe-waits', 'completion-waits', 'terminal-waits', 'shell-waits'],
     process: ['process', 'process-reboot'],
     files: ['files', 'files-reboot'],
     persistence: ['persistence-write', 'persistence-read'],
+    stress: ['process-stress'],
     'terminal-gui': gui,
     'workspace-gui': ['workspace-gui', 'gui-persistence-write', 'gui-persistence-read']
 };
 for (const name of [...native, ...gui, 'infrastructure', 'rtc-driver', 'shell-transport',
-    'shell-commands', 'managed-cli', 'runner-rejects-failure']) {
+    'shell-commands', 'managed-cli', 'runner-rejects-failure', 'process-stress',
+    'pipe-waits', 'completion-waits', 'terminal-waits', 'shell-waits']) {
     if (!profiles[name] && !name.endsWith('-reboot') && !name.startsWith('gui-persistence-'))
         profiles[name] = [name];
 }

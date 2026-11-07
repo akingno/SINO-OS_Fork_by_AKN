@@ -170,7 +170,7 @@ async function run(directory, {execute, seedDisk, memoryMiB = 64} = {}) {
         if (execute) await execute({directory, build, job, qmp, channel, report, guestLog});
         let id = 0;
         for (const scenario of execute ? [] : scenarios(job)) {
-            const item = {id:++id, command:scenario.command,
+            const item = {id:scenario.id || 'shell.single', requestId:++id, command:scenario.command,
                 expected:{status:scenario.status, output:scenario.output, contains:scenario.contains, pattern:scenario.pattern, overflow:!!scenario.overflow}, result:'FAIL'};
             report.cases.push(item);
             const start = Date.now();
@@ -206,7 +206,7 @@ async function run(directory, {execute, seedDisk, memoryMiB = 64} = {}) {
             try {
                 const registers = await qmp.hmp('info registers');
                 fs.writeFileSync(path.join(directory,'failure-registers.txt'),registers);
-                await qmp.call('screendump',{filename:'failure.ppm'});
+                if (job.gui) await qmp.call('screendump',{filename:'failure.ppm'});
             } catch (diagnosticError) {report.diagnosticError=diagnosticError.message;}
         }
     } finally {
