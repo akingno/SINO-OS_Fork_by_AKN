@@ -25,7 +25,6 @@ const apps = [
  ['iofault', 'tests/guest/probe.c', 2],
  ['spin', 'tests/guest/probe.c', 3],
  ['udfault', 'tests/guest/probe.c', 4],
- ['clock', 'user/clock.c', 0],
  ['calc', 'user/calculator.c', 0],
  ['hello', 'user/hello.c', 0],
  ['setup', 'user/setup.c', 0],

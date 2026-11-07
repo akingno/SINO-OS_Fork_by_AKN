@@ -22,12 +22,12 @@ Chinese and Pinyin
 - Filenames and document contents use UTF-8. Cursor movement, Backspace, character selection, and copy handle complete Chinese characters.
 
 Applications and windows
-- The SINO menu launches File Manager, Text Editor, Calculator, Clock, and Terminal.
+- The SINO menu launches File Manager, Text Editor, Calculator, and Terminal.
 - Double-click .app entries in the Applications folder to run them.
 - Drag a title bar to move a window. File and text windows can be resized from the lower-right corner.
 - Alt+Tab switches windows; the Window menu restores minimized windows. Up to eight windows can be open at once.
 - F1 File Manager / F2 Terminal / F3 Text Editor / F4 Calculator
-- F6 Clock / F7 About SINO
+- F7 About SINO
 
 Saving and limits
 - Files under /home/user are stored on a dedicated SINO data disk and persist across reboot.

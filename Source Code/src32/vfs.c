@@ -553,7 +553,7 @@ void vfs_init(void) {
   nodes[desktop].pinned = nodes[trash].pinned = 1;
   /* Paint has been hidden 261103. Do not register its built-in application
    * entry. */
-  const char* app_names[] = {"TextEdit", "Calculator", "Clock",  "Terminal",
+  const char* app_names[] = {"TextEdit", "Calculator", "Terminal",
                              "Files",    "System",     "Install"};
   for (u32 i = 0; i < sizeof(app_names) / sizeof(app_names[0]); i++) {
     char path[VFS_PATH];

@@ -19,7 +19,7 @@ if (bridge || variant === 'test') {
 // Keep the full project copyright and MIT terms with bootable distributions.
 entries.push(['LICENSE.TXT',fs.readFileSync(path.join(root,'LICENSE'))]);
 for(const name of ['FIRST.PRJ','FIRST.FRM','FIRST.BAS'])entries.push([name,fs.readFileSync(path.join(root,'disk32',name))]);
-for(const name of ['writer','tview','rdtest','gsh','gcmd','term','termtest','pipetest','fstest','clitest','comptest','poltest','files','clock','calc','probe','fault','iofault','spin','udfault','setup','apps','instest','nettest','bstest','basicrun','tasks'])entries.push([name.toUpperCase()+'.SNX',fs.readFileSync(path.join(build,'user',name+'.snx'))]);
+for(const name of ['writer','tview','rdtest','gsh','gcmd','term','termtest','pipetest','fstest','clitest','comptest','poltest','files','calc','probe','fault','iofault','spin','udfault','setup','apps','instest','nettest','bstest','basicrun','tasks'])entries.push([name.toUpperCase()+'.SNX',fs.readFileSync(path.join(build,'user',name+'.snx'))]);
 if(bridge)for(const name of ['termqa','brokerqa','memv2'])entries.push([name.toUpperCase()+'.SNX',fs.readFileSync(path.join(build,'user',name+'.snx'))]);
 entries.push(['SYSBASIC.SXP',fs.readFileSync(path.join(build,'user/sysbasic.sxp'))]);
 entries.push(['HELLO.SXP',fs.readFileSync(path.join(build,'user/hello.sxp'))]);

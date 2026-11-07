@@ -18,7 +18,7 @@
 #define NW 8
 #define DIALOG_X ((GUI_WIDTH - 474) / 2)
 #define DIALOG_Y ((GUI_HEIGHT - 238) / 2)
-enum { FILES = 1, EDIT, CALC, PAINT, CLOCK, TERM, SYSTEM, INSTALL, USERAPP };
+enum { FILES = 1, EDIT, CALC, PAINT, TERM = 6, SYSTEM, INSTALL, USERAPP };
 typedef struct {
   int used, app, x, y, w, h, minimized, dirty, folder, selected, first, node,
       modified;
@@ -72,12 +72,13 @@ static char ime_text[32];
 static int last_node = -999;
 static u32 last_click;
 static char clock_text[9];
-static u32 clock_pid, desktop_terminal_pid;
+static u32 desktop_terminal_pid;
 static const TextKey appnames[] = {
-    GUI_LABEL_DESKTOP,           GUI_LABEL_FILES,    GUI_LABEL_TEXTEDIT,
-    GUI_LABEL_CALCULATOR,        GUI_LABEL_PAINT,    GUI_LABEL_CLOCK,
-    GUI_LABEL_TERMINAL,          GUI_LABEL_SETTINGS, GUI_LABEL_INSTALL_SINO,
-    GUI_LABEL_NATIVE_APPLICATION};
+    [0] = GUI_LABEL_DESKTOP,       [FILES] = GUI_LABEL_FILES,
+    [EDIT] = GUI_LABEL_TEXTEDIT,   [CALC] = GUI_LABEL_CALCULATOR,
+    [PAINT] = GUI_LABEL_PAINT,     [TERM] = GUI_LABEL_TERMINAL,
+    [SYSTEM] = GUI_LABEL_SETTINGS, [INSTALL] = GUI_LABEL_INSTALL_SINO,
+    [USERAPP] = GUI_LABEL_NATIVE_APPLICATION};
 static const TextKey menus[] = {GUI_LABEL_SINO,   GUI_LABEL_FILE,
                                 GUI_LABEL_EDIT,   GUI_LABEL_DISPLAY,
                                 GUI_LABEL_WINDOW, GUI_LABEL_TOOLS};
@@ -411,10 +412,10 @@ static void folder_open(int n) {
 }
 static int app_from_name(const char* s) {
   const char* names[] = {"Files.app",  "TextEdit.app", "Calculator.app",
-                         "Paint.app",  "Clock.app",    "Terminal.app",
+                         "Paint.app",  "",             "Terminal.app",
                          "System.app", "Install.app"};
   for (int i = 0; i < 8; i++)
-    if (streq(s, names[i]))
+    if (names[i][0] && streq(s, names[i]))
       return i + 1;
   return 0;
 }
@@ -461,37 +462,11 @@ static const char* node_label(int n) {
   }
   return nodes[n].name;
 }
-static void launch_clock(void) {
-  if (clock_pid && process_alive(clock_pid)) {
-    for (int i = 0; i < NW; i++)
-      if (windows[i].used && windows[i].app == USERAPP &&
-          user_owner[i] == clock_pid) {
-        focus(i);
-        break;
-      }
-    return;
-  }
-  clock_pid = 0;
-  if (count >= NW) {
-    notice(locale_text(GUI_LABEL_CLOSE_SOME_APPLICATIONS_TO_FREE_A_WINDOW));
-    return;
-  }
-  int pid = process_launch("/boot/clock.snx", 0);
-  if (pid < 0)
-    notice(locale_text(
-        GUI_LABEL_CANNOT_START_CLOCK_CHECK_BOOT_FILES_OR_CLOSE_SOME_APPLICATIONS));
-  else
-    clock_pid = (u32)pid;
-}
 /* Paint has been hidden 261103. This guard also protects retained
  * file/compatibility paths. */
 static int launch(int app) {
   if (app == PAINT) {
     notice(locale_text(GUI_LABEL_PAINT_IS_UNAVAILABLE_DRAWINGS_ARE_PRESERVED));
-    return -1;
-  }
-  if (app == CLOCK) {
-    launch_clock();
     return -1;
   }
   if (app == CALC) {
@@ -1394,7 +1369,7 @@ static void window_draw(int id) {
 }
 static int menu_count(void) {
   if (menu == 0)
-    return 8;
+    return 7;
   if (menu == 1)
     return 10;
   if (menu == 2)
@@ -1410,7 +1385,6 @@ static const char* menu_label(int m, int row) {
                         locale_text(GUI_LABEL_FILES),
                         locale_text(GUI_LABEL_TEXTEDIT),
                         locale_text(GUI_LABEL_CALCULATOR),
-                        locale_text(GUI_LABEL_CLOCK),
                         locale_text(GUI_LABEL_TERMINAL),
                         locale_text(GUI_LABEL_APPLICATIONS),
                         locale_text(GUI_LABEL_INSTALL_SINO),
@@ -2090,10 +2064,10 @@ static void menu_choose(int m, int row) {
   if (row < 0)
     return;
   if (m == 0) {
-    int apps[] = {SYSTEM, FILES, EDIT, CALC, CLOCK, TERM};
-    if (row < 6)
+    int apps[] = {SYSTEM, FILES, EDIT, CALC, TERM};
+    if (row < 5)
       launch(apps[row]);
-    else if (row == 6)
+    else if (row == 5)
       process_launch("/boot/apps.snx", CAP_HOME);
     else
       launch(INSTALL);
@@ -2407,8 +2381,9 @@ static void keyboard(int key) {
   if (key == 0x13f)
     return;
   if (key >= 0x13b && key <= 0x141) {
-    const int apps[] = {FILES, TERM, EDIT, CALC, PAINT, CLOCK, SYSTEM};
-    launch(apps[key - 0x13b]);
+    const int apps[] = {FILES, TERM, EDIT, CALC, PAINT, 0, SYSTEM};
+    if (apps[key - 0x13b])
+      launch(apps[key - 0x13b]);
     return;
   }
   if (key == 0x142) {
