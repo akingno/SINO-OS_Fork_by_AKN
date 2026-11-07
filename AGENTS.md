@@ -25,7 +25,21 @@
 
 日常验收范围：启动、严格进程、文件与持久化、流与会话、Shell。GUI 整体退出日常验收，包括桌面、应用、终端窗口与渲染、菜单、快捷键、QMP 键鼠和截图检查。默认不追加 GUI 手测，用户单独要求时再提供操作与预期结果。
 
-每个开发步骤只自动运行与改动直接相关的命令和接口测试，合计最多 50 项（含选跑的旧用例）。每个 Phase 的自动专项验收可执行最多 20 个相关用例。运行前确认用例数，优先通过摘要脚本查看结果，只在失败时查看对应日志片段。
+每个开发步骤只自动运行与改动直接相关的命令和接口测试，合计最多 50 项（含选跑的旧用例）。每个专项的自动验收可执行最多 20 个相关用例。运行前确认用例数，优先通过摘要脚本查看结果，只在失败时查看对应日志片段。
+
+历史 Stage 2/3/4 测试入口已移除，不保留兼容转发。当前回归按功能命名。`regression.ps1 -Suite persistence` 独立运行 4 项无 GUI 写入/冷启动检查；`-Suite terminal-gui` 只在明确要求 GUI 验证时运行，并自行准备与核对 GUI 持久化数据。普通回归不调用 GUI 套件。
+
+常用测试选择（仓库根目录，PowerShell）：
+
+```powershell
+.\regression.ps1 -Suite persistence   # 独立持久化检查，4 项
+.\regression.ps1 -Suite core          # 非 GUI 基础回归，仅按需全量运行
+.\regression.ps1 -Suite terminal-gui  # GUI，仅在明确要求时运行
+```
+
+日常优先选择单个功能：`-Suite process`（16 项）、`policy`（2 项）、`completion`（5 项）、`files`（2 项）、`cli`、`pipes`、`terminal`、`interactive`、`network`（各 1 项）。可用 `-Suite 'policy,files'` 组合互不重叠的功能，只构建一次；未知名称或重复选择会在构建前拒绝。`process`、`files` 和 `persistence` 各自包含自己的写入与冷启动读取，不能依赖其他业务套件准备数据。GUI 可单选 `frontend-gui`、`shell-gui`、`file-tools-gui`、`shell-tools-gui`、`workspace-gui`、`line-edit-gui`、`files-gui`。
+
+套件组合仅放在 `tests/support/regression-suites.js` 和 `regression-catalog.js`；业务用例放在 `tests/host/suites/` 或对应 GUI 文件，禁止互相调用。通道、内存观察、GUI 操作分别由 `guest-context.js`、`gui-context.js` 提供，业务套件自行建立资源基线和夹具。新增业务套件只注册自己的入口，不修改其他业务套件。
 
 ## 常用命令（Windows PowerShell，仓库根目录）
 
@@ -39,8 +53,8 @@
 | 执行客户机命令 | `powershell -NoProfile -ExecutionPolicy Bypass -File .\test.ps1 -Command 'echo hello'` | 在私有无窗口 VM 中执行 |
 | Shell 通道自测 | `powershell -NoProfile -ExecutionPolicy Bypass -File .\test.ps1 -SelfTest` | 验证文本、文件、管道、状态及协议 |
 | Shell 命令检查 | `powershell -NoProfile -ExecutionPolicy Bypass -File .\test.ps1 -SelfTest -Suite commands` | 112 项命令与语法检查 |
-| 全量基础回归 | `powershell -NoProfile -ExecutionPolicy Bypass -File .\stage2-test.ps1` | 8 组门禁，私有盘冷启动 |
-| 查看回归结果 | `.\stage2-summary.ps1 -RunDirectory 'Build Output/dev/runs/<编号>'` | 不重跑，正常通过不展开 |
+| 全量基础回归 | `powershell -NoProfile -ExecutionPolicy Bypass -File .\regression.ps1 -Suite core` | 按功能组合的非 GUI 回归，仅按需全量运行 |
+| 查看回归结果 | `.\test-summary.ps1 -RunDirectory 'Build Output/dev/runs/<编号>'` | 不重跑，正常通过不展开 |
 | 运行独立 CLI | `.\run.ps1 -Program /boot/clitest.snx -Arguments echo` | 严格进程，独立 stdout/stderr |
 | 找接口 | `rg -n 'SYS_READ' 'Source Code/src32/process.c' 'Source Code/user/sdk.h'` | 替换符号和文件 |
 
@@ -52,7 +66,7 @@ $env:SINO_TOOLCHAIN = Split-Path (Get-Command gcc.exe).Source
 $env:SINO_QEMU_DIR = 'C:\Program Files\qemu'
 ```
 
-完整回归（15 组）：`node 'Source Code/verify-system.js'`，按 `docs/testing.md` 准备镜像。
+含 GUI 的完整回归（15 组，仅按需运行）：`node 'Source Code/verify-system.js'`，按 `docs/testing.md` 准备镜像。
 
 发行启动文件在 `Source Code/release/`：将 `SINO.iso`、`Start SINO.cmd`、`launch.ps1` 放在同一目录，从 ISO 启动，个人文件写入 `Data/data.img`。旧安装向导、装包与预装硬盘发布流程已删除。启动器 GUI 专项入口为 `Source Code/tests/host/test-launcher.ps1`（按需运行，可用 `SINO_ISO` 指定镜像）。
 
@@ -72,26 +86,25 @@ Shell 宿主测试参数：`-ExpectedExitCode 1` 断言预期失败，`-TimeoutS
 | 匿名内存与 SDK 堆 | src32/process.c:anon_map / anon_unmap、user/runtime.c | ShellBridge 中 `run -s /boot/fstest.snx anon-*` 系列 |
 | 用户缓冲区校验 | src32/mm/uaccess.c、src32/process.c | ShellBridge 中 fstest.snx / termtest.snx 的 uaccess 系列 |
 | 匿名页按需分配 | src32/process.c:anon_map / process_anon_page / process_interrupt | ShellBridge 中 anon-lazy / anon-oom / anon-fault |
-| 高页、SNX v2 与 Phase D 回归 | src32/mm/page.c、src32/mm/paging.c、user/linker.ld | `tests/host/test-stage3-mm.js g <ShellBridge 构建目录> <G 前构建目录>`，随后 `tests/host/test-stage3-mm.js d <同一构建目录>` |
-| 调度、故障回收 | src32/process.c:process_step / release、src32/entry.asm | 非 GUI Ring 3 探针；tests/host/test-usermode.js 含 GUI |
-| 系统调用与权限 | src32/api.h → src32/process.c:syscall → src32/object.c；同步 user/sdk.h | stage2-test.ps1；契约 docs/os-interface.md |
-| 完成记录 | src32/process.c:release / SYS_SPAWN_TRACKED / SYS_PROCESS_RESULT | stage2-test.ps1；契约 docs/os-interface.md |
-| 进程完成阻塞等待 | src32/process.c:release / user_completion_result / retry_wait；tests/guest/completion_tests.c | `tests/host/test-stage4-completion.js <ShellBridge 构建目录>`（12 项）；契约 docs/os-interface.md |
-| 有限 CLI | src32/process.c:process_run_start、run_bridge.c、shell_bridge.c | stage2-test.ps1；run.ps1；契约 docs/bounded-cli.md |
-| 目录授权与文件对象 | src32/filesys.c、vfs.c、process.c:RunSpecV2；tests/guest/file_tests.c | stage2-test.ps1；契约 docs/file-objects.md |
-| 管道与标准流 | src32/pipe.c/.h、object.c、process.c:RunSpecV3；tests/guest/pipe_tests.c | stage2-test.ps1；契约 docs/stream-pipes.md |
-| 管道阻塞读写 | src32/process.c:transfer_pipe / retry_wait、src32/pipe.c:pipe_release | `tests/host/test-stage4-pipes.js <ShellBridge 构建目录>`（11 项）；契约 docs/stream-pipes.md |
-| 文本会话后端 | src32/terminal.c/.h、process.c:SYS_TERMINAL；tests/guest/terminal_tests.c | stage2-test.ps1；契约 docs/terminal-sessions.md |
-| 终端阻塞读取 | src32/terminal.c:wake_readers、process.c:SYS_TERMINAL / retry_wait；tests/guest/terminal_tests.c | `tests/host/test-stage4-terminal.js <ShellBridge 构建目录>`（14 项）；契约 docs/terminal-sessions.md |
-| 阻塞等待 SDK 与 Shell | user/stream.h、user/sdk.h、user/interactive.h、user/gsh.c:external | `tests/host/test-stage4-sdk.js <ShellBridge 构建目录>`（15 项，目录须含同次构建的 kernel-normal.exe）；契约 docs/os-interface.md |
-| Stage 4 收尾回归 | tests/host/test-stage4-sdk.js、tests/guest/interactive_tests.c | `tests/host/test-stage4-sdk.js <ShellBridge 构建目录> --closeout`（18 项，校验同次构建的 kernel-normal.exe） |
-| 终端前端 | user/terminal_frontend.c、terminal_model.h | stage2-test.ps1；tests/host/stage2-frontend.js |
-| 交互启动代理 | src32/interactive.h、process.c、terminal.c；tests/guest/interactive_tests.c | stage2-test.ps1；契约 docs/interactive-runs.md |
-| Shell | user/gsh.c、gsh_parse.h、gcmd.c；tests/host/stage2-shell.js | stage2-test.ps1；契约 docs/user-shell.md |
-| 只读文件工具 | user/tview.c、file_text.h | stage2-test.ps1；契约 docs/file-tools.md |
-| 常用命令与欢迎界面 | user/gsh.c、gcmd.c、shell_commands.h、shell_banner.h | stage2-test.ps1；契约 docs/shell-tools.md |
-| 写工作区 | user/write_tool.c、gsh.c；process.c 可信来源 | stage2-test.ps1；契约 docs/workspace-shell.md |
-| 行编辑 | user/gsh.c、line_edit.h、terminal_edit_model.h | stage2-test.ps1；契约 docs/shell-editing.md |
+| 高页、SNX v2 与匿名内存 | src32/mm/page.c、src32/mm/paging.c、user/linker.ld | `tests/host/test-memory.js images <ShellBridge 构建目录>` 或 `anonymous <同一构建目录>`，不依赖历史镜像 |
+| 调度、故障回收 | src32/process.c:process_step / release、src32/entry.asm | `regression.ps1 -Suite process`；tests/host/test-usermode.js 含 GUI |
+| 系统调用与权限 | src32/api.h → src32/process.c:syscall → src32/object.c；同步 user/sdk.h | `regression.ps1 -Suite policy`；契约 docs/os-interface.md |
+| 完成记录 | src32/process.c:release / SYS_SPAWN_TRACKED / SYS_PROCESS_RESULT | `regression.ps1 -Suite completion`；契约 docs/os-interface.md |
+| 进程完成阻塞等待 | src32/process.c:release / user_completion_result / retry_wait；tests/guest/completion_tests.c | `tests/host/test-completion-waits.js <ShellBridge 构建目录>`（12 项）；契约 docs/os-interface.md |
+| 有限 CLI | src32/process.c:process_run_start、run_bridge.c、shell_bridge.c | `regression.ps1 -Suite cli` / `managed-cli`；run.ps1；契约 docs/bounded-cli.md |
+| 目录授权与文件对象 | src32/filesys.c、vfs.c、process.c:RunSpecV2；tests/guest/file_tests.c | `regression.ps1 -Suite files`；契约 docs/file-objects.md |
+| 管道与标准流 | src32/pipe.c/.h、object.c、process.c:RunSpecV3；tests/guest/pipe_tests.c | `regression.ps1 -Suite pipes`；契约 docs/stream-pipes.md |
+| 管道阻塞读写 | src32/process.c:transfer_pipe / retry_wait、src32/pipe.c:pipe_release | `tests/host/test-pipe-waits.js <ShellBridge 构建目录>`（11 项）；契约 docs/stream-pipes.md |
+| 文本会话后端 | src32/terminal.c/.h、process.c:SYS_TERMINAL；tests/guest/terminal_tests.c | `regression.ps1 -Suite terminal`；契约 docs/terminal-sessions.md |
+| 终端阻塞读取 | src32/terminal.c:wake_readers、process.c:SYS_TERMINAL / retry_wait；tests/guest/terminal_tests.c | `tests/host/test-terminal-waits.js <ShellBridge 构建目录>`（14 项）；契约 docs/terminal-sessions.md |
+| 阻塞等待 SDK 与 Shell | user/stream.h、user/sdk.h、user/interactive.h、user/gsh.c:external | `tests/host/test-shell-waits.js <ShellBridge 构建目录>`（18 项，目录须含同次构建的 kernel-normal.exe）；契约 docs/os-interface.md |
+| 终端前端 | user/terminal_frontend.c、terminal_model.h | `regression.ps1 -Suite terminal-gui`（GUI 按需）；tests/host/terminal-gui.js |
+| 交互启动代理 | src32/interactive.h、process.c、terminal.c；tests/guest/interactive_tests.c | `regression.ps1 -Suite interactive`；契约 docs/interactive-runs.md |
+| Shell | user/gsh.c、gsh_parse.h、gcmd.c；tests/host/shell-gui.js | regression.ps1；契约 docs/user-shell.md |
+| 只读文件工具 | user/tview.c、file_text.h | 宿主模型；`regression.ps1 -Suite terminal-gui`（GUI 按需）；契约 docs/file-tools.md |
+| 常用命令与欢迎界面 | user/gsh.c、gcmd.c、shell_commands.h、shell_banner.h | `regression.ps1 -Suite terminal-gui`（GUI 按需）；契约 docs/shell-tools.md |
+| 写工作区 | user/write_tool.c、gsh.c；process.c 可信来源 | `regression.ps1 -Suite terminal-gui`（GUI 按需）；契约 docs/workspace-shell.md |
+| 行编辑 | user/gsh.c、line_edit.h、terminal_edit_model.h | 宿主模型；`regression.ps1 -Suite terminal-gui`（GUI 按需）；契约 docs/shell-editing.md |
 | 桌面终端入口 | src32/gui.c Terminal 入口、user/gsh.c | tests/host/test-terminal-replacement.js；契约 docs/desktop-shell.md |
 | 打开 / 保存 / 恢复 | src32/gui.c → src32/vfs.c → src32/storage.c → src32/disk.c | tests/host/test-desktop.js、tests/host/test-recovery.js（均为 GUI，按需运行） |
 | 文本、窗口、绘制 | src32/gui.c、src32/keyboard.c、src32/graphics.c | tests/host/test-keyboard.js、tests/host/test-typography.js |

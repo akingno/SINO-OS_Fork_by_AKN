@@ -183,7 +183,7 @@ int main(void) {
     SYS_OPEN_PATH,SYS_FILE_CLIP,SYS_DROP_ZONES,SYS_WINDOW_SIZE,SYS_SPAWN_TRACKED,SYS_RUN_START};
   for(u32 i=0;i<sizeof(denied)/sizeof(denied[0]);i++)
     require(api(denied[i],0,0,0)==S_DENIED,"old entry is denied before effects");
-  require(Read("/home/user/stage2-persist.bin",buffer,sizeof(buffer))==S_DENIED &&
+  require(Read("/home/user/contracts-persist.bin",buffer,sizeof(buffer))==S_DENIED &&
           Read("/boot/readme.txt",buffer,sizeof(buffer))==S_DENIED,"no ambient file read");
   require(Write("/home/user/policy-escape","bad",3)==S_DENIED &&
           OpenPath("/Applications/Files.app")==S_DENIED,"write and deputy denied");

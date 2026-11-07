@@ -4,10 +4,9 @@ Stage A adds discovery and an opt-in strict process policy. Stage B adds bounded
 nonblocking completion objects. Stage C adds finite argv/input/output and a
 supervised host protocol; see [bounded-cli.md](bounded-cli.md). Stage D adds
 directory grants, range I/O and private publication/commit; see
-[file-objects.md](file-objects.md). Stage D's minimum version passed compilation
-and the 8-group Stage 2 text gate; remaining failure-injection limits are listed
-there. Stage E adds bounded streaming and user runtime waiting; see
-[stream-pipes.md](stream-pipes.md). Stage 4 adds thread-level blocking waits.
+[file-objects.md](file-objects.md), including its remaining failure-injection
+limits. Stage E adds bounded streaming and user runtime waiting; see
+[stream-pipes.md](stream-pipes.md). The kernel supports thread-level blocking waits.
 Stage F adds the [text session backend](terminal-sessions.md), with frontend
 integration still pending. SYS_TERMINAL=0x14a is allowed by strict policy; its
 control/client authority checks still apply, including denial of strict CREATE.
@@ -52,7 +51,7 @@ Unknown feature bits must not be interpreted as authority. Unknown syscalls
 return S_INVALID. Add future syscall IDs before SYS_CALL_END; the sentinel is not
 a callable interface. Strict policy remains a default-deny allowlist.
 
-## Thread-level waiting (Stage 4)
+## Thread-level waiting
 
 `FEATURE_THREAD_WAIT` advertises opt-in blocking for pipe transfer, terminal
 byte reads, owned completion results and the interactive broker result. The
@@ -68,7 +67,7 @@ See the [pipe](stream-pipes.md#opt-in-blocking-pipe-calls),
 [terminal](terminal-sessions.md#blocking-byte-reads), and
 [broker](interactive-runs.md) contracts for their selectors and wake conditions.
 
-## Anonymous memory (Stage 3 Phases D through F)
+## Anonymous memory
 
 `FEATURE_ANON_MEMORY` advertises anonymous mapping. Both strict and compatibility
 processes may use it for their own address space. With `FEATURE_ANON_LAZY`, a
@@ -105,7 +104,7 @@ terminates the process with `PROCESS_FAULTED`, vector 14. Protection violations
 and references outside live regions follow the usual fault path. Program images,
 argument pages and thread stacks still receive backing at creation.
 
-## SNX image layout and physical pool (Stage 3 Phase G)
+## SNX image layout and physical pool
 
 SNX v1 and v2 use the same magic, 32-byte header and link base `0x40000000`.
 The `abi` field selects the layout. v1 images retain the 192 KiB limit and
@@ -153,7 +152,7 @@ Stage E adds local PIPE_CREATE, STREAM_READY and PIPE_LIMITS; StreamRead/Write
 accept owned pipe endpoints as well as run-bound finite streams. RunSpecV3 lets
 a compatibility launcher bind explicit pipe endpoints to strict child stdio.
 Strict RUN_START/Spawn remain denied, and other handles are not inherited.
-Stage 3 also allows ANON_MAP and ANON_UNMAP for the calling process.
+The strict policy also allows ANON_MAP and ANON_UNMAP for the calling process.
 Existing pointer, object-type, rights and resource checks still
 apply. LOG remains diagnostics, not stdout; time and language are public data.
 
@@ -198,7 +197,7 @@ While running or awaiting cleanup, S_AGAIN leaves output unchanged. Success
 copies exactly 32 bytes and leaves any tail untouched. Results are repeatable,
 not consumed by one reader; duplicated WAIT handles observe the same result.
 
-Stage 4 adds opt-in blocking to SYS_PROCESS_RESULT and SYS_RUN_RESULT. Keep the
+The kernel supports opt-in blocking for SYS_PROCESS_RESULT and SYS_RUN_RESULT. Keep the
 handle in EBX and the output address in ECX, set EDX to `RESULT_BLOCK_FLAG` (1),
 and put the timeout in ESI. This selector implies the fixed v1 output size
 (32 bytes for SYS_PROCESS_RESULT or 48 bytes for SYS_RUN_RESULT). All valid
@@ -250,7 +249,7 @@ Stage C's separate v2 managed protocol reports the final result and captures.
 
 ## Verification
 
-Run repository-root `stage2-test.ps1`. The new poltest.snx executes in actual
+Run repository-root `regression.ps1`. The new poltest.snx executes in actual
 CPL3, checks fixed wire layouts, output canaries, invalid capacities/flags,
 readonly/guard-page output, every denied legacy entry, meaningful private-file
 and deputy requests, spawn downgrade routes, local events/rights/threads and

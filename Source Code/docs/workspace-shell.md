@@ -68,9 +68,9 @@ not add pipelines, redirection, POSIX unlink lifetimes; [shell-editing.md](shell
 
 普通dev-20261105-210318-d95daeff编译通过：kernel152096 bytes，BSS末端1884832。普通镜像私有VM完成写/追加/cp/mv/sync，宿主核对快照精确字节，冷启动用当时的只读入口重新读取一致。截图已检查，VM已关闭。
 
-Final Stage2 gate: stage2-20261105-205846-66ec5f89, 8/8 groups,394 checks, failed0/not-run0/exit0. Inspect with stage2-summary.ps1.
-
 G6 adds boot-to-home copy. A dedicated writer startup receives its normal home
 target grant and a separate read-only boot source. `StartBootDirectory()` uses
 selector 1 of SYS_START_DIRECTORY. Selector 0 returns the primary grant.
 See [desktop-shell.md](desktop-shell.md).
+
+GUI workspace and durable-save integration run only through `regression.ps1 -Suite terminal-gui`. The independent `-Suite persistence` checks binary/text snapshots without a window.

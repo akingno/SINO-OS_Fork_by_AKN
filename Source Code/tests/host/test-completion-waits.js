@@ -1,6 +1,6 @@
-const {runPhase} = require('../support/stage4-wait-tests');
+const {runSuite} = require('../support/wait-tests');
 
-runPhase('C', [
+runSuite('completion', [
     ['legacy completion', 'comptest', 'suite', 'COMPLETION SUITE PASS'],
     ['legacy managed run', 'clitest', 'unit', 'CLI SUITE PASS'],
     ...['exit', 'run-exit', 'run-timeout', 'timeout', 'multi-cancel', 'local-close', 'unmap', 'wire']

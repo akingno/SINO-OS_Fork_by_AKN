@@ -73,17 +73,11 @@ file writes and default desktop entry switching belong to subsequent work.
 
 `tests/host/test-file-text.c` compiles the actual decoder/layout helpers, covering
 controls, malformed/partial UTF-8, four-byte codepoints, a sequence straddling
-byte512, empty input and wide-character wrapping. `tests/host/stage2-files-cli.js`
+byte512, empty input and wide-character wrapping. `tests/host/file-tools-gui.js`
 uses real QMP keyboard events and private-VM fixtures to exercise the Shell,
 broker, strict file tools, paging and resource cleanup. Fixtures are created
 by rdtest.snx, then removed; they must not be created on a daily development disk.
-All checks are integrated into stage2-test.ps1. Inspect explicit saved runs with
-stage2-summary.ps1; the full GUI/system gate remains a separate scope.
-
-Final gate `stage2-20261105-182013-bf319296`: 8/8 groups, 385 checks, failed0,
-not-run0, exit0. Ordinary build `dev-20261105-182311-caee9e61` passed (kernel
-151424 bytes, BSS end1884800). Its visible private-VM smoke passed ls/cat,
-pager prompt, Space to the final page and Shell foreground restoration;
-screenshot inspected and VM stopped.
+GUI checks run only through `regression.ps1 -Suite terminal-gui`. Inspect explicit saved runs with
+test-summary.ps1; the full GUI/system gate remains a separate scope.
 
 G5a adds head/tail/wc/grep/hexdump/tree/find using the same catalog and file identity checks; see [shell-tools.md](shell-tools.md) for syntax, raw-byte counting versus text display and traversal bounds. tree/find also receive ENUM. Default frontend width is now120 cells.

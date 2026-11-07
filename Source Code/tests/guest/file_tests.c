@@ -60,10 +60,10 @@ static int child(void) {
   int dir = StartDirectory();
   require(dir > 0, "child receives directory context");
   require(GrantDirectory("/home/user", FS_READ | FS_LOOKUP) == S_DENIED &&
-          Read("/home/user/stage2-persist.bin", output, sizeof(output)) == S_DENIED &&
+          Read("/home/user/contracts-persist.bin", output, sizeof(output)) == S_DENIED &&
           Sync() == S_DENIED && Spawn("/boot/fstest.snx") == S_DENIED,
           "ambient paths, commit and downgrade stay denied");
-  require(OpenAt(dir, "../stage2-persist.bin", FS_READ, 0) == S_DENIED,
+  require(OpenAt(dir, "../contracts-persist.bin", FS_READ, 0) == S_DENIED,
           "child cannot escape handed-in directory");
   int file = OpenAt(dir, "child", FS_READ, 0);
   require(file > 0 && FileReadAt(file, 0, output, 4) == 4 &&
@@ -272,18 +272,18 @@ static int anon_oom_test(int fault) {
 }
 
 int main(void) {
-  if (streq(Arguments(), "stage3-save") || streq(Arguments(), "stage3-read")) {
+  if (streq(Arguments(), "memory-save") || streq(Arguments(), "memory-read")) {
     static const u8 expected[] = {0, 0x7f, 0xff, '\n', 'G', 0, '3'};
-    const char* path = "/home/user/stage3-mm.bin";
-    if (streq(Arguments(), "stage3-save")) {
+    const char* path = "/home/user/memory-persist.bin";
+    if (streq(Arguments(), "memory-save")) {
       require(Write(path, expected, sizeof(expected)) == S_OK && Sync() == S_OK,
-              "commit Stage 3 fixture bytes");
-      Log("STAGE3 SAVE PASS\n");
+              "commit memory fixture bytes");
+      Log("MEMORY SAVE PASS\n");
     } else {
       u8 data[8];
       require(Read(path, data, sizeof(data)) == sizeof(expected) &&
               same(data, expected, sizeof(expected)), "cold boot bytes match");
-      Log("STAGE3 READ PASS\n");
+      Log("MEMORY READ PASS\n");
     }
     return 0;
   }
@@ -328,7 +328,7 @@ int main(void) {
   }
   if (streq(Arguments(), "reboot")) {
     int home = GrantDirectory("/home/user", FS_READ | FS_LOOKUP);
-    int file = OpenAt(home, "stage2-file-save.bin", FS_READ, 0);
+    int file = OpenAt(home, "contracts-file-save.bin", FS_READ, 0);
     for (u32 i = 0; i < 257; i++) bytes[i] = (u8)(i * 19 + 7);
     require(home > 0 && file > 0 && FileReadAt(file, 0, output, 258) == 257 &&
             same(bytes, output, 257), "cold boot retains the newly published version");
@@ -341,9 +341,9 @@ int main(void) {
   require(StartDirectory() == S_NOTFOUND, "no ambient startup directory");
   int home = GrantDirectory("/home/user", FS_RIGHTS);
   require(home > 0 && GrantDirectory("/boot", FS_RIGHTS) == S_DENIED, "write grant restricted to home");
-  int dir = OpenAt(home, "stage2-files", FS_RIGHTS, OPEN_CREATE | OPEN_EXCLUSIVE | OPEN_DIRECTORY);
+  int dir = OpenAt(home, "contracts-files", FS_RIGHTS, OPEN_CREATE | OPEN_EXCLUSIVE | OPEN_DIRECTORY);
   require(dir > 0, "create exclusive directory");
-  require(OpenAt(home, "stage2-files", FS_READ, OPEN_CREATE | OPEN_EXCLUSIVE | OPEN_DIRECTORY) == S_EXISTS,
+  require(OpenAt(home, "contracts-files", FS_READ, OPEN_CREATE | OPEN_EXCLUSIVE | OPEN_DIRECTORY) == S_EXISTS,
           "exclusive create refuses existing directory");
   require(OpenAt(dir, "/boot/readme.txt", FS_READ, 0) == S_INVALID &&
           OpenAt(dir, "..", FS_LOOKUP, OPEN_DIRECTORY) == S_DENIED &&
@@ -369,8 +369,8 @@ int main(void) {
   require(readonly > 0 && FileWriteAt(readonly, 0, "x", 1) == S_BADHANDLE &&
           RemoveAt(dir, "range", 0) == S_BUSY &&
           RenameAt(dir, "range", dir, "renamed") == S_BUSY &&
-          Remove("/home/user/stage2-files/range", 0) < 0 &&
-          api(SYS_MOVE, (u32)"/home/user/stage2-files/range", (u32)"/home/user/stage2-files/renamed", 0) < 0,
+          Remove("/home/user/contracts-files/range", 0) < 0 &&
+          api(SYS_MOVE, (u32)"/home/user/contracts-files/range", (u32)"/home/user/contracts-files/renamed", 0) < 0,
           "new and old paths respect live references");
   DirEntry buffer[1]; DirPage page = {0, 0, (u32)buffer, 1, 0, 0};
   require(DirectoryRead(dir, &page) == 0 && page.count == 1 && page.done, "enumeration completion");
@@ -425,7 +425,7 @@ int main(void) {
   result(child_run(dir, FS_READ | FS_WRITE | FS_LOOKUP | FS_CREATE, "fault", "/boot/fstest.snx"), PROCESS_FAULTED);
   require(OpenAt(dir, "unpublished", FS_READ, 0) == S_NOTFOUND, "fault does not publish private data");
   require(RemoveAt(dir, "child", 0) == 0 && RemoveAt(dir, "range", 0) == 0 &&
-          Close(dir) == 0 && RemoveAt(home, "stage2-files", 1) == 0,
+          Close(dir) == 0 && RemoveAt(home, "contracts-files", 1) == 0,
           "child exit and fault release all file and directory pins");
   int boot = GrantDirectory("/boot", FS_READ | FS_LOOKUP);
   file = OpenAt(boot, "README.TXT", FS_READ, 0);
@@ -436,8 +436,8 @@ int main(void) {
   require(Close(file) == 0 && Close(boot) == 0, "release boot grant");
   /* Save distinct new bytes; host snapshot inspection and a cold guest verify
      them rather than accepting an unchanged preexisting fixture as evidence. */
-  require(OpenAt(home, "stage2-file-save.bin", FS_READ, 0) == S_NOTFOUND, "new cold-boot fixture absent");
-  stage = FileStage(home, "stage2-file-save.bin", 0);
+  require(OpenAt(home, "contracts-file-save.bin", FS_READ, 0) == S_NOTFOUND, "new cold-boot fixture absent");
+  stage = FileStage(home, "contracts-file-save.bin", 0);
   for (u32 i = 0; i < 257; i++) bytes[i] = (u8)(i * 19 + 7);
   require(stage > 0 && FileWriteAt(stage, 0, bytes, 257) == 257 &&
           FilePublish(stage, &commit) == 0 && !commit.durable &&

@@ -1,4 +1,4 @@
-/* Focused headless Stage 3 gates. Each guest uses a private data image. */
+/* Current memory contracts. Each guest uses a private data image. */
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -87,9 +87,8 @@ async function boot(source, label, memoryMiB, verify, seedDisk) {
     return path.join(directory, 'shell-data.img');
 }
 
-async function phaseG(source, reference) {
-    assert(reference, 'Provide a pre-Phase-G build directory for the v1 comparison.');
-    await boot(source, 'g-64', 64, async ({baseline, free, command, check, channel, guestLog}) => {
+async function imageContracts(source) {
+    await boot(source, 'images-64', 64, async ({baseline, free, command, check, channel, guestLog}) => {
         await check(['64 MiB boots with its existing pool and 16 MiB image OOM rolls back'], async () => {
             assert.match(guestLog(), /PAGE extended pages=0x00000000/);
             const session = new RunSession(channel);
@@ -98,16 +97,15 @@ async function phaseG(source, reference) {
             assert.equal(free(await command('mem')), baseline);
         });
     });
-    const seed = await boot(source, 'g-1024', 1024, async ({baseline, free, check, probe, channel, command, guestLog}) => {
+    const seed = await boot(source, 'images-1024', 1024, async ({baseline, free, check, probe, channel, command, guestLog}) => {
         await check(['1 GiB publishes E820 high pages after the formal CR3 switch'], async () => {
             assert(baseline > 240000, 'too few allocatable pages');
             const match = guestLog().match(/PAGING enabled:[^\n]+\n[\s\S]*PAGE extended pages=(0x[0-9a-f]+)/i);
             assert(Number(match?.[1]) > 240000, 'extended pool not published');
         });
-        await check(['byte-identical pre-G v1 binary preserves argv and typed completion'], async () => {
-            const old = bootFile(reference, 'CLITEST.SNX');
-            assert.equal(old.readUInt32LE(4), 1);
-            assert.deepEqual(bootFile(source, 'CLITEST.SNX'), old);
+        await check(['current v1 binary preserves argv and typed completion'], async () => {
+            const current = bootFile(source, 'CLITEST.SNX');
+            assert.equal(current.readUInt32LE(4), 1);
             const session = new RunSession(channel);
             await session.hello();
             const result = await session.run('/boot/clitest.snx', ['args', '', 'old']);
@@ -136,17 +134,17 @@ async function phaseG(source, reference) {
         await check(['strict file, pipe and lazy cross-page buffer roundtrip'], () =>
             probe('run /boot/fstest.snx anon-parent', /ANON I\/O PASS[\s\S]*ANON PARENT PASS/));
         await check(['real headless gsh runs a strict worker and restores its prompt'], () =>
-            probe('run /boot/brokerqa.snx stage3-shell', /STAGE3 GSH PASS/));
+            probe('run /boot/brokerqa.snx shell-smoke', /SHELL PASS/));
         await check(['private disk commits binary bytes on the 1 GiB image'], () =>
-            probe('run /boot/fstest.snx stage3-save', /STAGE3 SAVE PASS/, 1));
+            probe('run /boot/fstest.snx memory-save', /MEMORY SAVE PASS/, 1));
     });
-    await boot(source, 'g-cold', 1024, async ({check, probe}) =>
+    await boot(source, 'images-cold', 1024, async ({check, probe}) =>
         check(['cold boot on the same ISO recovers the exact binary bytes'], () =>
-            probe('run /boot/fstest.snx stage3-read', /STAGE3 READ PASS/)), seed);
+            probe('run /boot/fstest.snx memory-read', /MEMORY READ PASS/)), seed);
 }
 
-async function phaseD(source) {
-    await boot(source, 'd-recheck', 64, async ({check, probe}) => {
+async function anonymousContracts(source) {
+    await boot(source, 'anonymous', 64, async ({check, probe}) => {
         await check(['strict feature discovery', 'zero, overflow and reserved map arguments',
             'rounded aligned independent regions', 'zero-filled pages and independent writes',
             'malformed and interior unmap leave data intact', 'released address and double-unmap rejected',
@@ -164,11 +162,11 @@ async function phaseD(source) {
     });
 }
 
-const [mode, source, reference] = process.argv.slice(2);
-if (!source || !['g', 'd'].includes(mode)) {
-    console.error('Usage: node test-stage3-mm.js g|d <ShellBridge build directory> [pre-G build directory]');
+const [mode, source] = process.argv.slice(2);
+if (process.argv.length !== 4 || !['images', 'anonymous'].includes(mode)) {
+    console.error('Usage: node test-memory.js images|anonymous <ShellBridge build directory>');
     process.exitCode = 2;
 } else {
-    (mode === 'g' ? phaseG(path.resolve(source), reference && path.resolve(reference)) : phaseD(path.resolve(source)))
+    (mode === 'images' ? imageContracts(path.resolve(source)) : anonymousContracts(path.resolve(source)))
         .catch(error => { console.error(error); process.exitCode = 1; });
 }

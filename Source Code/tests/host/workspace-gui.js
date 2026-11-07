@@ -38,9 +38,12 @@ async function run(api){
 module.exports={run};
 
 async function persist(api){
+ const {check}=api;
+ await check('GUI Shell commits its own cold-boot fixture',async()=>{
  const {launch,until,processes,type,text,key,waitText}=api;
  const pid=await launch('term','/write');await waitText(pid,'/ = /home/user (read-write)');
  for(const line of ['write g5b-durable.txt g5b durable','sync']){await type(line+'\n');await until(async()=>(await text(pid)).endsWith('gsh:/ $'),'durable write prompt');}
  await waitText(pid,'home snapshot durable');await key('ctrl','w');await until(async()=>(await processes()).length===0,'durable Shell close');
+ });
 }
 module.exports.persist=persist;

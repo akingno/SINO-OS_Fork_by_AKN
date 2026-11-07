@@ -46,5 +46,5 @@ command self-checks. The legacy demo and script are fixtures in those images.
 
 Run `node "Source Code/tests/host/test-terminal-replacement.js"` against a
 matching ordinary build for real keyboard, launch routes, write isolation
-and snapshot checks. The Stage 2 gate also verifies
+and snapshot checks. The core regression also verifies
 scoped process termination, directory grants and resource reclamation.

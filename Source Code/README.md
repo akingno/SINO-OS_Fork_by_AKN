@@ -31,7 +31,7 @@ tools/                构建、发布与共享开发工具
   vm-test.js          QEMU 测试基础设施
   shell-test.js       Shell 命令通道测试
 tests/                宿主套件、Ring 3 测试探针与测试辅助模块
-  host/               宿主测试脚本（stage2-test.js、test-stage4-*.js 等）
+  host/               宿主测试脚本（test-core.js、test-*-waits.js 等）
   guest/              Ring 3 客户机测试程序（编译为 .snx）
   support/            共享夹具与用例数据
 docs/                 技术契约文档
@@ -64,9 +64,13 @@ Shell 命令通道测试：
 
     powershell -NoProfile -ExecutionPolicy Bypass -File ..\test.ps1 -SelfTest
 
-Stage 2 全量门禁（8 组，含原生权限、资源回收、冷启动恢复等）：
+非 GUI 基础回归（按功能组合，仅按需全量运行）：
 
-    powershell -NoProfile -ExecutionPolicy Bypass -File ..\stage2-test.ps1
+    powershell -NoProfile -ExecutionPolicy Bypass -File ..\regression.ps1 -Suite core
+
+可用 `regression.ps1 -Suite process`、`-Suite files` 或 `-Suite 'policy,files'` 独立选择与组合功能。
+
+独立持久化检查使用 `regression.ps1 -Suite persistence`（4 项）；终端窗口交互使用 `-Suite terminal-gui`，仅按需运行。历史阶段入口已移除。
 
 详细说明见 [docs/testing.md](docs/testing.md)。
 

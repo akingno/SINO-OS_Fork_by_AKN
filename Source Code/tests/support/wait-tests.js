@@ -65,9 +65,9 @@ async function verify(context, cases, pipeCases, shellCases) {
     }
 }
 
-async function main(source, phase, cases, pipeCases, shellCases) {
+async function main(source, suite, cases, pipeCases, shellCases) {
     const build = readJSON(path.join(source, 'build.json'));
-    const directory = fs.mkdtempSync(path.join(source, 'phase-' + phase.toLowerCase() + '-'));
+    const directory = fs.mkdtempSync(path.join(source, suite + '-'));
     const iso = path.join(directory, 'SINO.iso');
     fs.copyFileSync(build.iso, iso, fs.constants.COPYFILE_EXCL);
     fs.writeFileSync(path.join(directory, 'build.json'), JSON.stringify({...build, iso}));
@@ -77,7 +77,7 @@ async function main(source, phase, cases, pipeCases, shellCases) {
     const passed = report.cases.filter(item => item.result === 'PASS').length;
     const expected = cases.length + pipeCases.length + shellCases.length;
     const success = code === 0 && passed === expected && report.vmStopped;
-    console.log(`${success ? 'PASS' : 'FAIL'} Phase ${phase} ${passed}/${expected} cases`);
+    console.log(`${success ? 'PASS' : 'FAIL'} ${suite} ${passed}/${expected} cases`);
     if (report.shellWait)
         console.log(`Shell wait: ${report.shellWait.ticks} guest ticks, ${report.shellWait.dispatches} user dispatches`);
     for (const item of report.cases.filter(item => item.result !== 'PASS'))
@@ -85,14 +85,14 @@ async function main(source, phase, cases, pipeCases, shellCases) {
     return success ? 0 : 1;
 }
 
-function runPhase(phase, cases, pipeCases, shellCases = [], args = process.argv.slice(2)) {
+function runSuite(suite, cases, pipeCases, shellCases = [], args = process.argv.slice(2)) {
     if (args.length !== 1) {
         console.error('Usage: node ' + path.basename(process.argv[1]) + ' <ShellBridge build directory>');
         process.exitCode = 2;
         return;
     }
-    main(path.resolve(args[0]), phase, cases, pipeCases, shellCases)
+    main(path.resolve(args[0]), suite, cases, pipeCases, shellCases)
         .then(code => {process.exitCode = code;})
         .catch(error => {console.error(error.message); process.exitCode = 1;});
 }
-module.exports = {runPhase};
+module.exports = {runSuite};

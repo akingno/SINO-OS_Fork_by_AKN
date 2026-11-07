@@ -86,17 +86,11 @@ entry, not a new host run.ps1/v2 protocol.
 ## Verification
 
 `tests/host/test-gsh.c` compiles the actual shared parser/path/integer helpers.
-`tests/host/stage2-shell.js` adds five real QMP cases for command recovery, argv,
+`tests/host/shell-gui.js` adds five real QMP cases for command recovery, argv,
 independent cwd/UTF-8 sessions, signed results/fault/cancel/EOF, process-table
 exhaustion and recovery, bounded history, canonical editing and exact resource
-cleanup. These run through `stage2-test.ps1`; inspect the saved run with
-`stage2-summary.ps1`.
-
-Final gate `stage2-20261105-172615-7d9a6804`: 8/8 groups, 380 checks, failed0,
-not-run0, exit0. Ordinary build `dev-20261105-172959-2f8e1044` passed, kernel
-151392 bytes, BSS end1884800. Its visible private-VM smoke passed Shell startup,
-cwd navigation and empty/quoted argv; screenshot inspected and VM stopped.
-The full 22-suite GUI gate remains a separate scope.
+cleanup. These GUI cases run only through `regression.ps1 -Suite terminal-gui`; inspect the saved run with
+`test-summary.ps1`.
 
 G5a extends this entry with a 120-column default, user-owned SINO SH welcome, help/which/aliases, date/time/information tools and head/tail/wc/grep/hexdump/tree/find. Current behavior and intentional old-command differences are in [shell-tools.md](shell-tools.md). The existing strict policies and grant root are retained.
 

@@ -18,7 +18,7 @@
 - `tests/guest/` 存放编译为 SNX 的独立测试程序。`tools/build-user.js` 维护源码与镜像内程序名的对应关系。
 - `tests/support/` 存放测试夹具和套件辅助模块。构建、发布与测试共用的宿主工具仍在 `tools/`。
 
-仓库根的 PowerShell 命令、`verify-system.js`、`verify-desktop.js` 和原 `tools/` 下的独立测试脚本入口可照常使用。新用例和套件实现放入对应的测试目录。
+当前入口按功能命名；历史阶段入口及其 `tools/` 转发已移除。新用例和套件实现放入对应的测试目录。
 
 ## 无界面启动检查
 
@@ -65,36 +65,57 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\test.ps1 -SelfTest
 
 报告和输出在 `Build Output/dev/runs/shell-.../`。通道仅在 `-ShellBridge` 构建中启用，普通开发桌面构建不启用。
 
-## Stage 2 全量门禁
+## 非 GUI 回归与独立持久化检查
 
-```
-powershell -NoProfile -ExecutionPolicy Bypass -File .\stage2-test.ps1
-```
+日常开发先做普通镜像启动检查，再选与修改直接相关的专项。完整基础回归按需运行：
 
-构建新的带 ShellBridge 内核，在私有无窗口 VM 中运行 8 组测试，覆盖：
-
-- 基础设施 / RTC / Shell 契约
-- Ring 3 指针/权限/句柄/文件/资源检查
-- 严格进程策略（Stage A poltest.snx）
-- 完成记录（Stage B comptest.snx）
-- 有限 CLI（Stage C 客户端套件 + managed-cli 协议）
-- 文件对象与冷启动字节检查（Stage D fstest.snx）
-- 管道与并发传输（Stage E pipetest.snx）
-- 文本会话（Stage F termtest.snx）
-- 桌面终端前端模型与 QMP 按键（Stage G）
-- 回环网络
-- 冷启动持久化与恢复
-- 应用逻辑自测
-
-排除画板、GUI 文本编辑器、视觉设计器交互和像素断言。
-
-精简查看结果：
-
-```
-.\stage2-summary.ps1 -RunDirectory 'Build Output/dev/runs/<本轮编号>'
+```powershell
+.\regression.ps1 -Suite core
 ```
 
-总状态、各组计数、异常片段。不重跑测试，正常通过时不展开成功子报告。
+`core` 由 19 个功能组组成，包含基础设施、RTC、Shell 通道/命令、进程、策略、完成记录、CLI、文件、管道、文本会话、交互代理、回环网络、独立持久化及测试器失败拒绝。它不调用终端窗口、QMP 键鼠、绘制场景或截图接口。宿主的终端/编辑模型属于无 GUI 逻辑测试，仍保留。
+
+独立验证持久化：
+
+```powershell
+.\regression.ps1 -Suite persistence
+```
+
+共 4 项：通过无界面探针和命令通道提交二进制、文本数据，宿主核对 CRC 有效快照中的精确字节，再用同一 ISO 和私有盘副本冷启动读取。该入口不运行全量原生套件，也不依赖 GUI 数据或历史镜像。
+
+两种选择都会构建带 ShellBridge 的新 ISO，保存同次构建的符号。报告位于 `Build Output/dev/runs/regression-.../regression-report.json`；查看摘要不重跑：
+
+```powershell
+.\test-summary.ps1 -RunDirectory 'Build Output/dev/runs/<本轮编号>'
+```
+
+## 独立功能套件与组合
+
+```powershell
+.\regression.ps1 -Suite process
+.\regression.ps1 -Suite files
+.\regression.ps1 -Suite 'policy,files'
+```
+
+`process` 为 16 项（含自己的冷启动），`policy` 为 2 项，`completion` 为 5 项，`files` 为 2 项（含自己的冷启动），`cli`、`pipes`、`terminal`、`interactive`、`network` 各 1 项；`managed-cli` 为 12 项。逗号组合共享同一次构建，各业务组仍在独立空白私有 VM 中执行。读回组只能使用自己写入组的私有盘副本，原盘哈希必须不变。未知名称或相互重叠的选择在构建前拒绝。
+
+目录职责：
+
+- `tests/host/suites/`：按功能组织的业务用例，禁止调用其他业务套件。
+- `tests/support/guest-context.js`：命令通道、探针、资源计数和内存检查。
+- `tests/support/gui-context.js`：只供明确选择的 GUI 套件使用的键鼠、窗口与文本观察。
+- `tests/support/regression-suites.js`、`regression-catalog.js`：组合关系、业务入口、显式冷启动种子。
+- `tests/host/test-core.js`、`tests/support/regression-vm.js`：调度、私有 VM 生命周期、构建身份及结果检查。
+
+报告按独立业务组展示；格式版本为 3。`test-report-summary.js --group contracts|selections|io` 分别验证 18/4/4 项报告契约，默认全部 26 项。
+
+## 终端 GUI 集成（仅按需）
+
+```powershell
+.\regression.ps1 -Suite terminal-gui
+```
+
+独立运行文件管理器窗口自测、终端窗口、Shell 键盘交互、文件工具、写工作区和行编辑集成。该选择使用自己的空白私有盘、夹具和资源基线；由 GUI Shell 写入并同步其持久化数据，再冷启动核对。它不先运行普通回归，也不被普通回归调用。不比较像素的窗口/按键测试同样归属 GUI。也可单选 `frontend-gui`、`shell-gui`、`file-tools-gui`、`shell-tools-gui`、`workspace-gui`、`line-edit-gui` 或 `files-gui`；它们各自建立资源基线和夹具，不通过前端套件串联调用。
 
 ## 独立 CLI 运行
 
@@ -104,13 +125,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\run.ps1 -Program /boot/cli
 
 构建新 ISO，在严格进程中运行单个程序，取得独立 stdout/stderr 和最终状态。输入 ≤ 4 KiB，详见 [bounded-cli.md](bounded-cli.md)。
 
-## 完整回归门禁（15 组）
+## GUI/系统完整回归（15 组，仅按需）
 
 ```
 node 'Source Code/verify-system.js'
 ```
 
-需要按 testing.md 准备普通和 SELFTEST 两种镜像。15 组覆盖：启动/应用、指针/键盘、文件/拖放、中文/拼音、设置/模式、网络、画板隐藏/文件管理器、桌面终端替换。其中 `tests/host/test-iso.js` 通过 QMP 启动 Shell 并保存截图。
+需准备普通和 SELFTEST 两种镜像；该入口包含 GUI，不属于日常验收。15 组覆盖：启动/应用、指针/键盘、文件/拖放、中文/拼音、设置/模式、网络、画板隐藏/文件管理器、桌面终端替换。其中 `tests/host/test-iso.js` 通过 QMP 启动 Shell 并保存截图。
 
 ## src32 基础设施契约测试
 
@@ -120,14 +141,20 @@ node 'Source Code/tests/host/test-src32-refactor.js'
 
 43 项独立测试：用实际 `storage.c` 配合内存磁盘和受控 VFS 边界编译运行，测试 klog 字节/十六进制输出和 locale 查询/格式化（含 UTF-8 名称和容量错误），以及资源生成器的缺失/重复键拒绝。不修改运行时源码或日常磁盘。
 
-## Stage 3 内存管理专项
+## 内存与阻塞等待专项
 
-```
-node 'Source Code/tests/host/test-stage3-mm.js' g <本轮目录> <G前构建目录>
-node 'Source Code/tests/host/test-stage3-mm.js' d <本轮目录>
-```
+对显式指定的同次 ShellBridge 构建运行，均使用私有盘：
 
-使用私有 64 MiB / 1 GiB VM 和同一 ISO。`g` 测高页与 SNX v2，`d` 补测匿名内存。需要对显式指定的 ShellBridge 构建运行。
+| 入口（位于 tests/host/） | 范围 | 用例数 |
+| --- | --- | --- |
+| `test-memory.js images <构建目录>` | 64 MiB / 1 GiB、高页、当前 SNX v1/v2、冷启动 | 13 |
+| `test-memory.js anonymous <构建目录>` | 匿名映射、配额、I/O、故障与 OOM | 18 |
+| `test-pipe-waits.js <构建目录>` | 管道阻塞与回收 | 11 |
+| `test-completion-waits.js <构建目录>` | 完成记录阻塞等待 | 12 |
+| `test-terminal-waits.js <构建目录>` | 终端阻塞读取 | 14 |
+| `test-shell-waits.js <构建目录>` | SDK 与 Shell 等待集成 | 18 |
+
+内存测试仅使用当前构建，不再比较历史阶段二进制。Shell 等待测试需要构建目录内的 `kernel-normal.exe`；历史收尾模式已合并到这一个功能入口。可用 `regression.ps1 -Suite persistence` 的构建目录运行这些专项。
 
 ## 测试约定
 

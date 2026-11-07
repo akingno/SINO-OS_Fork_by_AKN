@@ -94,6 +94,6 @@ saved evidence are not rewritten or deleted.
 
 Host tests compile the actual line editor, repaint model and input queue.
 Real QMP scenarios exercise the formal F12 entry and integration with the
-existing read/write tools. Run stage2-test.ps1 and inspect an explicit saved
-run using stage2-summary.ps1. Full ANSI/PTY, grapheme-cluster editing, multiline
+existing read/write tools. Run `regression.ps1 -Suite terminal-gui` and inspect an explicit saved
+run using test-summary.ps1. Full ANSI/PTY, grapheme-cluster editing, multiline
 paste retain separate scopes.

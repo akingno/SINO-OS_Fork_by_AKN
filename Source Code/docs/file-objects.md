@@ -1,11 +1,5 @@
 # Stage D: directory grants and versioned file saves
 
-Implementation status: the minimum Stage D delivery passed compilation and the
-Stage 2 text gate: stage2-20261105-031230-9c53149b, 8/8 groups and 358 checks,
-exit 0. A separate non-bridge BuildOnly also passed:
-dev-20261105-031629-678f6f20. The remaining failure-injection limits below still
-apply; this is not the complete 22-suite GUI/system gate.
-
 This extends the existing VFS without replacing legacy application APIs. Strict
 processes still cannot use ambient Read/Write/List/Sync, Spawn, the clipboard or
 desktop proxies. FEATURE_FILE_OBJECTS=32 advertises these mechanisms; features
@@ -192,20 +186,19 @@ expected_revision. No kernel pointer or node index crosses the API.
 
 ## Validation and remaining boundaries
 
-fstest.snx suite is registered in the Stage 2 native group. It exercises real
+fstest.snx suite is registered in the independent non-GUI files group. It exercises real
 CPL3 grants/attenuation, path escape rejection, EOF/holes/cross-page/64 KiB I/O,
 old/new reference protection, enumeration versions, private stages, Busy and
 revision conflicts, handle exhaustion, child launch rollback and child fault
 cleanup. The host compares object/page baselines and expects one intentional
-child #UD. It publishes a distinct new 257-byte stage2-file-save.bin; the host
+child #UD. It publishes a distinct new 257-byte contracts-file-save.bin; the host
 checks exact bytes in the CRC-valid snapshot, and fstest.snx reboot reads them
 after a cold guest boot. Only that new file's one page may remain above the
 previous resource baseline. Existing persistence fixtures remain unchanged.
 
-These checks passed in the run identified above. Additional validation must cover allocation-point
+Additional validation must cover allocation-point
 failure injection, node/counter exhaustion, forged headers/pointers and output
 canaries, cancellation/timeout while holding file objects, all commit failure
-points and private-stage invisibility across a forced reboot. The normal Stage 2
-gate alone does not prove every such failure case or unchanged old binaries.
+points and private-stage invisibility across a forced reboot. The core regression alone does not prove every such failure case or unchanged old binaries.
 
 G5b adds explicit `run /boot/term.snx /write` for touch/mkdir/rm/rmdir/write/append/cp/mv/sync using a granted home workspace. Read-only sessions and catalogs 4 and 5 keep their previous access scope. Writable-mode authority, publication versus persistence and intentional compatibility differences are in [workspace-shell.md](workspace-shell.md).

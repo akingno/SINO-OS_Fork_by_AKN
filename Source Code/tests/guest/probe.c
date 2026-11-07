@@ -24,66 +24,66 @@ static void check(int ok, const char *s) {
   }
 }
 #if MODE == 0
-/* Text-only Stage 2 contracts. The ordinary interactive probe stays unchanged. */
-static u8 stage2_data[MAX_FILE];
-static void stage2_files(int verify_only) {
-  const char *saved = "/home/user/stage2-persist.bin";
+/* Text-only core contracts. The ordinary interactive probe stays unchanged. */
+static u8 contracts_data[MAX_FILE];
+static void contracts_files(int verify_only) {
+  const char *saved = "/home/user/contracts-persist.bin";
   if (!verify_only) {
-    check(Mkdir("/home/user/stage2-api") == 0, "stage2 mkdir");
+    check(Mkdir("/home/user/contracts-api") == 0, "contracts mkdir");
     for (u32 i = 0; i < MAX_FILE; i++)
-      stage2_data[i] = (u8)(i * 37u + 11u);
-    check(Write("/home/user/stage2-api/a.bin", stage2_data, MAX_FILE) == 0,
+      contracts_data[i] = (u8)(i * 37u + 11u);
+    check(Write("/home/user/contracts-api/a.bin", contracts_data, MAX_FILE) == 0,
           "64 KiB binary write");
-    stage2_data[0] = 0xcc;
-    check(Read("/home/user/stage2-api/a.bin", stage2_data, MAX_FILE - 1) ==
-                  S_LIMIT && stage2_data[0] == 0xcc,
+    contracts_data[0] = 0xcc;
+    check(Read("/home/user/contracts-api/a.bin", contracts_data, MAX_FILE - 1) ==
+                  S_LIMIT && contracts_data[0] == 0xcc,
           "whole-file short buffer untouched");
-    check(Read("/home/user/stage2-api/a.bin", stage2_data, MAX_FILE) == MAX_FILE,
+    check(Read("/home/user/contracts-api/a.bin", contracts_data, MAX_FILE) == MAX_FILE,
           "64 KiB binary read");
     int equal = 1;
     for (u32 i = 0; i < MAX_FILE; i++)
-      if (stage2_data[i] != (u8)(i * 37u + 11u))
+      if (contracts_data[i] != (u8)(i * 37u + 11u))
         equal = 0;
     check(equal, "binary bytes including NUL preserved");
-    check(Write("/home/user/stage2-api/a.bin", stage2_data, MAX_FILE + 1) ==
+    check(Write("/home/user/contracts-api/a.bin", contracts_data, MAX_FILE + 1) ==
               S_INVALID, "file size bound");
-    check(Write("/home/user/stage2-api/a.bin", "short", 5) == 0 &&
-              Read("/home/user/stage2-api/a.bin", stage2_data, MAX_FILE) == 5,
+    check(Write("/home/user/contracts-api/a.bin", "short", 5) == 0 &&
+              Read("/home/user/contracts-api/a.bin", contracts_data, MAX_FILE) == 5,
           "overwrite shrinks file");
-    check(api(SYS_MOVE, (u32)"/home/user/stage2-api/a.bin",
-              (u32)"/home/user/stage2-api/b.bin", 0) == 0,
+    check(api(SYS_MOVE, (u32)"/home/user/contracts-api/a.bin",
+              (u32)"/home/user/contracts-api/b.bin", 0) == 0,
           "move file");
     FileInfo info[2];
-    check(List("/home/user/stage2-api", info, 2) == 1 &&
+    check(List("/home/user/contracts-api", info, 2) == 1 &&
               streq(info[0].name, "b.bin") && info[0].size == 5 && !info[0].dir,
           "list moved file");
-    check(Remove("/home/user/stage2-api/b.bin", 0) == 0 &&
-              Remove("/home/user/stage2-api", 1) == 0,
+    check(Remove("/home/user/contracts-api/b.bin", 0) == 0 &&
+              Remove("/home/user/contracts-api", 1) == 0,
           "file and directory cleanup");
     for (u32 i = 0; i < 257; i++)
-      stage2_data[i] = (u8)(i * 37u + 11u);
-    check(Write(saved, stage2_data, 257) == 0 && Sync() == 0,
+      contracts_data[i] = (u8)(i * 37u + 11u);
+    check(Write(saved, contracts_data, 257) == 0 && Sync() == 0,
           "persistent binary commit");
   }
-  check(Read(saved, stage2_data, MAX_FILE) == 257, "persistent binary length");
+  check(Read(saved, contracts_data, MAX_FILE) == 257, "persistent binary length");
   int equal = 1;
   for (u32 i = 0; i < 257; i++)
-    if (stage2_data[i] != (u8)(i * 37u + 11u))
+    if (contracts_data[i] != (u8)(i * 37u + 11u))
       equal = 0;
   check(equal, "persistent binary content");
 }
-static void stage2_headless(void) {
+static void contracts_headless(void) {
   check(streq(Executable(), "/boot/probe.snx"), "immutable executable path");
   check(api(0xffffffffu, 0, 0, 0) == S_INVALID, "unknown syscall rejected");
   check(api(SYS_KILL, 0xdeadbeefu, 0, 0) == S_DENIED,
         "foreign process management denied");
   check(Read("/boot/readme.txt", (void *)USER_ARGUMENTS, 4) == S_INVALID,
         "readonly launch page output denied");
-  check(Write("/home/user/stage2-invalid", (const void *)0x100000, 4) ==
+  check(Write("/home/user/contracts-invalid", (const void *)0x100000, 4) ==
               S_INVALID, "kernel source pointer denied");
-  check(Read("/home/user/stage2-invalid", stage2_data, MAX_FILE) == S_NOTFOUND,
+  check(Read("/home/user/contracts-invalid", contracts_data, MAX_FILE) == S_NOTFOUND,
         "invalid write has no file side effect");
-  Log("STAGE2 CHECK permissions-pointers PASS\n");
+  Log("CONTRACT CHECK permissions-pointers PASS\n");
   int original = api(SYS_EVENT_CREATE, 0, 0, 0);
   check(original > 0, "event allocation");
   int read_only = api(SYS_DUP, (u32)original, 1, 0);
@@ -104,13 +104,13 @@ static void stage2_headless(void) {
   check(api(SYS_EVENT_CREATE, 0, 0, 0) == S_LIMIT, "local handle limit");
   for (int i = 0; i < 24; i++)
     check(Close(handles[i]) == 0, "handle limit cleanup");
-  Log("STAGE2 CHECK handles-rights-limit PASS\n");
-  stage2_files(0);
+  Log("CONTRACT CHECK handles-rights-limit PASS\n");
+  contracts_files(0);
   check(Remove("/home/user/probe.txt", 0) == 0, "shared probe file cleanup");
-  Log("STAGE2 CHECK files-binary-limit-sync PASS\n");
+  Log("CONTRACT CHECK files-binary-limit-sync PASS\n");
   char count[12];
   number(check_count, count);
-  Log("STAGE2 PROBE PASS checks=");
+  Log("CONTRACT PROBE PASS checks=");
   Log(count);
   Log("\n");
 }
@@ -140,11 +140,11 @@ int main(void) {
     Log("BOOT EXTENT RANGE PASS\n");
     return 0;
   }
-  if (streq(arg, "/stage2-fail"))
-    check(0, "intentional Stage 2 runner failure");
-  if (streq(arg, "/stage2-read")) {
-    stage2_files(1);
-    Log("STAGE2 PERSISTENCE PASS\n");
+  if (streq(arg, "/contracts-fail"))
+    check(0, "intentional core runner failure");
+  if (streq(arg, "/contracts-read")) {
+    contracts_files(1);
+    Log("CONTRACT PERSISTENCE PASS\n");
     return 0;
   }
   u32 offset = 0;
@@ -207,8 +207,8 @@ int main(void) {
   check(Write("/home/user/probe.txt", "ring3 file\n", 11) == 0,
         "write user file");
   Log("RING3 PROBE PASS: threads events pointers permissions handles VFS\n");
-  if (streq(arg, "/stage2")) {
-    stage2_headless();
+  if (streq(arg, "/contracts")) {
+    contracts_headless();
     return 0;
   }
   int w = Window("原生用户态测试 / Ring 3", 520, 290);

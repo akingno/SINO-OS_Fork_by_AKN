@@ -39,7 +39,7 @@ int main(void){
             cli.version==1 && cli.argc<=16 && !cli.reserved,"structured startup");
     require(cli.in>2 && cli.out>2 && cli.err>2 && cli.in!=cli.out,"opaque standard handles");
     require(api(RUN_START,0,0,0)==S_DENIED && Spawn("/boot/probe.snx")==S_DENIED &&
-            Read("/home/user/stage2-persist.bin",data,1)==S_DENIED,"no ambient authority");
+            Read("/home/user/contracts-persist.bin",data,1)==S_DENIED,"no ambient authority");
     const char *mode=cli.argc ? cli.bytes+cli.offsets[0] : "echo";
     CliInfo info;char *argv[17];
     require(CliArguments(&info,argv,17)==(int)cli.argc && !argv[cli.argc] &&

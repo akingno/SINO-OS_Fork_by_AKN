@@ -1,6 +1,6 @@
-const {runPhase} = require('../support/stage4-wait-tests');
+const {runSuite} = require('../support/wait-tests');
 
-runPhase('D', [
+runSuite('terminal', [
     ['legacy terminal', 'termtest', 'suite', 'TERMINAL SUITE PASS'],
     ...['raw', 'canonical', 'eof', 'hangup', 'controller', 'timeout', 'foreground',
         'snapshot', 'unmap', 'local-close', 'wire']

@@ -1,4 +1,4 @@
-/* Phase B only. Run against a recorded ShellBridge build using a private disk. */
+/* Pipe waiting contracts on a recorded build and private disk. */
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -66,7 +66,7 @@ async function verify({channel, report, guestLog}) {
 
 async function main(source) {
     const build = readJSON(path.join(source, 'build.json'));
-    const directory = fs.mkdtempSync(path.join(source, 'phase-b-'));
+    const directory = fs.mkdtempSync(path.join(source, 'pipe-waits-'));
     const iso = path.join(directory, 'SINO.iso');
     fs.copyFileSync(build.iso, iso, fs.constants.COPYFILE_EXCL);
     fs.writeFileSync(path.join(directory, 'build.json'), JSON.stringify({...build, iso}));
@@ -76,14 +76,14 @@ async function main(source) {
     const passed = report.cases.filter(item => item.result === 'PASS').length;
     const expected = modes.length + 2;
     const success = code === 0 && passed === expected && report.vmStopped;
-    console.log(`${success ? 'PASS' : 'FAIL'} Phase B ${passed}/${expected} cases`);
+    console.log(`${success ? 'PASS' : 'FAIL'} pipe waits ${passed}/${expected} cases`);
     for (const item of report.cases.filter(item => item.result !== 'PASS'))
         console.error(item.name + ': ' + item.error);
     return success ? 0 : 1;
 }
 
 if (process.argv.length !== 3) {
-    console.error('Usage: node test-stage4-pipes.js <ShellBridge build directory>');
+    console.error('Usage: node test-pipe-waits.js <ShellBridge build directory>');
     process.exitCode = 2;
 } else {
     main(path.resolve(process.argv[2])).then(code => {process.exitCode = code;})

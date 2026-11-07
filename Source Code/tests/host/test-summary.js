@@ -1,14 +1,16 @@
 /* Read saved evidence without dumping successful commands or raw guest logs. */
 const fs = require('node:fs');
 const path = require('node:path');
-const names = ['infrastructure', 'rtc-driver', 'shell-transport', 'shell-commands',
-    'native-contracts', 'managed-cli', 'cold-reboot', 'runner-rejects-failure'];
+const {select} = require('../support/regression-selection');
 const compact = value => String(value || '').replace(/\s+/g, ' ').slice(0, 360);
 function analyze(report) {
     const errors = [], suites = Array.isArray(report.suites) ? report.suites : [];
+    let names = [];
+    try { names = select(report.suite); }
+    catch (error) { errors.push(error.message); }
     const summary = {passed:0, failed:0, notRun:0, checks:0};
     const seen = new Set();
-    if (report.version !== 1) errors.push('Unsupported report version');
+    if (report.version !== 3) errors.push('Unsupported report version');
     if (!['PASS', 'FAIL'].includes(report.result)) errors.push('Missing final result');
     for (const suite of suites) {
         if (!suite || !names.includes(suite.name) || seen.has(suite.name)) {
@@ -38,16 +40,18 @@ function analyze(report) {
         if (!report.finishedAt) errors.push('Missing completion time');
         for (const key of ['sourceSha256', 'isoSha256', 'kernelSha256'])
             if (!/^[a-f0-9]{64}$/i.test(report.build?.[key] || '')) errors.push('Missing build identity: ' + key);
-        if (suites.find(s => s?.name === 'runner-rejects-failure')?.expectedFailure !== true)
+        if (names.includes('runner-rejects-failure') &&
+            suites.find(s => s?.name === 'runner-rejects-failure')?.expectedFailure !== true)
             errors.push('Expected-failure rejection was not confirmed');
     }
-    return {suites, summary, errors, passed:report.result === 'PASS' &&
+    return {names, suites, summary, errors, passed:report.result === 'PASS' &&
         summary.passed === names.length && !summary.failed && !summary.notRun && !errors.length};
 }
 function readJSON(file) { return JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '')); }
 function run(directory) {
-    const file = path.join(path.resolve(directory), 'stage2-report.json');
+    const file = path.join(path.resolve(directory), 'regression-report.json');
     const report = readJSON(file), result = analyze(report);
+    const names = result.names;
     const s = result.summary;
     console.log(`${result.passed ? 'PASS' : 'FAIL'} ${path.basename(path.dirname(file))}: ` +
         `${s.passed}/${names.length} groups; ${s.checks} checks; failed=${s.failed}, not-run=${s.notRun}`);
@@ -60,12 +64,8 @@ function run(directory) {
     }
     for (const error of result.errors.slice(0, 6)) console.log('  ERROR ' + compact(error));
     /* Only failed groups trigger child-report inspection; bound displayed cases. */
-    const children = {
-        infrastructure:'infrastructure/src32-refactor-report.json',
-        'shell-transport':'transport/shell-report.json', 'shell-commands':'commands/shell-report.json',
-        'native-contracts':'native/shell-report.json', 'managed-cli':'managed-cli/shell-report.json',
-        'cold-reboot':'reboot/shell-report.json', 'runner-rejects-failure':'intentional-failure/shell-report.json'
-    };
+    const children = Object.fromEntries(names.map(name => [name, name + '/shell-report.json']));
+    children.infrastructure = 'infrastructure/src32-refactor-report.json';
     for (const suite of result.suites.filter(s => s?.result === 'FAIL')) {
         const child = children[suite.name];
         if (!child) continue;
@@ -85,7 +85,7 @@ function run(directory) {
 }
 function cli() {
     try {
-        if (process.argv.length !== 3) throw Error('Usage: stage2-summary.js <exact run directory>');
+        if (process.argv.length !== 3) throw Error('Usage: test-summary.js <exact run directory>');
         process.exitCode = run(process.argv[2]);
     } catch (error) { console.error('FAIL summary: ' + compact(error.message)); process.exitCode = 1; }
 }

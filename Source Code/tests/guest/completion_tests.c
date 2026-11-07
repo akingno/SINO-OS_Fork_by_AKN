@@ -182,7 +182,7 @@ int main(void) {
     require(QueryStartInfo(&info)==0 && info.policy==1 && !info.caps,"child strict policy");
     require(spawn("exit")==S_DENIED && Spawn("/boot/comptest.snx")==S_DENIED,
             "child cannot spawn or downgrade");
-    require(Read("/home/user/stage2-persist.bin",&output,sizeof(output))==S_DENIED,
+    require(Read("/home/user/contracts-persist.bin",&output,sizeof(output))==S_DENIED,
             "child has no ambient read");
     const char *prefix="foreign:";u32 pos=0;
     while(prefix[pos] && prefix[pos]==arg[pos])pos++;

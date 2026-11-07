@@ -62,7 +62,7 @@ status. A completed task has status=0 and its typed exit/fault/cancel reason.
 | IX_RESULT=15 | Root primary client, Result output, value=request id, extra=0 or IX_RESULT_BLOCK \| timeout | Consume one ready result, S_AGAIN while running in nonblocking mode, S_NOTFOUND after consumption |
 | IX_FINISH=16 | Controller; value=owned completed worker handle, other fields zero | Restore root foreground, then publish its result |
 
-Stage 4 uses bit 31 of IX_RESULT's extra field to select blocking. The low bits
+Blocking waits use bit 31 of IX_RESULT's extra field to select blocking. The low bits
 hold 0..60000 guest ticks, with zero selecting indefinite waiting. Publication
 of a finished command or a rejected start wakes the root client. Session hangup
 also wakes the root, which receives S_CLOSED if the session has closed. The Shell
@@ -126,14 +126,8 @@ successful return, worker fault recovery, two simultaneous foreground workers,
 directed cancellation, normal close and frontend #UD with noncooperative workers.
 The host compares exact page/object baselines after cleanup.
 
-Each step runs stage2-test.ps1 and results are inspected with stage2-summary.ps1.
+Headless contracts run through `regression.ps1 -Suite core`. QMP integration runs only through `regression.ps1 -Suite terminal-gui`; inspect either selection with `test-summary.ps1`.
 Per-allocation OOM injection, exhaustive malformed-wire tests, the complete GUI
 gate and physical hardware validation retain their separate verification scope.
-
-Final gate stage2-20261105-161008-aaf190f7 passed 8/8 groups, 374 checks,
-failed=0, not-run=0, exit=0. Ordinary build dev-20261105-161524-ccac3597
-passed with kernel 151264 bytes and BSS end 1884800. A visible private-VM smoke
-passed root startup, worker completion, Ctrl+C and foreground restoration.
-The screenshot was inspected and the VM stopped.
 
 G5b explicit writable startup and trusted fixed-home grant are defined in [workspace-shell.md](workspace-shell.md). The default Shell and test diagnostics stay read-only.

@@ -1,9 +1,9 @@
 const assert=require('node:assert/strict');
-const {RunSession,words}=require('../../tools/run-channel');
+const {RunSession,words}=require('../../../tools/run-channel');
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
-async function run(context,helpers) {
-    const {channel,guestLog}=context;
-    const {check,command,resources,value,until}=helpers;
+async function run(api) {
+    const {channel,guestLog}=api;
+    const {check,command,resources,value,until}=api;
     const baseline=await resources();
     let session=new RunSession(channel);
     await check('v2 handshake advertises bounded limits',async()=>{

@@ -4,11 +4,6 @@ Stage F delivered the headless session backend. G1 adds a Ring 3 desktop fronten
 and a strict, deadline-bound session probe using the same API. F12 now opens the formal user Shell. G2 adds atomic interactive launch/restore; PTY, ANSI and job control remain future work. Input arrives through focused USERAPP events, with copied drawing
 commands for display. Global input and framebuffer access stay kernel-owned.
 
-Stage F gate: stage2-20261105-040857-714bf310, 8/8 groups, 360 checks, failed=0,
-not-run=0, exit 0. Ordinary non-bridge build dev-20261105-041022-5443cb45 passed
-(kernel 147904 bytes, BSS end 1884768). The test-first run on Stage E failed at
-session creation, as expected. This does not claim the full 22-suite GUI gate.
-
 ## Authority and lifecycle
 
 A compatibility frontend creates a session and holds its control handle. Only
@@ -114,7 +109,7 @@ remain untouched. Nonblocking empty reads/event/drain return S_AGAIN while live.
 
 ### Blocking byte reads
 
-Stage 4 adds opt-in waiting to TERM_READ. Set value to `TERM_READ_BLOCK` (1) and
+The kernel supports opt-in waiting to TERM_READ. Set value to `TERM_READ_BLOCK` (1) and
 extra to the timeout in guest ticks (0..60000). Zero selects indefinite waiting.
 An empty, live read suspends the calling thread. Committed TEXT, EOF and hangup
 wake readers, including hangup caused by closing the last controller. A partial
@@ -145,7 +140,7 @@ Remaining work includes further application integration, foreground groups inste
 task, full PTY/ANSI and detailed page-allocation failure injection. The backend
 does not reserve global device input. The headless F suite covers its own API
 authority checks. G1 separately exercises desktop keyboard/focus routing below.
-The Stage 4 Phase D runner `tests/host/test-stage4-terminal.js <ShellBridge build directory>`
+The terminal-wait runner `tests/host/test-terminal-waits.js <ShellBridge build directory>`
 checks blocking reads and selected pipe/completion regressions with a private
 guest disk. The scheduler parks only the calling thread and resumes from its
 saved user state.
@@ -220,19 +215,13 @@ exhausts sessions and the pending queue, closes a stalled client, and checks exa
 page/object baselines. F2 receives a separate real-keyboard compatibility check.
 Complex visual interactions and the complete 22-suite GUI gate remain separate.
 
-G1 final gate `stage2-20261105-052330-93993a43` passed 8/8 groups, 371 checks,
-failed=0, not-run=0, exit=0. Ordinary build `dev-20261105-052604-bccd87f3` passed
-with a 148128-byte kernel and BSS end 1884768. A visible smoke test on that
-ordinary ISO passed F12, ASCII input, Chinese IME and copied text checks. Its
-screenshot was inspected and its private VM stopped.
-
 G2 adds an opt-in atomic interactive startup and session broker. See [interactive-runs.md](interactive-runs.md) for ownership, typed requests/results and stream roles. In a ShellBridge test image, use `run /boot/termqa.snx /broker-test` for its strict diagnostic probes.
 
 G3 introduced the broker path now used by `run /boot/term.snx` for a strict user Shell with quoted argv,
 per-session cwd within a read-only home grant, bounded history and external text
 tools. See [user-shell.md](user-shell.md) for syntax, statuses and verification.
 
-G5a adds the plain-text user welcome, everyday text/information commands and a 120-column default. See [shell-tools.md](shell-tools.md). The historical G1 dimensions and evidence above describe that earlier delivery.
+G5a adds the plain-text user welcome, everyday text/information commands and a 120-column default. See [shell-tools.md](shell-tools.md). The earlier G1 dimensions describe that delivery.
 
 G5b adds an explicit writable frontend mode, now selected by /write. The default stays read-only; session ownership and cancellation contracts are unchanged. See [workspace-shell.md](workspace-shell.md).
 

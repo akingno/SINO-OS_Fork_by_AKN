@@ -91,10 +91,7 @@ feature mask511; G5b adds WORKSPACE=512 for mask1023, and G5c adds LINE_EDIT=102
 policy_tests.c checks strict/compat access, layout, date ranges, invalid output,
 reserved flags and untouched output tails. test-text-scan.c exercises the same
 word counter, prefix matcher and checked integer helper used by the file tools.
-stage2-shell-tools.js drives real QMP commands, 120-character rows, help/aliases,
-calendar/information output, long files and resource recovery. Run the Stage2
-gate and read its saved summary; full GUI/system validation has separate scope.
-
-Final evidence: stage2-20261105-184009-da901c97 passed 8/8 groups and389 checks, failed0/not-run0/exit0. Ordinary dev-20261105-184416-8fd9f1b2 passed (kernel151648 bytes, BSS end1884800). Visible private-VM welcome/120-column/date/tail/pager smoke passed; screenshot inspected and VM stopped.
+shell-tools-gui.js drives real QMP commands, 120-character rows, help/aliases,
+calendar/information output, long files and resource recovery. Run `regression.ps1 -Suite terminal-gui` explicitly and read its saved summary.
 
 G5b adds explicit `run /boot/term.snx /write` for touch/mkdir/rm/rmdir/write/append/cp/mv/sync using a granted home workspace. Read-only sessions and catalogs 4 and 5 keep their previous access scope. Writable-mode authority, publication versus persistence and intentional compatibility differences are in [workspace-shell.md](workspace-shell.md).

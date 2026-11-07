@@ -5,11 +5,6 @@ children. It uses the existing StreamRead/StreamWrite, object table and completi
 objects. It does not change the kernel Shell's builtin pipe implementation, the
 host v2 finite-capture protocol, or interactive terminal behavior.
 
-Minimum delivery verified: stage2-20261105-033919-c648266a, 8/8 groups,
-359 checks, no failed/unexecuted groups, exit 0. Native assertions and page/object
-baselines passed. Separate normal non-bridge BuildOnly passed as
-dev-20261105-034107-6acf965e (kernel 144416 bytes, BSS end 1884768).
-
 ## ABI and quotas
 
 FEATURE_PIPES=64 raised the Stage E mask to 127 (A-F now use 255). Existing IDs/layouts and
@@ -140,7 +135,7 @@ pipes; use stream.h when waiting is intended.
 
 ### Opt-in blocking pipe calls
 
-Stage 4 adds a blocking mode to the pipe endpoints of SYS_STREAM_READ and
+The kernel supports a blocking mode to the pipe endpoints of SYS_STREAM_READ and
 SYS_STREAM_WRITE. EBX holds the handle and ECX holds the user buffer. Set
 `STREAM_BLOCK_FLAG` (bit 31) in EDX alongside the byte count (0..65536).
 ESI holds the timeout in guest ticks (0..60000), with zero selecting indefinite
@@ -165,21 +160,15 @@ as a single immediate attempt.
 
 ## Validation boundary
 
-pipetest.snx uses fixed wire IDs/layouts and is registered in the Stage 2 text
-gate. Before implementation it fails because PIPE_LIMITS does not exist.
-The baseline run stage2-20261105-032411-f9a45a56 passed 358 checks. The
-test-first run stage2-20261105-032922-a961a77c failed at the new limits contract
-as expected; it is not a passing gate. An initial implemented run and the final
-expanded boundary run both passed 359 checks; the final run is named above.
-Its cases cover exact memory/size/direction limits, short writes, tiny circular
+`pipetest.snx suite` remains part of the independent non-GUI pipes group. Its
+cases cover exact memory/size/direction limits, short writes, tiny circular
 buffers, binary NUL, quota and second-handle rollback, duplicate writer EOF,
 explicit v3 startup and rollback, real concurrent 12289-byte transport through a
 257-byte pipe, early reader close, stdout/stderr sharing, producer #UD, blocked
-writer cancel/timeout, runtime deadline/progress, and synthetic tick wrap.
-The host checks actual final results, intentional fault counts and object/page
-baselines. Existing A-D, finite host protocol, app logic and cold boot checks stay.
+writer cancellation/timeout, runtime deadline/progress and synthetic tick wrap.
+The host checks final results, intentional fault counts and object/page baselines.
 
-The Stage 4 Phase B runner `tests/host/test-stage4-pipes.js <ShellBridge build directory>`
+The pipe-wait runner `tests/host/test-pipe-waits.js <ShellBridge build directory>`
 uses a private guest disk. It covers the legacy pipe probe, blocked read and write,
 final peer close, timeout, competing readers, local handle reuse, buffer unmap,
 wire validation and process timeout cleanup. It checks the free-page count after

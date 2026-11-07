@@ -34,8 +34,8 @@ static int gsh_smoke(int scenario) {
   root.rights = rights;
   int shell = InteractiveStart(term, &root, dir, 0);
   require(term > 0 && dir > 0 && shell > 0, "headless gsh launch");
-  const char command[] = "echo stage3-g\n";
-  const char* marker = scenario == GSH_REJECT_START ? "start failed " : "stage3-g\n";
+  const char command[] = "echo shell-ok\n";
+  const char* marker = scenario == GSH_REJECT_START ? "start failed " : "shell-ok\n";
   u32 marker_bytes = strlen(marker);
   u32 sent = 0, matched = 0, begin = StreamTicks();
   int ready = 0, child = 0, finished = 0, prompt_after = 0, hangup_observed = 0;
@@ -63,9 +63,9 @@ static int gsh_smoke(int scenario) {
         ProcessCompletion completed;
         require(ProcessWaitFor(child, &completed, 300) == S_OK &&
                 completed.reason == PROCESS_EXITED && !completed.code, "wait for echo worker");
-        Log("STAGE4 GSH HOLD\n");
+        Log("SHELL WAIT HOLD\n");
         Yield(100);
-        Log("STAGE4 GSH RELEASE\n");
+        Log("SHELL WAIT RELEASE\n");
         scenario = GSH_SMOKE;
       }
       status = InteractiveFinish(term, child);
@@ -104,19 +104,19 @@ static int gsh_smoke(int scenario) {
   require(hangup_observed || prompt_after, "gsh reaches the expected final state");
   require(Close(term) == S_OK && Close(shell) == S_OK && Close(dir) == S_OK,
           "headless gsh resources released");
-  Log(scenario == GSH_HANGUP ? "STAGE4 GSH HANGUP PASS\n" : "STAGE3 GSH PASS\n");
+  Log(scenario == GSH_HANGUP ? "SHELL WAIT HANGUP PASS\n" : "SHELL PASS\n");
   return 0;
 }
 int main(void) {
   StartInfo start;
   require(QueryStartInfo(&start) == 0, "startup policy");
-  if (start.policy == PROCESS_COMPAT && streq(Arguments(), "stage3-shell"))
+  if (start.policy == PROCESS_COMPAT && streq(Arguments(), "shell-smoke"))
     return gsh_smoke(GSH_SMOKE);
-  if (start.policy == PROCESS_COMPAT && streq(Arguments(), "stage4-shell"))
+  if (start.policy == PROCESS_COMPAT && streq(Arguments(), "shell-wait"))
     return gsh_smoke(GSH_HOLD_RESULT);
-  if (start.policy == PROCESS_COMPAT && streq(Arguments(), "stage4-shell-error"))
+  if (start.policy == PROCESS_COMPAT && streq(Arguments(), "shell-error"))
     return gsh_smoke(GSH_REJECT_START);
-  if (start.policy == PROCESS_COMPAT && streq(Arguments(), "stage4-shell-hangup"))
+  if (start.policy == PROCESS_COMPAT && streq(Arguments(), "shell-hangup"))
     return gsh_smoke(GSH_HANGUP);
   if (start.policy == PROCESS_STRICT) {
     CliInfo cli;
