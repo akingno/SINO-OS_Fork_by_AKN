@@ -52,7 +52,7 @@ $env:SINO_TOOLCHAIN = Split-Path (Get-Command gcc.exe).Source
 $env:SINO_QEMU_DIR = 'C:\Program Files\qemu'
 ```
 
-完整回归（18 组）：`node 'Source Code/verify-system.js'`，按 `docs/testing.md` 准备镜像。
+完整回归（17 组）：`node 'Source Code/verify-system.js'`，按 `docs/testing.md` 准备镜像。
 
 Shell 宿主测试参数：`-ExpectedExitCode 1` 断言预期失败，`-TimeoutSeconds 5` 设置超时。报告在 `Build Output/dev/runs/shell-.../`。通道仅在 `-ShellBridge` 构建中启用。
 

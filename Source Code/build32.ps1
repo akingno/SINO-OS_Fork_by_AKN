@@ -37,7 +37,7 @@ if ($LASTEXITCODE -ne 0) { throw '32-bit entry assembly failed' }
 if ($LASTEXITCODE -ne 0) { throw 'User application build failed' }
 $variants = @('normal')
 if ($TestImage) { $variants += 'test' }
-$kernelSources = @('kernel','lib/kstring','panic','fs/boot_fat12','mm/page','mm/paging','mm/uaccess','klog','locale','rtc','keyboard','object','process','filesys','pipe','terminal','run_bridge','net','console','vfs','shell_bridge','storage','disk','settings','install','graphics','gui')
+$kernelSources = @('kernel','lib/kstring','panic','fs/boot_fat12','mm/page','mm/paging','mm/uaccess','klog','locale','rtc','keyboard','object','process','filesys','pipe','terminal','run_bridge','net','console','vfs','shell_bridge','storage','disk','settings','graphics','gui')
 foreach ($variant in $variants) {
     # The kernel owns its mapped stack; Windows stack-guard probing is inapplicable.
     $cflags = @('-m32','-march=i386','-std=c11','-Os','-ffreestanding','-fno-builtin','-fno-pic','-fno-pie','-fno-stack-protector','-fno-asynchronous-unwind-tables','-mno-stack-arg-probe','-mno-sse','-mno-mmx','-msoft-float','-mpreferred-stack-boundary=2','-mincoming-stack-boundary=2','-Wall','-Wextra','-Werror','-Wno-misleading-indentation')

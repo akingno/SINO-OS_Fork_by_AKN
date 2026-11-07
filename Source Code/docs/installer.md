@@ -1,6 +1,6 @@
 # Independent native software installer
 
-user/setup.c is a separate SNX1 Ring 3 application. It is unrelated to src32/install.c, the existing BIOS/MBR operating-system installer. F8 launches software setup; F9 launches the separate apps.snx manager. Double-click .sxp files to install. The wizard has welcome, license, path, components, progress, and completion pages. Click the path field, press Ctrl+A, and type an absolute path under /home/user/Programs/<directory>.
+user/setup.c is a separate SNX1 Ring 3 application. F8 launches software setup; F9 launches the separate apps.snx manager. Double-click .sxp files to install. The wizard has welcome, license, path, components, progress, and completion pages. Click the path field, press Ctrl+A, and type an absolute path under /home/user/Programs/<directory>.
 
 user/install_service.c provides InstallBegin, InstallWriteFile, InstallSetConfig, InstallCreateShortcut, InstallRegisterUninstall, InstallCommit, InstallRollback, and InstallRecover. They run in user mode; the kernel has no package parser or install policy. A kernel named lease serializes installers and is released when a process exits. The library saves per-file backups and a CRC-protected undo journal, commits each preimage before changing its target, then commits the completed snapshot before marking the journal complete. Startup detects an interrupted journal and launches user-mode recovery. A committed journal only needs cleanup. Corrupt journals stop recovery without guessing.
 

@@ -13,7 +13,6 @@ void gui_panic(const char *, u32, u32);
 void gui_tests(void);
 void gui_refresh(void);
 void gui_files_changed(void);
-void gui_open_installer(void);
 int gui_clip_read(u8 *, u32);
 int gui_clip_write(const u8 *, u32);
 int gui_user_open(u32, const char *, int, int);

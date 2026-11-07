@@ -8,7 +8,6 @@
 #include "vfs.h"
 #include "storage.h"
 #include "settings.h"
-#include "install.h"
 #include "process.h"
 #include "lib/kstring.h"
 #include "mm/page.h"
@@ -18,7 +17,7 @@
 #define NW 8
 #define DIALOG_X ((GUI_WIDTH - 474) / 2)
 #define DIALOG_Y ((GUI_HEIGHT - 238) / 2)
-enum { FILES = 1, EDIT, PAINT = 4, TERM = 6, SYSTEM, INSTALL, USERAPP };
+enum { FILES = 1, EDIT, PAINT = 4, TERM = 6, SYSTEM, USERAPP = 9 };
 typedef struct {
   int used, app, x, y, w, h, minimized, dirty, folder, selected, first, node,
       modified;
@@ -77,7 +76,7 @@ static const TextKey appnames[] = {
     [0] = GUI_LABEL_DESKTOP,       [FILES] = GUI_LABEL_FILES,
     [EDIT] = GUI_LABEL_TEXTEDIT,   [PAINT] = GUI_LABEL_PAINT,
     [TERM] = GUI_LABEL_TERMINAL,
-    [SYSTEM] = GUI_LABEL_SETTINGS, [INSTALL] = GUI_LABEL_INSTALL_SINO,
+    [SYSTEM] = GUI_LABEL_SETTINGS,
     [USERAPP] = GUI_LABEL_NATIVE_APPLICATION};
 static const TextKey menus[] = {GUI_LABEL_SINO,   GUI_LABEL_FILE,
                                 GUI_LABEL_EDIT,   GUI_LABEL_DISPLAY,
@@ -488,26 +487,18 @@ static int launch(int app) {
   }
   if (app == SYSTEM)
     settings_open();
-  if (app == INSTALL)
-    install_open();
   if (app == FILES) {
     folder_open(vfs_lookup("/home/user"));
     return gui_focus;
   }
-  if (app == SYSTEM || app == INSTALL)
+  if (app == SYSTEM)
     for (int i = 0; i < NW; i++)
       if (windows[i].used && windows[i].app == app) {
         focus(i);
         return i;
       }
-  int width = app == PAINT   ? 590
-              : app == SYSTEM  ? 740
-              : app == INSTALL ? 900
-                               : 660,
-      height = app == PAINT   ? 466
-               : app == SYSTEM  ? 550
-               : app == INSTALL ? 650
-                                : 460;
+  int width = app == PAINT ? 590 : app == SYSTEM ? 740 : 660,
+      height = app == PAINT ? 466 : app == SYSTEM ? 550 : 460;
   int id = new_window(app, locale_text(appnames[app]), width, height);
   if (id < 0)
     return -1;
@@ -666,10 +657,6 @@ static void close_window(int id) {
   if (id >= 0 && windows[id].app == USERAPP && user_owner[id] &&
       (user_guard[id] & 1)) {
     process_message(user_owner[id], (UiEvent){MSG_CLOSE, (u32)id, 0, 0, 0});
-    return;
-  }
-  if (id >= 0 && windows[id].app == INSTALL && !install_can_close()) {
-    notice(locale_text(GUI_LABEL_INSTALLATION_IS_IN_PROGRESS_PLEASE_WAIT));
     return;
   }
   if (id >= 0 && windows[id].app == SYSTEM && settings_pending)
@@ -1350,9 +1337,6 @@ static void window_draw(int id) {
     case SYSTEM:
       settings_draw(w->w, w->h);
       break;
-    case INSTALL:
-      install_draw(w->w, w->h);
-      break;
   }
   if (w->app == EDIT ||
       (w->app == USERAPP && (user_guard[id] & WINDOW_DESKTOP_COMMANDS)))
@@ -1363,7 +1347,7 @@ static void window_draw(int id) {
 }
 static int menu_count(void) {
   if (menu == 0)
-    return 6;
+    return 5;
   if (menu == 1)
     return 10;
   if (menu == 2)
@@ -1380,7 +1364,6 @@ static const char* menu_label(int m, int row) {
                         locale_text(GUI_LABEL_TEXTEDIT),
                         locale_text(GUI_LABEL_TERMINAL),
                         locale_text(GUI_LABEL_APPLICATIONS),
-                        locale_text(GUI_LABEL_INSTALL_SINO),
                         locale_text(GUI_LABEL_NATIVE_APPLICATION)};
   const char* file[] = {locale_text(GUI_LABEL_NEW_WINDOW_DOCUMENT_CTRL_N),
                         locale_text(GUI_LABEL_NEW_FOLDER),
@@ -2060,10 +2043,8 @@ static void menu_choose(int m, int row) {
     int apps[] = {SYSTEM, FILES, EDIT, TERM};
     if (row < 4)
       launch(apps[row]);
-    else if (row == 4)
-      process_launch("/boot/apps.snx", CAP_HOME);
     else
-      launch(INSTALL);
+      process_launch("/boot/apps.snx", CAP_HOME);
   } else if (m == 1) {
     int cmds[] = {1, 2, 3, 15, 4, 5, 8, 14, 9, 7};
     command(cmds[row]);
@@ -2271,11 +2252,6 @@ static void click(int x, int y, u32 time) {
     } else if (w->app == SYSTEM) {
       settings_click(xx, yy, w->w, w->h);
       changed(id);
-    } else if (w->app == INSTALL) {
-      if (install_click(xx, yy, w->w, w->h) == 2)
-        close_window(id);
-      else
-        changed(id);
     }
     return;
   }
@@ -2443,9 +2419,6 @@ static void keyboard(int key) {
     if (key == 27 && settings_pending)
       settings_cancel();
     changed(id);
-  } else if (w->app == INSTALL) {
-    install_key(key);
-    changed(id);
   } else if (w->app == EDIT) {
     edit_key(w, key);
     changed(id);
@@ -2475,9 +2448,6 @@ void gui_refresh(void) {
   context_open = 0;
   all_changed();
 }
-void gui_open_installer(void) {
-  launch(INSTALL);
-}
 void gui_init(void) {
   graphics_init();
   settings_boot();
@@ -2492,8 +2462,6 @@ void gui_init(void) {
   gui_active = 1;
   invalidate((Rect){0, 0, GUI_WIDTH, GUI_HEIGHT});
   render();
-  if (install_offer())
-    launch(INSTALL);
   pr_debug("SINO Platinum GUI, eight cached native windows ready\n");
 }
 void gui_files_changed(void) {
@@ -2640,10 +2608,6 @@ void gui_step(void) {
   if (settings_poll())
     for (int i = 0; i < NW; i++)
       if (windows[i].used && windows[i].app == SYSTEM)
-        changed(i);
-  if (install_poll())
-    for (int i = 0; i < NW; i++)
-      if (windows[i].used && windows[i].app == INSTALL)
         changed(i);
   storage_poll();
   if (damaged)

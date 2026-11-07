@@ -100,7 +100,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\run.ps1 -Program /boot/cli
 node 'Source Code/verify-system.js'
 ```
 
-需要按 testing.md 准备普通和 SELFTEST 两种镜像。18 组覆盖：启动/应用、指针/键盘、文件/拖放、中文/拼音、设置/模式、安装/包管理、网络、画板隐藏/文件管理器、桌面终端替换。其中 `tests/host/test-iso.js` 通过 QMP 启动 Shell 并保存截图。
+需要按 testing.md 准备普通和 SELFTEST 两种镜像。17 组覆盖：启动/应用、指针/键盘、文件/拖放、中文/拼音、设置/模式、安装/包管理、网络、画板隐藏/文件管理器、桌面终端替换。其中 `tests/host/test-iso.js` 通过 QMP 启动 Shell 并保存截图。
 
 ## src32 基础设施契约测试
 

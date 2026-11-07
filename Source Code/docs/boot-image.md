@@ -20,26 +20,3 @@ installer uses the raw image in `src32/boot-ramdisk.h` to copy and read back
 `BOOT_SECTORS` sectors before committing its MBR. The offline update helper checks
 the new payload size and partition capacity and restores the same full range on
 rollback.
-
-## Verification
-
-First run root dev.ps1 -BuildOnly and set SINO_TOOLCHAIN to the directory containing
-gcc.exe and SINO_QEMU_DIR to the QEMU directory. Run the dedicated test with
-`node "Source Code/tests/host/test-boot-expansion.js"` from the repository root.
-Use a matching completed build and run this test without concurrent builds.
-
-The test prints a compact result and saves expansion-report.json under
-Source Code/build32/vm-tests/boot-expansion. It creates its own image and 128 MB
-virtual disk. A fragmented fixture extends beyond the former 1.44 MB boundary
-and reaches the final complete data cluster. It checks the full RAM image on CD
-and HDD boots, exact installed bytes, whole-file output and FileReadAt across
-fragments. It also checks ISO layout and rejection of truncated/mismatched images.
-All installation writes target that private virtual disk.
-
-Validated on 2026-11-05 with ordinary build dev-20261105-055251-124e8ffc,
-kernel 148256 bytes, BSS end 1884768. Expansion checks passed 8/8 and the existing
-test-iso.js passed catalog, payload and actual CD-only application boot checks.
-Stage 2 gate stage2-20261105-055040-d4594dd7 passed 8/8 groups, 371 checks, exit 0.
-Its saved result was inspected through stage2-summary.ps1. The expansion test
-and ISO test VMs stopped on completion. Physical hardware and exhaustive BIOS
-compatibility remain outside these QEMU results.
