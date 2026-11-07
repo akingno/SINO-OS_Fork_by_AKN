@@ -32,9 +32,8 @@ storage. The default app receives the existing desktop home capability
 subject to the target's loader restrictions. The `-s` form requests strict
 policy with zero capabilities. `kill pid` is limited to processes directly
 started by that Shell. F10 provides the desktop's global task manager.
-`install` opens the existing package installer and `nettest` starts the
-trusted boot network test. These operations require the writable desktop
-session. The kernel checks the boot frontend's identity, the session root's
+`nettest` starts the trusted boot network test. It requires the writable
+desktop session. The kernel checks the boot frontend's identity, the session root's
 rights, and the current foreground Shell's primary client handle.
 The operations use typed requests with a path and a single argument.
 
@@ -46,6 +45,6 @@ transport and SCS2 managed execution. SELFTEST images retain the headless
 command self-checks. The legacy demo and script are fixtures in those images.
 
 Run `node "Source Code/tests/host/test-terminal-replacement.js"` against a
-matching ordinary build for real keyboard, launch routes, write isolation,
-installer dispatch and snapshot checks. The Stage 2 gate also verifies
+matching ordinary build for real keyboard, launch routes, write isolation
+and snapshot checks. The Stage 2 gate also verifies
 scoped process termination, directory grants and resource reclamation.

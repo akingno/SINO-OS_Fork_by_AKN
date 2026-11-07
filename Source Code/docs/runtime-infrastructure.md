@@ -6,7 +6,7 @@
 
 `tools/build-locale.py` rejects duplicate properties/keys, missing or extra translations, inconsistent module/type prefixes and template parameters. It produces `src32/locale_keys.h` and `locale_data.inc`; edit resources, not generated files. `build32.ps1` invokes it before compiling. Development/Shell preparation generates first, then fingerprints both resources and generated inputs, preventing changed resources from bypassing build identity checks.
 
-Use `locale_text(key)` at the UI boundary; `locale_text_for(language,key)` selects explicitly. Language 0 is Chinese and 1 English; unsupported languages fall back to English. Invalid keys return a fixed placeholder. `TEXT_NONE` returns empty text. Settings and the system installer retain state as keys and resolve it when drawing. `install_set_message` and `settings_set_status` own state changes.
+Use `locale_text(key)` at the UI boundary; `locale_text_for(language,key)` selects explicitly. Language 0 is Chinese and 1 English; unsupported languages fall back to English. Invalid keys return a fixed placeholder. `TEXT_NONE` returns empty text. Settings retains state as keys and resolves it when drawing. `settings_set_status` owns state changes.
 
 `locale_format` supports `{name}` (UTF-8 text) and `{count}` (u32), declared by name in catalog parameters. Pass a valid NUL-terminated name when used. Output is capacity-bounded; overflow clears the output and returns -1 rather than returning a partial UTF-8 string. Node-limit messages use the actual VFS_NODES constant. File/folder property templates preserve filenames as data.
 

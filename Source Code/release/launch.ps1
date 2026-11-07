@@ -1,4 +1,4 @@
-param([switch]$Install,[switch]$Live)
+param()
 $ErrorActionPreference = 'Stop'
 try {
     $packageRoot = $PSScriptRoot
@@ -28,26 +28,11 @@ try {
     if(Test-Path -LiteralPath (Join-Path $qemuShare 'qemu\bios-256k.bin')){$qemuShare=Join-Path $qemuShare 'qemu'}
     $iso = Join-Path $packageRoot 'SINO.iso'
     $baseData = Join-Path $packageRoot 'Data'
-    $systemDisk = Join-Path $baseData 'system.img'
-    $installed = $false
-    if (-not $Live -and -not $Install -and (Test-Path -LiteralPath $systemDisk)) {
-        $header = New-Object byte[] 512
-        $stream = [IO.File]::Open($systemDisk,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::ReadWrite)
-        try { $null=$stream.Read($header,0,512) } finally { $stream.Dispose() }
-        $hasSystem=$false; $hasData=$false
-        for($slot=0;$slot-lt 4;$slot++) {
-            $offset=446+$slot*16
-            if($header[$offset]-eq 128 -and $header[$offset+4]-eq 1 -and [BitConverter]::ToUInt32($header,$offset+12)-ge 2880){$hasSystem=$true}
-            if($header[$offset+4]-eq 127 -and [BitConverter]::ToUInt32($header,$offset+12)-ge 16392){$hasData=$true}
-        }
-        $installed=$header[510]-eq 85 -and $header[511]-eq 170 -and $hasSystem -and $hasData
-    }
-    $port=if($Install){4586}else{4585}
-    $vmName=if($Install){'SINO Setup'}else{'SINO Desktop'}
-    $dataRoot=if($Install){Join-Path $baseData 'Setup'}else{$baseData}
-    $runtimePrefix=if($Install){'../../'}else{'../'}
+    $port=4585
+    $vmName='SINO Desktop'
+    $dataRoot=$baseData
     if (-not (Test-Path -LiteralPath $qemuExe)) { throw 'QEMU is missing. Keep the QEMU folder beside this launcher.' }
-    if (-not $installed -and -not (Test-Path -LiteralPath $iso)) { throw 'SINO.iso is missing. Keep the ISO beside this launcher.' }
+    if (-not (Test-Path -LiteralPath $iso)) { throw 'SINO.iso is missing. Keep the ISO beside this launcher.' }
     Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
@@ -121,31 +106,21 @@ public static class SinoWindow {
         Show-SinoDisplay $existing
         exit 0
     }
-    $otherPort=if($Install){4585}else{4586}
-    $other=Get-CimInstance Win32_Process -Filter "Name = 'qemu-system-i386w.exe'" | Where-Object { $_.ExecutablePath -eq $qemuExe -and $_.CommandLine -match ('127\.0\.0\.1:'+$otherPort) -and $_.CommandLine -match 'system\.img' } | Select-Object -First 1
-    if($other -and ($Install -or $installed)) {
-        if($Install){throw 'The installed system is running. Close its VM window before starting setup.'}
-        $dataRoot=Join-Path $baseData 'Setup'
-        Show-SinoDisplay (Get-Process -Id $other.ProcessId)
-        exit 0
-    }
     New-Item -ItemType Directory -Path $dataRoot -Force | Out-Null
-    $dataDisk = if($Install -or $installed){$systemDisk}else{Join-Path $dataRoot 'data.img'}
+    $dataDisk = Join-Path $dataRoot 'data.img'
     if (-not (Test-Path -LiteralPath $dataDisk)) {
         $stream = [IO.File]::Open($dataDisk,[IO.FileMode]::CreateNew)
-        try { $stream.SetLength($(if($Install){134217728}else{16777216})) } finally { $stream.Dispose() }
+        try { $stream.SetLength(16777216) } finally { $stream.Dispose() }
     }
     # QEMU receives ASCII relative paths, so spaces in the release path remain safe.
-    $diskFile=if($Install){'../system.img'}elseif($installed){'system.img'}else{'data.img'}
     $dataUri=New-Object Uri ([IO.Path]::GetFullPath($dataRoot)+'\')
     $shareUri=New-Object Uri ([IO.Path]::GetFullPath($qemuShare)+'\')
     $sharePath=if($dataUri.Scheme-eq $shareUri.Scheme-and $dataUri.Host-eq $shareUri.Host-and $dataUri.Segments[1]-eq $shareUri.Segments[1]){[Uri]::UnescapeDataString($dataUri.MakeRelativeUri($shareUri).ToString())}else{$qemuShare}
     $arguments = @('-L',('"'+$sharePath+'"'),'-name',('"'+$vmName+'"'),
         '-machine','pc,vmport=on','-accel','tcg','-m','64M','-vga','std','-nic','none',
-        '-drive',('file='+$diskFile+',format=raw,if=ide,index=0'))
-    if(-not $installed){$arguments+=@('-drive',('file='+$runtimePrefix+'SINO.iso,format=raw,media=cdrom,if=ide,index=2,readonly=on'))}
-    $bootOrder=if($Install){'order=c,once=d'}elseif($installed){'c'}else{'d'}
-    $arguments+=@('-boot',$bootOrder,'-rtc','base=localtime','-display','gtk,show-menubar=off,show-cursor=off,zoom-to-fit=off',
+        '-drive','file=data.img,format=raw,if=ide,index=0',
+        '-drive','file=../SINO.iso,format=raw,media=cdrom,if=ide,index=2,readonly=on')
+    $arguments+=@('-boot','order=d','-rtc','base=localtime','-display','gtk,show-menubar=off,show-cursor=off,zoom-to-fit=off',
         '-debugcon','file:kernel.log','-global','isa-debugcon.iobase=0xe9',
         '-qmp',('tcp:127.0.0.1:'+$port+',server=on,wait=off'))
     # The official GUI executable needs no console. Hidden also hides its display.

@@ -10,8 +10,7 @@
 
 1. 在 `user/` 下编写应用源码
 2. 在 `tools/build-user.js` 中添加构建元组
-3. 如需安装包，在 `packages/` 下创建 JSON 清单，用 `tools/package.js` 打包
-4. `dev.ps1 -BuildOnly` 构建内核和所有用户应用
+3. `dev.ps1 -BuildOnly` 构建内核和所有用户应用
 
 构建检查：每个必需的链接符号、文件不超过 64 KiB、SNX v1 映像/数据不超过 192 KiB。SNX v2 上限 16 MiB。
 

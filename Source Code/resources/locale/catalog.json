@@ -450,7 +450,7 @@
     "parameters": []
   },
   {
-    "key": "SETTINGS_LABEL_KERNEL_DESKTOP_INSTALLER_CUSTOM_C_ASSEMBLY",
+    "key": "SETTINGS_LABEL_KERNEL_DESKTOP_CUSTOM_C_ASSEMBLY",
     "module": "SETTINGS",
     "type": "LABEL",
     "meaning": "Kernel, desktop, installer: custom C / assembly.",
@@ -713,13 +713,6 @@
     "module": "GUI",
     "type": "LABEL",
     "meaning": "Not enough drawing memory.",
-    "parameters": []
-  },
-  {
-    "key": "GUI_LABEL_CANNOT_START_PACKAGE_INSTALLER",
-    "module": "GUI",
-    "type": "LABEL",
-    "meaning": "Cannot start package installer",
     "parameters": []
   },
   {

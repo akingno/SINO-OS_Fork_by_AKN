@@ -9,7 +9,6 @@ typedef struct {
 static const ShellCommand shell_commands[] = {
     {"run", 6, "run [-s] program.snx [argument]"},
     {"kill", 6, "kill pid (applications started by this Shell)"},
-    {"install", 6, "install package.sxp | /quiet:path | /remove:id"},
     {"nettest", 6, "nettest"},
     {"whoami", 0, "whoami"},
     {"hostname", 0, "hostname [name]"},

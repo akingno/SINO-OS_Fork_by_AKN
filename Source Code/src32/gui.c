@@ -412,8 +412,8 @@ static void folder_open(int n) {
 static int app_from_name(const char* s) {
   const char* names[] = {"Files.app",  "TextEdit.app", "",
                          "Paint.app",  "",             "Terminal.app",
-                         "System.app", "Install.app"};
-  for (int i = 0; i < 8; i++)
+                         "System.app"};
+  for (u32 i = 0; i < sizeof(names) / sizeof(names[0]); i++)
     if (names[i][0] && streq(s, names[i]))
       return i + 1;
   return 0;
@@ -524,13 +524,6 @@ static void open_node(int n) {
   if (!nodes[n].dir &&
       (hidden_paint_node(n) || paint_document(nodes[n].name))) {
     notice(locale_text(GUI_LABEL_PAINT_IS_UNAVAILABLE_DRAWINGS_ARE_PRESERVED));
-    return;
-  }
-  if (suffix(nodes[n].name, ".sxp")) {
-    char path[VFS_PATH];
-    vfs_path(n, path);
-    if (process_launch_args("/boot/setup.snx", CAP_HOME, path) < 0)
-      notice(locale_text(GUI_LABEL_CANNOT_START_PACKAGE_INSTALLER));
     return;
   }
   if (suffix(nodes[n].name, ".lnk")) {
@@ -1347,7 +1340,7 @@ static void window_draw(int id) {
 }
 static int menu_count(void) {
   if (menu == 0)
-    return 5;
+    return 4;
   if (menu == 1)
     return 10;
   if (menu == 2)
@@ -1362,9 +1355,7 @@ static const char* menu_label(int m, int row) {
   const char* sino[] = {locale_text(GUI_LABEL_SETTINGS),
                         locale_text(GUI_LABEL_FILES),
                         locale_text(GUI_LABEL_TEXTEDIT),
-                        locale_text(GUI_LABEL_TERMINAL),
-                        locale_text(GUI_LABEL_APPLICATIONS),
-                        locale_text(GUI_LABEL_NATIVE_APPLICATION)};
+                        locale_text(GUI_LABEL_TERMINAL)};
   const char* file[] = {locale_text(GUI_LABEL_NEW_WINDOW_DOCUMENT_CTRL_N),
                         locale_text(GUI_LABEL_NEW_FOLDER),
                         locale_text(GUI_LABEL_NEW_TEXT_FILE),
@@ -2041,10 +2032,7 @@ static void menu_choose(int m, int row) {
     return;
   if (m == 0) {
     int apps[] = {SYSTEM, FILES, EDIT, TERM};
-    if (row < 4)
-      launch(apps[row]);
-    else
-      process_launch("/boot/apps.snx", CAP_HOME);
+    launch(apps[row]);
   } else if (m == 1) {
     int cmds[] = {1, 2, 3, 15, 4, 5, 8, 14, 9, 7};
     command(cmds[row]);
@@ -2353,14 +2341,6 @@ static void keyboard(int key) {
     const int apps[] = {FILES, TERM, EDIT, 0, PAINT, 0, SYSTEM};
     if (apps[key - 0x13b])
       launch(apps[key - 0x13b]);
-    return;
-  }
-  if (key == 0x142) {
-    process_launch("/boot/setup.snx", CAP_HOME);
-    return;
-  }
-  if (key == 0x143) {
-    process_launch("/boot/apps.snx", CAP_HOME);
     return;
   }
   if (key == 0x20f) {

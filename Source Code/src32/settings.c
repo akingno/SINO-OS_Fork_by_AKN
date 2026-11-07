@@ -265,7 +265,7 @@ void settings_draw(int w, int h) {
     g_text(1, x, 104, "SINO 0.10", BLUE);
     g_text(
         0, x, 153,
-        locale_text(SETTINGS_LABEL_KERNEL_DESKTOP_INSTALLER_CUSTOM_C_ASSEMBLY),
+        locale_text(SETTINGS_LABEL_KERNEL_DESKTOP_CUSTOM_C_ASSEMBLY),
         INK);
     g_text(
         0, x, 195,

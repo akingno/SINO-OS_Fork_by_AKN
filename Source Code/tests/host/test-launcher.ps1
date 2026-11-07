@@ -1,14 +1,19 @@
 $ErrorActionPreference='Stop'
 $sourceRoot=Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $packageRoot=Split-Path -Parent $sourceRoot
+$runtimeRoot=Join-Path $packageRoot 'Compiled Runtime'
+if(-not(Test-Path -LiteralPath $runtimeRoot)){$runtimeRoot=$packageRoot}
+$iso=if($env:SINO_ISO){$env:SINO_ISO}else{Join-Path $runtimeRoot 'SINO.iso'}
 $qaRoot=Join-Path $sourceRoot 'build32\launcher-qa'
+if(Get-NetTCPConnection -State Listen -LocalPort 4564 -ErrorAction SilentlyContinue){throw 'Port 4564 is occupied; close the launcher QA VM before testing.'}
 New-Item -ItemType Directory -Force -Path $qaRoot | Out-Null
-if (-not(Test-Path -LiteralPath (Join-Path $qaRoot 'QEMU'))) {
-    New-Item -ItemType Junction -Path (Join-Path $qaRoot 'QEMU') -Target (Join-Path $packageRoot 'QEMU') | Out-Null
+if(-not $env:SINO_QEMU_DIR -and (Test-Path -LiteralPath (Join-Path $runtimeRoot 'QEMU'))){
+    $env:SINO_QEMU_DIR=Join-Path $runtimeRoot 'QEMU'
 }
-Copy-Item -LiteralPath (Join-Path $packageRoot 'SINO.iso') -Destination (Join-Path $qaRoot 'SINO.iso')
-$launcher=(Get-Content -Raw -LiteralPath (Join-Path $packageRoot 'launch.ps1')).Replace('4555','4564').Replace('SINO Desktop','SINO Launcher QA')
+Copy-Item -LiteralPath $iso -Destination (Join-Path $qaRoot 'SINO.iso')
+$launcher=(Get-Content -Raw -LiteralPath (Join-Path $sourceRoot 'release\launch.ps1')).Replace('$port=4585','$port=4564').Replace('SINO Desktop','SINO Launcher QA')
 [IO.File]::WriteAllText((Join-Path $qaRoot 'launch.ps1'),$launcher)
+Copy-Item -LiteralPath (Join-Path $sourceRoot 'release\Start SINO.cmd') -Destination (Join-Path $qaRoot 'Start SINO.cmd')
 Add-Type @'
 using System;
 using System.Text;
@@ -25,7 +30,7 @@ public static class LauncherQA {
 }
 '@
 function Run-Launcher {
-    $child=Start-Process powershell.exe -ArgumentList @('-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-File',('"'+(Join-Path $qaRoot 'launch.ps1')+'"')) -WindowStyle Hidden -PassThru
+    $child=Start-Process cmd.exe -ArgumentList ('/d /c call "'+(Join-Path $qaRoot 'Start SINO.cmd')+'"') -WindowStyle Hidden -PassThru
     if(-not $child.WaitForExit(30000)){throw 'Launcher did not return within 30 seconds'}
     if($child.ExitCode-ne 0){throw 'Launcher child failed'}
 }

@@ -183,13 +183,6 @@ static void desktop_run(const char *command) {
       goto invalid;
     operation = DESKTOP_KILL;
     memcpy(request.path, &pid, sizeof(pid));
-  } else if (streq(command, "install")) {
-    if (usage(2, 2))
-      return;
-    operation = DESKTOP_INSTALL;
-    if (strlen(argument(1)) >= sizeof(request.argument))
-      goto invalid;
-    copy(request.argument, argument(1));
   } else if (streq(command, "nettest")) {
     if (usage(1, 1))
       return;
@@ -375,7 +368,7 @@ static void execute(void) {
       put("identity: whoami hostname env\n");
       put("workspace (write session): touch mkdir rm rmdir write append cp mv "
           "sync\n");
-      put("write session: echo text > path, echo text >> path, run, kill, install, nettest\n");
+      put("write session: echo text > path, echo text >> path, run, kill, nettest\n");
       put("diagnostics: args exitcode spin fault\n");
     }
   } else if (streq(command, "whoami")) {

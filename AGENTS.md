@@ -52,7 +52,9 @@ $env:SINO_TOOLCHAIN = Split-Path (Get-Command gcc.exe).Source
 $env:SINO_QEMU_DIR = 'C:\Program Files\qemu'
 ```
 
-完整回归（17 组）：`node 'Source Code/verify-system.js'`，按 `docs/testing.md` 准备镜像。
+完整回归（15 组）：`node 'Source Code/verify-system.js'`，按 `docs/testing.md` 准备镜像。
+
+发行启动文件在 `Source Code/release/`：将 `SINO.iso`、`Start SINO.cmd`、`launch.ps1` 放在同一目录，从 ISO 启动，个人文件写入 `Data/data.img`。旧安装向导、装包与预装硬盘发布流程已删除。启动器 GUI 专项入口为 `Source Code/tests/host/test-launcher.ps1`（按需运行，可用 `SINO_ISO` 指定镜像）。
 
 Shell 宿主测试参数：`-ExpectedExitCode 1` 断言预期失败，`-TimeoutSeconds 5` 设置超时。报告在 `Build Output/dev/runs/shell-.../`。通道仅在 `-ShellBridge` 构建中启用。
 
@@ -91,13 +93,12 @@ Shell 宿主测试参数：`-ExpectedExitCode 1` 断言预期失败，`-TimeoutS
 | 写工作区 | user/write_tool.c、gsh.c；process.c 可信来源 | stage2-test.ps1；契约 docs/workspace-shell.md |
 | 行编辑 | user/gsh.c、line_edit.h、terminal_edit_model.h | stage2-test.ps1；契约 docs/shell-editing.md |
 | 桌面终端入口 | src32/gui.c Terminal 入口、user/gsh.c | tests/host/test-terminal-replacement.js；契约 docs/desktop-shell.md |
-| 打开 / 保存 / 恢复 | user/editor.c → src32/vfs.c → src32/storage.c → src32/disk.c | tests/host/test-native-apps.js、tests/host/test-recovery.js |
-| 文本、窗口、绘制 | user/editor.c、src32/gui.c、src32/keyboard.c、src32/graphics.c | tests/host/test-keyboard.js、tests/host/test-typography.js |
+| 打开 / 保存 / 恢复 | src32/gui.c → src32/vfs.c → src32/storage.c → src32/disk.c | tests/host/test-desktop.js、tests/host/test-recovery.js（均为 GUI，按需运行） |
+| 文本、窗口、绘制 | src32/gui.c、src32/keyboard.c、src32/graphics.c | tests/host/test-keyboard.js、tests/host/test-typography.js |
 | 计算器 | user/calculator.c、src32/api.h、src32/process.c | tests/host/test-calculator.js |
 | 时钟与 RTC | user/clock.c、src32/rtc.c、src32/process.c:SYS_TIME | tests/host/test-clock.js |
 | 文件管理器 | user/files.c、src32/gui.c、src32/process.c | tests/host/test-files.js、tests/host/test-desktop.js |
 | 画板隐藏 | src32/gui.c、src32/vfs.c、user/files.c | tests/host/test-paint-hidden.js |
-| Shell、软件包 | user/gsh.c、user/setup.c | tests/host/test-packages.js |
 | 网络 | src32/net.h、src32/net.c:net_poll、user/netlib.c | tests/host/test-network.js（仅回环） |
 | 日志与语言资源 | src32/klog.c/.h、src32/locale.c/.h、resources/locale/ | tests/host/test-src32-refactor.js（43 项） |
 | QEMU 测试基础设施 | tools/vm-test.js、tools/qmp.js、verify-system.js | 按改动选择 |

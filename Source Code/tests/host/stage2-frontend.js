@@ -178,7 +178,7 @@ async function run(context, api, persistOnly=false) {
         await type('echo -n g6-second >> g6-test.txt\n'); await prompt();
         assert.equal(await command('cat /home/user/g6-test.txt'), 'g6-first\ng6-second');
         await type('head -n 1 /boot/readme.txt\n');
-        await waitText(pid, 'SINO 0.10 Desktop and Hard-Disk Installation');
+        await waitText(pid, 'SINO 0.10 Desktop');
         await prompt();
         await type('cp /boot/readme.txt g6-boot.txt\n'); await prompt();
         assert.equal(await command('cat /home/user/g6-boot.txt'), await command('cat /boot/readme.txt'));

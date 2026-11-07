@@ -14,7 +14,5 @@ Native SNX1 applications use isolated preemptible ring-3 processes.
 Legacy built-in applications still share the kernel during migration.
 1024 x 768 x 32-bit VBE; 64 MB RAM; up to eight windows.
 
-F8 software installer / F9 applications / F10 tasks / F11 SysBASIC.
-Native packages: hello.sxp, files.sxp, editor.sxp.
-SysBASIC 0.2 supports a documented BASIC subset, not the full VB language.
+F1 files / F2 writable Shell / F3 text editor / F12 read-only Shell.
 Run nettest for local ICMP, UDP, TCP, DNS and HTTP checks.

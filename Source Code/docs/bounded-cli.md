@@ -148,7 +148,7 @@ From the repository root in PowerShell:
 
 clitest.snx is a development fixture; real programs use the same SDK. The entry
 builds a fresh explicit-bridge ISO, holds the build lock, and uses a private disk
-and headless VM. It does not attach the daily disk or upgrade installed packages.
+and headless VM. It does not attach the daily disk.
 TimeoutSeconds defaults to 5, range 1..600. InputFile is read as at most 4096 raw
 bytes; arguments are checked before building. It is not an interactive stdin pipe.
 

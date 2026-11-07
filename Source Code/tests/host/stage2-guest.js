@@ -129,11 +129,6 @@ async function run(context, mode = 'native') {
         throw Error('The intentional failure was incorrectly accepted.');
     }
     if (mode === 'reboot') {
-        await check('cold boot completes package journal recovery', async () => {
-            await until(async () => (await processes()).length === 0, 'boot recovery exits', 20000);
-            assert.match(guestLog(), /STORAGE restored generation/);
-            await native('instest', 'recover', 'INSTALL CRASH RECOVERY PASS');
-        });
         await check('cold boot preserves exact binary bytes', async () => {
             await native('probe', '/stage2-read', 'STAGE2 PERSISTENCE PASS');
         });
@@ -350,18 +345,8 @@ async function run(context, mode = 'native') {
         assert.equal(await value('process_faults'), faults);
         assert.deepEqual(await resources(), before);
     });
-    await check('package validation, rollback, install, repair and uninstall', async () => {
-        await native('instest', '', 'INSTALL SELFTEST PASS');
-        assert.equal((await processes()).length, 0);
-    });
-    await check('prepare committed binary, Shell marker and interrupted install for reboot', async () => {
+    await check('prepare committed binary and Shell marker for reboot', async () => {
         assert.equal(await command('echo stage2 durable marker > /home/user/stage2-marker.txt'), '');
-        const offset = guestLog().length;
-        const faults = await value('process_faults');
-        const pid = await launch('instest', 'crash');
-        await until(() => guestLog().slice(offset).includes('INSTALL CRASH JOURNAL READY'), 'crash journal');
-        await gone(pid);
-        assert.equal(await value('process_faults'), faults + 1);
         assert.match(await command('sync'), /Home data saved/);
         assert.equal((await processes()).length, 0);
         await require('./stage2-frontend').persist(context,{check,command,resources,value,until,launch,processes,memory,symbols});

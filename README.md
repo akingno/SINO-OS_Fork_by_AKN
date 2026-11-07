@@ -8,7 +8,7 @@ SINO OS 提供经典窗口式图形桌面，支持中英文界面切换和拼音
 
 ![Viridian 主题：深青壁纸与蔚蓝文件夹](<Documentation/Screenshots/Viridian.png>)
 
-内置应用包括文件管理器（F1）、文本编辑器、软件安装器（F8）和应用管理器（F9）。其中文件管理器已迁移到用户态（Ring 3），作为独立 `.snx` 程序运行，崩溃不影响系统。
+内置应用包括文件管理器（F1）和文本编辑器。其中文件管理器已迁移到用户态（Ring 3），作为独立 `.snx` 程序运行，崩溃不影响系统。
 
 ## SI-SHELL — 用户态 Shell
 
@@ -24,7 +24,7 @@ Shell 支持以下命令：
 | 文件查看 | `cat`、`view`（分页）、`head`、`tail`、`wc`、`grep`、`hexdump` |
 | 文件操作 | `write`、`cp`、`mv`、`sync`（提交到磁盘快照） |
 | 系统信息 | `date`、`time`、`uptime`、`uname`、`ver`、`about`、`credits` |
-| 程序与进程 | `run`、`install`、`kill`（仅限本会话子进程） |
+| 程序与进程 | `run`、`kill`（仅限本会话子进程） |
 | Shell 内建 | `echo`、`history`、`help`、`which`、`clear`、`status`、`exit` |
 
 编辑功能：255 字节 UTF-8 行编辑、16 条历史召回（上下方向键）、命令和路径的 Tab 补全、Ctrl+C 取消、Ctrl+D EOF。底部状态栏显示快捷键提示。

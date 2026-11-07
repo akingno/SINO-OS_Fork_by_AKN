@@ -33,7 +33,7 @@ function sources() {
             else if (item.isFile()) files.push(file);
         }
     }
-    for (const name of ['src32','user','disk32','packages','resources','tools','tests']) walk(path.join(sourceRoot, name));
+    for (const name of ['src32','user','disk32','resources','tools','tests']) walk(path.join(sourceRoot, name));
     for (const name of fs.readdirSync(sourceRoot)) if (/^build.*\.(js|ps1)$/.test(name)) files.push(path.join(sourceRoot, name));
     files.push(path.join(sourceRoot, 'LICENSE'));
     files.push(path.join(repoRoot, 'dev.ps1'));

@@ -159,7 +159,6 @@ async function run(directory) {
             const saved = Buffer.from(Array.from({length:257}, (_, i) => (i * 19 + 7) & 255));
             assert(records.get('/home/user/stage2-file-save.bin')?.data.equals(saved), 'Stage D CRC-valid published snapshot');
             assert.equal(records.get('/home/user/stage2-marker.txt')?.data.toString(), 'stage2 durable marker\n');
-            assert(records.has('/home/user/.sino/rollback/journal'), 'interrupted install journal committed');
             report.privateSeed = {path:disk, sha256:hash(disk)};
             return {...result, snapshotChecks:4, guestAssertions:run.result.cases
                 .reduce((sum, c) => sum + (c.guestAssertions || 0), 0)};

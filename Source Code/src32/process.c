@@ -381,8 +381,6 @@ static int desktop_run(u32 operation, const DesktopRun* request) {
   if (request->path[sizeof(request->path) - 1] ||
       request->argument[sizeof(request->argument) - 1])
     return S_INVALID;
-  if (operation == DESKTOP_INSTALL)
-    return process_launch_args("/boot/setup.snx", CAP_HOME, request->argument);
   if (operation == DESKTOP_NETTEST)
     return process_launch("/boot/nettest.snx", CAP_HOME | CAP_NETWORK);
   if (operation != DESKTOP_RUN_APP && operation != DESKTOP_RUN_STRICT)

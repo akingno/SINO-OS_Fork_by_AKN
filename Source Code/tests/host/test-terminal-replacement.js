@@ -91,10 +91,7 @@ async function contract(vm, legacy, open, comparison) {
         await shellCommand(vm, win, 'cp /boot/readme.txt g6-readme.txt', 'published in RAM');
         await output('sync', 'home snapshot durable');
         await output('cat g6-persist.txt', '\npersisted\n');
-        await output('head -n 1 /boot/readme.txt', 'SINO 0.10 Desktop and Hard-Disk Installation');
-        await vm.type('install /quiet:/boot/hello.sxp\n');
-        await waitFor(() => vm.log().includes('QUIET INSTALL PASS'), 'installer through Ring 3 Shell');
-        await prompt();
+        await output('head -n 1 /boot/readme.txt', 'SINO 0.10 Desktop');
         await vm.type('run /boot/probe.snx\n');
         await waitFor(() => vm.log().includes('RING3 PROBE PASS'), 'Ring 3 launch');
         const probe = await waitFor(async () => (await vm.state()).windows.find(w =>

@@ -30,6 +30,16 @@ node 'Source Code/tests/host/test-boot.js' 'Build Output/dev/runs/<本轮构建�
 
 检查该目录内 ISO 的哈希、El Torito 启动目录和内嵌启动镜像。随后从只读 CD 启动私有 VM，通过内核日志确认构建编号、FAT12 挂载、计时器中断和启动完成。检查普通镜像的 ShellBridge 隔离。每次执行使用新的空白数据盘，日志保存在构建目录下的 `boot-*`。此入口仅使用日志，无键鼠和截图操作。
 
+## 发行启动器（GUI 按需）
+
+`release/Start SINO.cmd` 和 `release/launch.ps1` 与 `SINO.iso` 放在同一目录。
+启动器始终从 ISO 启动，首次运行创建 16 MiB 的 `Data/data.img`，个人文件由 Shell 的 `sync` 提交。
+装包、安装向导、预装硬盘发布与升级流水线已删除。
+
+按需运行 `tests/host/test-launcher.ps1`，可用 `SINO_ISO` 指定本轮镜像。
+它在 `build32/launcher-qa` 使用私有数据盘，检查 CMD 启动、ISO 附件、键鼠、窗口恢复和重复启动。
+此 GUI 专项不属于日常验收。
+
 ## 环境要求
 
 - **宿主**：Windows，GCC/GNU Binutils（能生成 i386 目标），Node.js，Python（构建时 locale 校验），源码包含 NASM 3.02
@@ -94,13 +104,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\run.ps1 -Program /boot/cli
 
 构建新 ISO，在严格进程中运行单个程序，取得独立 stdout/stderr 和最终状态。输入 ≤ 4 KiB，详见 [bounded-cli.md](bounded-cli.md)。
 
-## 完整回归门禁（23 组）
+## 完整回归门禁（15 组）
 
 ```
 node 'Source Code/verify-system.js'
 ```
 
-需要按 testing.md 准备普通和 SELFTEST 两种镜像。17 组覆盖：启动/应用、指针/键盘、文件/拖放、中文/拼音、设置/模式、安装/包管理、网络、画板隐藏/文件管理器、桌面终端替换。其中 `tests/host/test-iso.js` 通过 QMP 启动 Shell 并保存截图。
+需要按 testing.md 准备普通和 SELFTEST 两种镜像。15 组覆盖：启动/应用、指针/键盘、文件/拖放、中文/拼音、设置/模式、网络、画板隐藏/文件管理器、桌面终端替换。其中 `tests/host/test-iso.js` 通过 QMP 启动 Shell 并保存截图。
 
 ## src32 基础设施契约测试
 
@@ -130,7 +140,6 @@ node 'Source Code/tests/host/test-stage3-mm.js' d <本轮目录>
 ## 限制
 
 - 无硬件在环、外部网卡/互操作测试
-- 无安全认证或全面的畸形包/BASIC 模糊测试
+- 无安全认证或全面的畸形映像模糊测试
 - Ring 0 遗留应用的崩溃仍会影响内核
 - 快照存储有有界目录/文件数，无断电硬件模拟器
-- 包 CRC 检测损坏，不提供签名

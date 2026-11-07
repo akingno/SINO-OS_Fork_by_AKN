@@ -9,8 +9,8 @@ The Shell, tools and frontend have caps=0. See [desktop-shell.md](desktop-shell.
 SYS_WORKSPACE=0x14c takes zero arguments and returns a directory grant fixed to
 /home/user. It is denied to strict clients and ordinary compatibility programs.
 The kernel records a trusted-frontend bit only when compatibility launch resolves
-the executable to the read-only boot /boot/term.snx node. A writable installed
-copy, a matching filename or a caller-provided string does not obtain this bit.
+the executable to the read-only boot /boot/term.snx node. A writable copy,
+a matching filename or a caller-provided string does not obtain this bit.
 The trusted frontend remains outside the strict security boundary; caps=0 alone
 never described all its authority. No ambient CAP_HOME is added to it.
 

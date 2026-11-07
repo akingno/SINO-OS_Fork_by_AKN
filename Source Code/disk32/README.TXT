@@ -1,4 +1,4 @@
-SINO 0.10 Desktop and Hard-Disk Installation
+SINO 0.10 Desktop
 
 File operations
 - Right-click an empty desktop area to create a folder or text file.
@@ -33,7 +33,7 @@ Saving and limits
 - Files under /home/user are stored on a dedicated SINO data disk and persist across reboot.
 - Use Tools > Save Personal Files to Disk or run sync in Terminal to save explicitly.
 - /boot is read-only optical media; /tmp is temporary. Without a data disk, files exist only in memory.
-- The filesystem supports 64 file nodes, up to 64 KB per file, and documents up to 16 KB.
+- The filesystem supports 128 file nodes, up to 64 KB per file, and documents up to 16 KB.
 - Filenames are limited to 31 bytes (up to 10 Chinese characters); paths are limited to 127 bytes.
 - Moving is supported within the current folder. Clipboard copy supports files but does not copy folders recursively.
 
@@ -42,12 +42,8 @@ Third parties include QEMU, the classic bitmap fonts, GNU Unifont, and pinyin-da
 This is a custom 32-bit operating-system prototype, not compatible with DOS, Windows, Linux, or macOS applications.
 See About / Credits in Terminal or cat /boot/sources.txt for detailed provenance.
 
-System settings and installation
+System settings
 - Press F7 or choose SINO > System Settings to view the version, switch English/Chinese, and adjust resolution, scaling, and contrast.
 - After applying display settings, confirm within 15 seconds or the previous mode is restored. Settings are saved on the personal data disk.
-- Choose SINO > Install SINO to open the graphical installer, which supports disk selection and MBR primary-partition planning.
-- When booted from CD with an IDE disk of at least 64 MB attached, the installer opens automatically.
-- New, delete, and format operations first create a plan; the disk changes only after you choose Begin Installation.
-- After installation, boot from the hard disk and remove the ISO. GPT / UEFI are not supported.
-- Install SINO.cmd on the host uses the dedicated Data/system.img and does not modify a Windows physical disk.
-- The data partition has about 4 MB of usable snapshot capacity and retains file-count and size limits.
+- The host launcher boots SINO.iso and keeps personal files in Data/data.img.
+- Run sync before closing the VM. Keep the ISO attached for every boot.

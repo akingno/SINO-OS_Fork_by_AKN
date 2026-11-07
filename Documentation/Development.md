@@ -34,10 +34,10 @@ These files and personal `akn_learning/` notes are not tracked. Extracted upstre
 
 ## What the checks establish
 
-The launcher checks unchanged build inputs, the current boot image inside the ISO, a matching guest build ID, desktop readiness and the actual QEMU disk attachments. `-VerifyOnly` additionally sends keyboard input to run `/boot/probe.snx` and checks its result. This is a smoke check, not the complete current 22-suite regression gate. See [testing.md](<../Source Code/docs/testing.md>) for subsystem tests and use private test disks.
+The launcher checks unchanged build inputs, the current boot image inside the ISO, a matching guest build ID, desktop readiness and the actual QEMU disk attachments. `-VerifyOnly` additionally sends keyboard input to run `/boot/probe.snx` and checks its result. This is a smoke check, not the complete current 15-suite regression gate. See [testing.md](<../Source Code/docs/testing.md>) for subsystem tests and use private test disks.
 
-Changes to an ISO do not replace already-installed programs under `/home/user/Programs`. For early application checks, run the intended `/boot` version; use the installer when testing package updates. A fresh development disk does not contain the upstream release's preinstalled IDE.
+Run the intended `/boot` program from the current ISO when checking application changes. Package installation, the application manager and the preinstalled-disk update pipeline have been removed. The release launcher also boots from ISO and uses a separate `Data/data.img` for personal files.
 
 ## Licenses
 
-New images include the project MIT text as `/boot/license.txt`, plus existing font/Pinyin notices. See [fork provenance and third-party licensing](Licenses/Fork-Provenance.md). Creating source commits is separate from publishing binary releases; the historical upstream release exporter requires its own audit before reuse with this fork's layout.
+New images include the project MIT text as `/boot/license.txt`, plus existing font/Pinyin notices. See [fork provenance and third-party licensing](Licenses/Fork-Provenance.md). Creating source commits is separate from publishing binary releases. The historical upstream release exporter has been removed.

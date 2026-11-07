@@ -45,7 +45,7 @@ static const char* commands[] = {
     "rmdir",   "rm",     "cp",       "mv",      "write",   "append", "head",
     "tail",    "wc",     "grep",     "hexdump", "stat",    "tree",   "find",
     "df",      "run",    "source",   "sleep",   "ps",      "about",  "credits",
-    "reboot",  "halt",   "sync",     "install", "nettest", "kill",   0};
+    "reboot",  "halt",   "sync",     "nettest", "kill",   0};
 static void strcopy(char* d, const char* s) {
   while ((*d++ = *s++)) {
   }
@@ -398,7 +398,6 @@ static int command(Context* c, int argc, char** argv) {
         "  uname [-a]  ver  mem/free  df  uptime  date  time  ps\n"
         "  history  whoami  hostname [name]  env  which command\n"
         "  sync   kill PID   sleep seconds   nettest (127.0.0.1 loopback)\n"
-        "  install package.sxp | /quiet:path | /remove:id\n"
         "  clear  about/credits  reboot  halt\n\n"
         "run .snx reports process creation, not the program exit status.\n"
         "reboot/halt end the current session; sync saves home data first.\n"
@@ -887,13 +886,6 @@ static int command(Context* c, int argc, char** argv) {
     return process_launch("/boot/nettest.snx", CAP_HOME | CAP_NETWORK) < 0
                ? error(out, cmd, "network test cannot start")
                : 0;
-  }
-  if (streq(cmd, "install")) {
-    if (argc != 2)
-      return error(out, cmd,
-                   "expected package path or /quiet:path or /remove:id");
-    int pid = process_launch_args("/boot/setup.snx", CAP_HOME, argv[1]);
-    return pid < 0 ? error(out, cmd, "cannot start installer") : 0;
   }
   if (streq(cmd, "run")) {
     if (argc >= 2 && streq(argv[1], "-s")) {

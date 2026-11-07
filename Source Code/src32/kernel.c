@@ -378,8 +378,6 @@ void kmain(void) {
   shell_tests();
   gui_tests();
 #endif
-  if (vfs_lookup("/home/user/.sino/rollback/journal") >= 0)
-    process_launch_args("/boot/setup.snx", CAP_HOME, "/recover-only");
 #ifdef SINO_SHELL_BRIDGE
   shell_bridge_init();
 #endif

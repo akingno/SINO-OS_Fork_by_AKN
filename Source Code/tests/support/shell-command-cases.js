@@ -29,6 +29,7 @@ module.exports = [
     {command:'echo "$USER $HOME $PWD"', status:0, output:'user /home/user /home/user\n'},
     {command:"echo '$HOME'", status:0, output:'$HOME\n'},
     {command:'which echo', status:0, output:'echo (shell builtin)\n'},
+    {command:'which install', status:1, contains:'not found'},
     {command:'which nonexistent', status:1, contains:'not found'},
     {command:'mem', status:0, pattern:'Free memory: [0-9]+ KiB'},
     {command:'free', status:0, contains:'pages (4 KiB each)'},
@@ -119,7 +120,6 @@ module.exports = [
     {command:'sleep 1', status:0, output:''},
     {command:'sleep invalid', status:1, contains:'use 0-3600 seconds'},
     {command:'kill 99999', status:1, contains:'no such process'},
-    {command:'install', status:1, contains:'expected package path'},
     {command:'run /boot/missing.snx', status:1, contains:'no such file'},
     {command:'sync', status:0, output:'Home data saved.\n'}
 ];

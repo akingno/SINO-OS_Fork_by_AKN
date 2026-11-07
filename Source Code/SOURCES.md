@@ -66,6 +66,8 @@ Older built-in applications remain in kernel mode; only newer native programs ha
 
 ## AKN fork (2026-11-02)
 
+The current fork has removed the SysBASIC IDE, task manager, installation wizard, package installer and application manager described in the historical sections above. Native programs run directly from the ISO; personal files use a separate snapshot data disk. The legacy preinstalled-disk release and package-upgrade tools are no longer present.
+
 This independently maintained fork is [akingno/SINO-OS_Fork_by_AKN](https://github.com/akingno/SINO-OS_Fork_by_AKN), based on [SkysoftStudio-Felix/SINO-OS](https://github.com/SkysoftStudio-Felix/SINO-OS) at `bf0cad19002adf8f8f6d8be3efce1c044b05e252`. Upstream history, copyright, license text and third-party notices are retained. AKN's modifications use MIT and have a separate copyright line; third-party material is not relicensed.
 
 The initial fork changes add a verified development build/launch workflow, optional build identity, separate development output/data, and `/boot/license.txt` containing the full project MIT text. They do not import Linux implementation code. Early Linux is a teaching and design reference only. See the repository's `Documentation/Licenses/Fork-Provenance.md` and `Documentation/Development.md` for fork-specific details. Earlier version narratives and verification records above describe upstream history, not new verification of this fork.

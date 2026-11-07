@@ -53,19 +53,17 @@ CHINESE SUPPORT
   /boot/pinyin.txt includes the MIT license and copyright.
   UTF-8 handling, candidate UI and the small phrase list are custom SINO code.
 
-INSTALLATION AND SETTINGS (0.10)
-  Custom BIOS MBR, EDD partition boot, four-device ATA PIO driver.
-  Graphical partition planning, copying, sector readback, and boot commit.
-  Installed system boots with the CD removed; SINO FS lives in an MBR partition.
+BOOT, STORAGE AND SETTINGS (0.10)
+  Custom BIOS boot and four-device ATA PIO driver.
+  Read-only ISO boot volume and a separate SINO data disk.
   Custom display mode, scaling, contrast, timed rollback and preference storage.
   The immutable UI translation table excludes RAM-backed user filenames/text.
-  No Windows installer code, logos or Microsoft graphical assets were imported.
+  No Windows code, logos or Microsoft graphical assets were imported.
 
 NATIVE PLATFORM (0.10)
   src32/process.c, object.c, api.h: native CPL3 loader, scheduling and syscalls.
   src32/net.c: original bounded loopback IPv4/ICMP/UDP/TCP implementation.
-  user/setup.c and install_service.c: separate native software installer.
-  user/apps.c, files.c, editor.c: independent user-mode applications.
+  user/files.c, calculator.c, clock.c, gsh.c: independent user-mode applications.
   Protocol/CPU references: Intel SDM; RFC 791, 792, 768, 9293 and 1035.
   No Windows/VB6/FreeDOS/Linux source or proprietary resources were imported.
-  Full status, limitations and verification are in source/docs/REPORT.md.
+  Full status, limitations and verification are in Source Code/docs/architecture.md.

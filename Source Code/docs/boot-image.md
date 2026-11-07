@@ -15,8 +15,4 @@ assets at 0x700000.
 
 `src32/fs/boot_fat12.c` derives cluster bytes and declared volume size from the
 BPB and checks them against the reserved RAM image. Whole-file and range reads
-use that cluster size. VFS mounts the files read-only under `/boot`. The system
-installer uses the raw image in `src32/boot-ramdisk.h` to copy and read back
-`BOOT_SECTORS` sectors before committing its MBR. The offline update helper checks
-the new payload size and partition capacity and restores the same full range on
-rollback.
+use that cluster size. VFS mounts the files read-only under `/boot`.

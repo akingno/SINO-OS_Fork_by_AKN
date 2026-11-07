@@ -25,13 +25,8 @@ const apps = [
  ['iofault', 'tests/guest/probe.c', 2],
  ['spin', 'tests/guest/probe.c', 3],
  ['udfault', 'tests/guest/probe.c', 4],
- ['hello', 'user/hello.c', 0],
- ['setup', 'user/setup.c', 0],
- ['apps', 'user/apps.c', 0],
- ['instest', 'tests/guest/installer_tests.c', 0],
  ['nettest', 'tests/guest/nettest.c', 0],
  ['files', 'user/files.c', 0],
- ['editor', 'user/editor.c', 0],
  ['memv2', 'tests/guest/memory_v2_test.c', 0, 2]
 ];
 for(const [name,source,mode,abi=1] of apps){
@@ -42,7 +37,6 @@ for(const [name,source,mode,abi=1] of apps){
  if(name==='term'||name==='termqa')command(path.join(tc,'gcc.exe'),[...appFlags,'-c','user/runtime.c','-o',runtime]);
  command(path.join(tc,'gcc.exe'),[...appFlags,'-I','user',`-DMODE=${mode}`,`-DSINO_SNX_ABI=${abi}`,'-c',source,'-o',path.join(out,`${name}.o`)]);
  const extra=[];if(name==='termqa'){const obj=path.join(out,name+'-probe.o');command(path.join(tc,'gcc.exe'),[...appFlags,'-I','user','-c','tests/guest/terminal_probe.c','-o',obj]);extra.push(obj);}
- if(name==='setup'||name==='instest'){const obj=path.join(out,`${name}-service.o`);command(path.join(tc,'gcc.exe'),[...flags,'-c','user/install_service.c','-o',obj]);extra.push(obj);}
  if(name==='nettest'){const obj=path.join(out,`${name}-netlib.o`);command(path.join(tc,'gcc.exe'),[...flags,'-c','user/netlib.c','-o',obj]);extra.push(obj);}
  const exe=path.join(out,`${name}.exe`),bin=path.join(out,`${name}.snx`);
  command(path.join(tc,'ld.exe'),['-m','i386pe','--image-base','0x3fff0000','--disable-reloc-section','--disable-dynamicbase','--no-insert-timestamp',...((name==='term'||name==='termqa')?['--gc-sections']:[]),`--defsym=snx_abi=${abi}`,'-T','user/linker.ld',path.join(out,'entry.o'),runtime,path.join(out,`${name}.o`),...extra,'-o',exe]);
@@ -52,8 +46,3 @@ for(const [name,source,mode,abi=1] of apps){
  const bytes=fs.readFileSync(bin);bytes.writeUInt32LE(bytes.length,8);bytes.writeUInt32LE(symbols._user_start,12);bytes.writeUInt32LE(symbols.___user_data,16);bytes.writeUInt32LE(symbols.___user_end,20);
  if(bytes.readUInt32LE(4)!==abi||bytes.length>65536||symbols.___user_end>(abi===2?0x1000000:0x30000))throw Error('Native image exceeds resource limits');fs.writeFileSync(bin,bytes);console.log(`Native ${name}.snx: ${bytes.length} bytes, memory ${symbols.___user_end}`);
 }
-
-
-run(process.execPath,[path.join(root,"tools/package.js"),path.join(root,"packages/hello.json"),path.join(out,"hello.sxp")],{stdio:"inherit"});
-
-for(const name of ["files","editor"])run(process.execPath,[path.join(root,"tools/package.js"),path.join(root,`packages/${name}.json`),path.join(out,`${name}.sxp`)],{stdio:"inherit"});
