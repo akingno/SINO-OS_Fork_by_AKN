@@ -1,12 +1,17 @@
-param([string]$Suite = 'core', [switch]$List, [switch]$Full)
+param([string]$Suite = 'core', [switch]$List, [switch]$Full, [switch]$BuildOnly)
 $ErrorActionPreference = 'Stop'
 $runner = Join-Path $PSScriptRoot 'Source Code\tests\host\test-core.js'
-$planArguments = @('--validate', $Suite)
-if ($List) { $planArguments[0] = '--list' }
-if ($Full) { $planArguments += '--full' }
-& node $runner @planArguments
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-if ($List) { exit 0 }
+if ($BuildOnly -and ($List -or $Full -or $PSBoundParameters.ContainsKey('Suite'))) {
+    throw 'Use -BuildOnly by itself to prepare a ShellBridge image without running tests.'
+}
+if (-not $BuildOnly) {
+    $planArguments = @('--validate', $Suite)
+    if ($List) { $planArguments[0] = '--list' }
+    if ($Full) { $planArguments += '--full' }
+    & node $runner @planArguments
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    if ($List) { exit 0 }
+}
 $devRoot = Join-Path $PSScriptRoot 'Build Output\dev'
 New-Item -ItemType Directory -Path $devRoot -Force | Out-Null
 $buildLock = $null
@@ -25,10 +30,15 @@ try {
     & node $helper record $runRoot
     if ($LASTEXITCODE -ne 0) { throw 'Regression build identity verification failed.' }
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Source Code\build32\kernel-normal.exe') -Destination (Join-Path $runRoot 'kernel-normal.exe')
-    $testArguments = @($runRoot, $Suite)
-    if ($Full) { $testArguments += '--full' }
-    & node $runner @testArguments
-    $result = $LASTEXITCODE
+    if ($BuildOnly) {
+        Write-Host ('ShellBridge build: ' + $runRoot)
+        $result = 0
+    } else {
+        $testArguments = @($runRoot, $Suite)
+        if ($Full) { $testArguments += '--full' }
+        & node $runner @testArguments
+        $result = $LASTEXITCODE
+    }
 } catch {
     if ($runRoot) {
         New-Item -ItemType Directory -Path $runRoot -Force | Out-Null

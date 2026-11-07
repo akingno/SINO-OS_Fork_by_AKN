@@ -11,7 +11,8 @@
 | `Source Code/src32/mm/` | 独立内存管理子系统（page.c、paging.c、uaccess.c） |
 | `Source Code/user/` | Ring 3 用户态程序（gsh、files、calculator、clock 等） |
 | `Source Code/tools/` | 构建、发布与共享开发工具 |
-| `Source Code/tests/` | 宿主套件、Ring 3 测试探针与测试辅助模块 |
+| `Source Code/tests/` | 稳定套件、Ring 3 探针、共享工具；TESTING.md 为 AI 选测入口 |
+| `Source Code/tests/development/` | 当前功能的临时测试；显式登记和收尾，不自动回归 |
 | `Source Code/docs/` | 技术契约文档 |
 | `Source Code/disk32/` | 启动盘内容与字体资源 |
 | `Documentation/` | 项目文档、许可与截图 |
@@ -27,7 +28,13 @@
 
 每个开发步骤只自动运行与改动直接相关的命令和接口测试，合计最多 50 项（含选跑的旧用例）。每个专项的自动验收可执行最多 20 个相关用例。运行前确认用例数，优先通过摘要脚本查看结果，只在失败时查看对应日志片段。
 
-历史 Stage 2/3/4 测试入口已移除，不保留兼容转发。当前回归按功能命名。`regression.ps1 -Suite persistence` 独立运行 4 项无 GUI 写入/冷启动检查；`-Suite terminal-gui` 只在明确要求 GUI 验证时运行，并自行准备与核对 GUI 持久化数据。普通回归不调用 GUI 套件。
+**AI 选测必须先读 [模块 → 测试命令指南](Source Code/tests/TESTING.md)，只匹配本次模块及追加条件。** 不逐个查阅所有测试，不因修改 process.c 等共享文件就全跑关联模块。完整目录仅在指南没有对应项、需要明确追加或用户要求列举时查阅。
+
+- 运行前说明模块、命令、选择原因和用例数；统一入口用同一选择加 `-List` 预览。重复/重叠选择自动去重；漏跑、重跑或额外 ID 不能通过。
+- 通过后停止。仅因新的修改、失败或明确的未验证影响扩大或重跑；50/20 是上限，不是目标。测试器检查仅在测试框架变化时运行，纯文档/目录说明修改不启动系统回归。
+- `-Full` 仅供用户显式全量验收，AI 不以此绕过本步限制。压力、GUI 和全量 core 不自动追加。同一轮共用构建与摘要；源码/测试身份变化后遵守重建检查，不强行复用旧镜像。
+
+历史 Stage 2/3/4 入口已移除，不保留转发。稳定业务用例在 tests/host/suites/ 或对应 GUI 文件，不互相调用；固定 ID 在 tests/support/regression-cases.json，组合仅放在 regression-suites.js / regression-catalog.js。新增或修改入口时同步更新模块指南；全部数量和其他专项见 [当前测试目录](Source Code/docs/test-catalog.md)。
 
 常用测试选择（仓库根目录，PowerShell）：
 
@@ -35,15 +42,10 @@
 .\regression.ps1 -Suite persistence   # 独立持久化检查，4 项
 .\regression.ps1 -Suite core -Full    # 非 GUI 基础回归，仅显式手动全量运行
 .\regression.ps1 -Suite terminal-gui  # GUI，仅在明确要求时运行
+.\regression.ps1 -BuildOnly           # 仅准备 ShellBridge 镜像及符号，不执行测试
 ```
 
-日常优先选择单个功能：`-Suite process`（8 项）、`policy`（2 项）、`completion`（5 项）、`files`（2 项）、`cli`、`pipes`、`terminal`、`interactive`、`network`（各 1 项）。可用 `-Suite 'policy,files'` 组合互不重叠的功能，只构建一次；未知名称在构建前拒绝；重复或重叠选择按固定用例 ID 自动去重。`process`、`files` 和 `persistence` 各自包含自己的写入与冷启动读取，不能依赖其他业务套件准备数据。GUI 可单选 `frontend-gui`、`shell-gui`、`file-tools-gui`、`shell-tools-gui`、`workspace-gui`、`line-edit-gui`、`files-gui`。
-
-套件组合仅放在 `tests/support/regression-suites.js` 和 `regression-catalog.js`；业务用例放在 `tests/host/suites/` 或对应 GUI 文件，禁止互相调用。通道、内存观察、GUI 操作分别由 `guest-context.js`、`gui-context.js` 提供，业务套件自行建立资源基线和夹具。新增业务套件只注册自己的入口，不修改其他业务套件。
-
-执行前用 `regression.ps1 -Suite 'process,files' -List` 查看去重后的用例 ID、组数和数量，不构建、不启动 VM。固定用例清单在 `tests/support/regression-cases.json`；实际报告按 ID 核对，漏跑、重复或额外用例不能通过。默认超过总计 50 项或单组 20 项时在构建前停止。`-Full` 仅供用户显式手动全量验收，开发步骤的自动验收仍遵守 50/20 上限。
-
-`-Suite stress` 为 9 项进程恢复压力测试（1 次显式基线准备 + 8 次恢复循环），不属于 `core`。聚焦等待专项为 `pipe-waits`（10）、`completion-waits`（8）、`terminal-waits`（11）、`shell-waits`（5），不会重复调用基础整套探针。`core` 共 23 组、261 个用例；终端 GUI 共 32 个用例。内部断言和同一探针的多个条件单独记录，不计作额外用例。完整清单见 [当前测试目录](Source Code/docs/test-catalog.md)。
+开发中临时测试放在 [tests/development/](Source Code/tests/development/README.md)，按模块/功能命名，在 [INDEX.md](Source Code/tests/development/INDEX.md) 登记命令、数量及启用/收尾条件。只在当前功能需要时运行，不默认加入稳定回归；功能完成必须决定提升稳定覆盖、合并重复、迁入压力专项或删除临时验证，并清理活动登记。
 
 ## 常用命令（Windows PowerShell，仓库根目录）
 

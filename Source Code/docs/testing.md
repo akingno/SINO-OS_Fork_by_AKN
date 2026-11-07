@@ -1,5 +1,7 @@
 # 构建与测试
 
+日常 AI 选测先读 [模块与命令指南](../tests/TESTING.md)，只读相关条目；本文用于环境、构建和具体操作。开发中专项使用 [临时测试目录](../tests/development/README.md)，活动项登记在 INDEX 中。
+
 ## 日常开发
 
 仓库根目录运行 `启动开发版.cmd`（调用 `dev.ps1`），完成编译、生成 ISO 并启动 QEMU 可见窗口。
@@ -16,6 +18,7 @@
 
 - `tests/host/` 存放宿主 C 检查、Node.js 套件和 PowerShell 验证入口。
 - `tests/guest/` 存放编译为 SNX 的独立测试程序。`tools/build-user.js` 维护源码与镜像内程序名的对应关系。
+- `tests/development/` 存放显式登记的开发中专项，不加入默认稳定回归；完成后逐项提升、合并、迁入压力或删除。
 - `tests/support/` 存放测试夹具和套件辅助模块。构建、发布与测试共用的宿主工具仍在 `tools/`。
 
 当前入口按功能命名；历史阶段入口及其 `tools/` 转发已移除。新用例和套件实现放入对应的测试目录。
@@ -167,7 +170,7 @@ node 'Source Code/tests/host/test-src32-refactor.js'
 | `test-terminal-waits.js <构建目录>` | 终端阻塞读取 | 11 |
 | `test-shell-waits.js <构建目录>` | SDK 与 Shell 等待集成 | 5 |
 
-内存测试仅使用当前构建，不再比较历史阶段二进制。Shell 等待测试需要构建目录内的 `kernel-normal.exe`；历史收尾模式已合并到这一个功能入口。可用 `regression.ps1 -Suite persistence` 的构建目录运行这些专项。
+内存测试仅使用当前构建，不再比较历史阶段二进制。Shell 等待测试需要构建目录内的 `kernel-normal.exe`；历史收尾模式已合并到这一个功能入口。没有匹配构建时先运行 `regression.ps1 -BuildOnly`，准备 ShellBridge ISO 和同次符号而不连带运行其他测试；再将输出目录传给专项。此开关单独使用，不与 `-Suite`、`-List` 或 `-Full` 混用。普通启动仍使用 `dev.ps1 -BuildOnly` 的非桥接镜像。
 
 ## 测试约定
 
