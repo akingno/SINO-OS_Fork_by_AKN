@@ -18,7 +18,7 @@
 
 | 模块 / 修改范围 | 默认命令与参考数量 | 仅在这些改动时追加 |
 | --- | --- | --- |
-| 开机文字控制台、ASCII 键盘和 Shell 前端 | 普通 `dev.ps1 -BuildOnly` 后运行 `node 'Source Code/tests/host/test-console.js' <构建目录>`；6 项，`--list` 预览 | 设备授权改动追加 policy；会话/命令启动变化追加 terminal / interactive / shell-waits；不恢复 GUI 套件 |
+| 开机文字控制台、ASCII 键盘和 Shell 前端 | 普通 `dev.ps1 -BuildOnly` 后运行 `node 'Source Code/tests/host/test-console.js' <构建目录>`；6 项，`--list` 预览 | 自动保存变化加同入口 `--persistence`（3 项，支持 `--list --persistence`）及 files / persistence；设备授权改动追加 policy；会话等待变化加 shell-waits；不恢复 GUI 套件 |
 | 引导、镜像、FAT12 启动卷 | `.\dev.ps1 -BuildOnly`，再 `node 'Source Code/tests/host/test-boot.js' '<本次普通构建目录>'`；1 项 | 涉及用户态启动/隔离时追加相应进程或内存专项 |
 | 匿名映射、懒分配、SDK 堆；`anon_map/unmap` | 下方内存命令的 `anonymous`；5 项 | 映像、高页或线程栈布局变化时追加 `images` |
 | 物理页、页表、高页、SNX、用户栈；`page_* / paging_*` | 下方内存命令的 `images`；9 项 | 涉及匿名映射/OOM 时加 `anonymous`；启动页表/物理池初始化变化时加普通启动检查 |

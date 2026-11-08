@@ -1,7 +1,6 @@
 # G5b explicitly writable Shell workspace
 
-F2, the SINO menu and Terminal.app open the writable workspace. F12 opens a
-read-only session. The frontend also accepts the explicit /write argument.
+The native text console automatically opens the writable workspace. GUI entry points have been removed.
 The Shell, tools and frontend have caps=0. See [desktop-shell.md](desktop-shell.md).
 
 ## Trusted grant and broker
@@ -49,7 +48,7 @@ buffers and private staging pages. Closing/exiting/canceling before publication
 discards the stage. Publication is RAM-visible and is not rolled back by a later
 process exit or cancellation. Busy reference protection is retained, including
 directories held by another Shell's cwd. Normal modifications print
-`published in RAM; sync confirms disk` when publication is involved.
+`updated` when publication is involved. The writable gsh commits its root directory after successful writer/boot-copy completion, before issuing the next prompt. Commit rights remain with the Shell rather than being added to every worker. Save failure prints an explicit error and sets command status to 1; sync remains available for retries. Low-level FilePublish and generic VFS writes retain RAM-only semantics.
 
 ## Persistence
 
@@ -73,4 +72,4 @@ target grant and a separate read-only boot source. `StartBootDirectory()` uses
 selector 1 of SYS_START_DIRECTORY. Selector 0 returns the primary grant.
 See [desktop-shell.md](desktop-shell.md).
 
-GUI workspace and durable-save integration run only through `regression.ps1 -Suite terminal-gui`. The independent `-Suite persistence` checks binary/text snapshots without a window.
+Text-console autosave is checked by `test-console.js <ordinary build> --persistence` (3 cases); generic explicit commits remain covered by the independent `-Suite persistence`.

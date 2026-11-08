@@ -159,7 +159,7 @@ static int replace(const char *path, int append, int copying,
   Close(stage);
   if (s < 0)
     return error(s);
-  return put("published in RAM; sync confirms disk\n") < 0;
+  return put("updated\n") < 0;
 }
 int main(void) {
   StartInfo start;

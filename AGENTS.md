@@ -86,7 +86,7 @@ Shell 宿主测试参数：`-ExpectedExitCode 1` 断言预期失败，`-TimeoutS
 
 | 任务 | 起读文件 / 符号 | 对应验证入口 |
 | --- | --- | --- |
-| 开机文字 Shell | user/console_host.c、src32/console.c、process.c:SYS_CONSOLE、loader.asm | `node 'Source Code/tests/host/test-console.js' <普通 BuildOnly 目录>`；6 项；契约 docs/text-console.md |
+| 开机文字 Shell | user/console_host.c、src32/console.c、process.c:SYS_CONSOLE、loader.asm | `node 'Source Code/tests/host/test-console.js' <普通 BuildOnly 目录>`；6 项；追加 `--persistence` 为 3 项跨重启自动保存检查；契约 docs/text-console.md |
 | 构建、引导 | build32.ps1、build-image32.js、src32/loader.asm、src32/kernel.c:kmain | `tests/host/test-boot.js <BuildOnly 构建目录>` |
 | FAT12 启动卷 | src32/fs/boot_fat12.c:fs_init / fs_read / fs_read_at、src32/boot-ramdisk.h | 普通镜像无窗口启动；ShellBridge 验证 `/boot` 读取 |
 | 物理页分配、启动页表 | src32/mm/page.c:page_init / page_alloc_run、src32/mm/paging.c:paging_bootstrap / paging_kernel_init | 普通镜像无窗口启动，核对启动日志 |
@@ -125,7 +125,7 @@ Shell 宿主测试参数：`-ExpectedExitCode 1` 断言预期失败，`-TimeoutS
 - 用户栈 16 KiB，SNX v1 映像上限 192 KiB，v2 上限 16 MiB，基址 `0x40000000`
 - VFS 全局 128 节点，单文件 64 KiB（含磁盘 SNX）
 - 8 进程，每进程 4 线程，24 句柄
-- Write 更新内存，Sync 提交用户目录快照；`/boot` 只读
+- 底层 Write 更新内存、Sync 提交用户目录快照；可写 gsh 的写入/创建/改名/删除命令成功后自动提交，再返回提示符，无需手动 sync；`/boot` 只读
 - 启动镜像 2.88 MB，布局入口 `src32/boot-layout.h`
 - Feature 掩码 32767（15 个已实现机制），详见 docs/os-interface.md
 - 网络仅回环；宿主桥接和服务器通道是规划

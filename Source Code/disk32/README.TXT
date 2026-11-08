@@ -6,7 +6,8 @@ Arrow keys move the caret or recall history. Tab completes commands and paths.
 Ctrl+C cancels the foreground command; Ctrl+D sends EOF.
 Exiting the Shell starts a fresh Shell session.
 
-Your workspace is /home/user. Run sync before powering off to save changes.
+Your workspace is /home/user. Successful Shell file changes save automatically
+before the next prompt. If saving fails, retry with sync before powering off.
 /boot is read-only; /tmp is temporary. Keep SINO.iso attached while running.
 The host launcher stores personal data in Data/data.img.
 The VGA text display supports ASCII; UTF-8 file data remains supported.

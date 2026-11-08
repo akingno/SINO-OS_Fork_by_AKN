@@ -7,10 +7,12 @@ const root = path.resolve(__dirname, '../..');
 const {QMP} = require(path.join(root, 'tools/qmp'));
 const {qemuPath, sources} = require(path.join(root, 'tools/dev-run'));
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-const cases = ['console.autostart', 'console.edit-history', 'console.workspace',
+const persistence = process.argv.includes('--persistence');
+const {volume} = require(path.join(root, 'tools/test-volume'));
+const cases = persistence ? ['console.persist-create', 'console.persist-update', 'console.persist-delete'] : ['console.autostart', 'console.edit-history', 'console.workspace',
     'console.cancel', 'console.ascii-input', 'console.restart'];
 async function main(arg) {
-    if (arg === '--list') { console.log(cases.join('\n') + '\n6 cases'); return; }
+    if (arg === '--list') { console.log(cases.join('\n') + '\n' + cases.length + ' cases'); return; }
     assert(arg, 'Pass an ordinary BuildOnly directory');
     const buildDir = path.resolve(arg), build = JSON.parse(fs.readFileSync(path.join(buildDir,'build.json')));
     assert.equal(sources().sha256, build.sourceSha256, 'current source identity');
@@ -23,17 +25,27 @@ async function main(arg) {
     const port = server.address().port;await new Promise(resolve=>server.close(resolve));
     const exe = qemuPath();let firmware=path.join(path.dirname(exe),'share');
     if(fs.existsSync(path.join(firmware,'qemu','bios-256k.bin'))) firmware=path.join(firmware,'qemu');
-    const stderr = fs.openSync(path.join(directory,'qemu-stderr.log'),'wx');
-    const child = spawn(exe,['-L',firmware,'-machine','pc','-accel','tcg','-m','64M','-vga','std',
+    let child, stopped, error, q;
+    function launch() {
+    error = null;
+    const stderr = fs.openSync(path.join(directory,'qemu-stderr.log'),'a');
+    child = spawn(exe,['-L',firmware,'-machine','pc','-accel','tcg','-m','64M','-vga','std',
         '-nic','none','-display','none','-serial','none','-monitor','none','-no-reboot',
         '-drive','file=SINO.iso,format=raw,media=cdrom,if=ide,index=2,readonly=on',
         '-drive','file=data.img,format=raw,if=ide,index=0','-boot','order=d',
         '-debugcon','file:kernel.log','-global','isa-debugcon.iobase=0xe9',
         '-qmp',`tcp:127.0.0.1:${port},server=on,wait=off`],{cwd:directory,windowsHide:true,stdio:['ignore','ignore',stderr]});
     fs.closeSync(stderr);
-    let error;child.on('error',e=>error=e);
-    const stopped = new Promise(resolve=>child.once('close',resolve));
-    const report={result:'FAIL',buildId:build.buildId,cases:[]};let q;
+    child.on('error',e=>error=e);
+    stopped = new Promise(resolve=>child.once('close',resolve));
+    }
+    async function stop() {
+        if(q){q.close();q=null;}
+        if(child&&child.pid&&child.exitCode===null)child.kill();
+        if(stopped)await stopped;
+    }
+    launch();
+    const report={result:'FAIL',buildId:build.buildId,cases:[]};
     const log=()=>fs.existsSync(path.join(directory,'kernel.log'))?fs.readFileSync(path.join(directory,'kernel.log'),'utf8'):'';
     async function until(fn,label,timeout=20000){const end=Date.now()+timeout;while(true){
         if(error)throw error;assert(child.exitCode===null && !/KERNEL PANIC|USER PROBE FAIL/.test(log()),'guest failed');
@@ -48,6 +60,38 @@ async function main(arg) {
     async function check(id,fn){const item={id,result:'FAIL'};report.cases.push(item);await fn();item.result='PASS';console.log('PASS '+id);}
     try {
         await until(async()=>{try{q=await new QMP(port).connect();return true;}catch{return false;}},'QMP');
+        if (persistence) {
+            const snapshot = () => volume(path.join(directory,'data.img')).current.records;
+            async function reboot() {
+                await stop(); launch();
+                await until(async()=>{try{q=await new QMP(port).connect();return true;}catch{return false;}},'reconnect');
+                await until(()=>log().includes('CONSOLE SHELL ready'),'Shell restart');
+                await until(async()=>(await screen()).endsWith('gsh:/ $'),'restarted prompt');
+            }
+            await until(()=>log().includes('CONSOLE SHELL ready'),'Shell ready');
+            await check(cases[0],async()=>{
+                await command('mkdir persist-dir','');
+                await command('echo alpha > persist-dir/file.txt','');
+                await command('touch kept.txt','');
+                assert.equal(snapshot().get('/home/user/persist-dir/file.txt')?.data.toString(),'alpha\n');
+                assert(snapshot().has('/home/user/kept.txt'));
+                await reboot();await command('cat persist-dir/file.txt','\nalpha\n');
+            });
+            await check(cases[1],async()=>{
+                await command('echo beta >> persist-dir/file.txt','');
+                await command('mv persist-dir/file.txt persist-dir/moved.txt','');
+                const saved=snapshot();assert(!saved.has('/home/user/persist-dir/file.txt'));
+                assert.equal(saved.get('/home/user/persist-dir/moved.txt')?.data.toString(),'alpha\nbeta\n');
+                await reboot();await command('cat persist-dir/moved.txt','\nalpha\nbeta\n');
+            });
+            await check(cases[2],async()=>{
+                await command('rm persist-dir/moved.txt','');await command('rmdir persist-dir','');
+                assert(![...snapshot().keys()].some(p=>p==='/home/user/persist-dir'||p.startsWith('/home/user/persist-dir/')));
+                await reboot();await command('ls','kept.txt');
+                const saved=snapshot();assert(saved.has('/home/user/kept.txt'));
+                assert(![...saved.keys()].some(p=>p==='/home/user/persist-dir'||p.startsWith('/home/user/persist-dir/')));
+            });
+        } else {
         await check(cases[0],async()=>{await until(()=>log().includes('CONSOLE SHELL ready'),'autostart');
             assert(log().includes(`SINO BUILD ID: ${build.buildId}`));assert(!log().includes('SINO SHELL BRIDGE'));
             await until(async()=>(await screen()).endsWith('gsh:/ $'),'visible prompt');});
@@ -62,9 +106,10 @@ async function main(arg) {
         await check(cases[5],async()=>{const before=log().length;await key('ctrl','d');
             await until(()=>log().slice(before).includes('CONSOLE SHELL restarting'),'restart');
             await until(async()=>(await screen()).endsWith('gsh:/ $'),'new prompt');await command('echo restarted','\nrestarted\n');});
+        }
         assert.equal(sources().sha256,build.sourceSha256,'source unchanged during tests');report.result='PASS';
     } catch(e){report.error=e.stack;throw e;}
-    finally{if(q)q.close();if(child.pid&&child.exitCode===null)child.kill();await stopped;
+    finally{await stop();
         fs.writeFileSync(path.join(directory,'console-report.json'),JSON.stringify(report,null,2));console.log('Report: '+directory);}
 }
 main(process.argv[2]).catch(e=>{console.error(e);process.exitCode=1;});

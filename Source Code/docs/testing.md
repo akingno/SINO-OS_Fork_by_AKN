@@ -12,7 +12,7 @@
 | 只编译 | `dev.ps1 -BuildOnly` | 生成 ISO，不启动 VM |
 | 编译并验证 Ring 3 | `dev.ps1 -VerifyOnly` | 转入 process 无界面专项（8 项），使用私有盘 |
 
-构建产物在 `Build Output/dev/runs/<构建编号>/`。GUI 已移除，可见 QEMU 窗口显示 80×25 文字控制台并自动进入 gsh；US 键盘直接输入，没有中文输入法。启动与中断信息仍写入 kernel.log。普通启动不自动发送键鼠输入或生成截图。文字控制台的 6 项专项见 [text-console.md](text-console.md)。
+构建产物在 `Build Output/dev/runs/<构建编号>/`。GUI 已移除，可见 QEMU 窗口显示 80×25 文字控制台并自动进入 gsh；US 键盘直接输入，没有中文输入法。启动与中断信息仍写入 kernel.log。普通启动不自动发送键鼠输入或生成截图。文字控制台的 6 项基础检查与 3 项跨重启自动保存专项见 [text-console.md](text-console.md)。
 
 ## 测试源码位置
 

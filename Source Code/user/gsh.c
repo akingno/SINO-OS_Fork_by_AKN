@@ -132,6 +132,18 @@ static void external(u32 program, u32 rights) {
     integer((i32)reason);
     put("\n");
   }
+  /* Keep write workers minimally authorized. The Shell owns COMMIT and must
+   * flush successful mutations before publishing its next prompt. */
+  if (writable && reason == PROCESS_EXITED && !code &&
+      (program == IX_WRITETOOLS || program == IX_BOOTCOPY)) {
+    CommitInfo saved;
+    int save = DirectoryCommit(root, &saved);
+    if (save < 0) {
+      put("save failed "); integer(save);
+      put("; changes remain in RAM, retry sync\n");
+      code = 1;
+    }
+  }
   status(code, reason, 0);
 }
 static int path_prefix(const char *path, const char *prefix) {

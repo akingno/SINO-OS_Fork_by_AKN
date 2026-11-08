@@ -41,6 +41,7 @@
 
 | 入口（tests/host/） | 用例数 | 范围 |
 | --- | ---: | --- |
+| `test-console.js <普通 BuildOnly 目录> --persistence` | 3 | 不调用 sync；创建、更新/改名、删除后跨 QEMU 重启验证，保留其他文件 |
 | `test-console.js <普通 BuildOnly 目录>` | 6 | 开机提示、编辑/历史、工作区、取消、ASCII 输入、退出重启；QMP 键盘和 VGA 文字内存，不读取 GUI 场景或截图 |
 | `test-boot.js <普通 BuildOnly 目录>` | 1 | ISO 身份、El Torito、FAT12、计时器、普通启动隔离；ID 为 boot.ordinary |
 | `test-memory.js images <ShellBridge 目录>` | 9 | 64 MiB / 1 GiB、SNX v1/v2、高页、线程栈与冷启动 |

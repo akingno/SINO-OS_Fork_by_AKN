@@ -14,6 +14,8 @@ ShellBridge 测试镜像不自动启动 conhost/gsh，保持原有进程槽、�
 文字屏幕仅支持 ASCII，其他 Unicode 字符显示为问号；文件内容和 UTF-8 文件名不会被改写。
 输入背压时保留当前按键，暂停继续取键；不存在无限输入队列。
 
+可写 Shell 的写入、创建、改名和删除命令完成后，Shell 使用自己持有的 COMMIT 权限提交用户快照，成功落盘后才返回下一次提示符；不扩大写工具的权限。正常操作无需手动 sync。保存失败会显示 save failed，并令命令状态失败；RAM 中的改动可用 sync 重试。进程中途被取消、强制关闭或磁盘写入失败的未完成操作不作成功保存承诺。
+
 ## 验证
 
 先 `dev.ps1 -BuildOnly`，然后：
@@ -22,6 +24,8 @@ ShellBridge 测试镜像不自动启动 conhost/gsh，保持原有进程槽、�
 node 'Source Code/tests/host/test-console.js' --list
 node 'Source Code/tests/host/test-console.js' 'Build Output/dev/runs/<普通构建编号>'
 ```
+
+追加 `--persistence`（预览为 `--list --persistence`）运行 3 项：console.persist-create、console.persist-update、console.persist-delete。专项不发送 sync，在创建/追加/改名/删除后直接停止 QEMU，再使用同一私有盘启动，核对字节、路径及删除结果。
 
 6 项固定 ID：console.autostart、console.edit-history、console.workspace、console.cancel、console.ascii-input、console.restart。
 专项使用独立无窗口 VM 和空白私有盘，通过 QMP 发送 PS/2 按键、读取 0xb8000 的文字字节，不调用桌面、窗口、截图或鼠标接口。
