@@ -9,7 +9,7 @@
 | `Source Code/` | 唯一开发源码目录 |
 | `Source Code/src32/` | 内核（C + x86 汇编） |
 | `Source Code/src32/mm/` | 独立内存管理子系统（page.c、paging.c、uaccess.c） |
-| `Source Code/user/` | Ring 3 用户态程序（gsh、files、calculator、clock 等） |
+| `Source Code/user/` | Ring 3 CLI 程序（gsh、gcmd、tview、writer 等） |
 | `Source Code/tools/` | 构建、发布与共享开发工具 |
 | `Source Code/tests/` | 稳定套件、Ring 3 探针、共享工具；TESTING.md 为 AI 选测入口 |
 | `Source Code/tests/development/` | 当前功能的临时测试；显式登记和收尾，不自动回归 |
@@ -81,7 +81,7 @@ Shell 宿主测试参数：`-ExpectedExitCode 1` 断言预期失败，`-TimeoutS
 
 ## 系统地图（路径相对 Source Code/）
 
-32 位 x86 BIOS，单体内核。GUI 移除已完成内核解耦和源码删除（计划第一、二步）：桌面、窗口管理、图形绘制、设置与内置 Ring 0 应用已移除；窗口相关系统调用保留编号并返回错误。交互通过 ShellBridge，gsh 等 CLI 程序继续在 Ring 3 运行。GUI Ring 3 程序、磁盘资源和旧 GUI 测试入口待后续步骤清理，当前不能执行 GUI 验收。普通镜像仍可做无界面启动检查，启动日志为 `SINO CLI ready`。主循环依次推进 RTC、ShellBridge（启用时）、网络、用户线程；语言状态由 locale.c 持有。
+32 位 x86 BIOS，单体内核。GUI 移除已完成计划前三步：桌面、窗口管理、图形绘制、设置与内置 Ring 0 应用已移除；窗口相关系统调用保留编号并返回错误。GUI Ring 3 终端前端和文件管理器，以及 UIASSET.BIN、PINYIN.TXT、CJK_OFL.TXT 已删除且不再构建或打包。交互通过 ShellBridge，gsh、gcmd、tview、writer 保留；brokerqa 是无界面 Shell / 会话探针，继续构建并打包到 ShellBridge 镜像。旧 GUI 测试入口待第四步清理，当前不能执行 GUI 验收。普通镜像仍可做无界面启动检查，启动日志为 `SINO CLI ready`。主循环依次推进 RTC、ShellBridge（启用时）、网络、用户线程；语言状态由 locale.c 持有。启动镜像仍固定 2.88 MB，删除资源减少文件占用，不改变镜像总容量。
 
 | 任务 | 起读文件 / 符号 | 对应验证入口 |
 | --- | --- | --- |
@@ -105,7 +105,7 @@ Shell 宿主测试参数：`-ExpectedExitCode 1` 断言预期失败，`-TimeoutS
 | 文本会话后端 | src32/terminal.c/.h、process.c:SYS_TERMINAL；tests/guest/terminal_tests.c | `regression.ps1 -Suite terminal`；契约 docs/terminal-sessions.md |
 | 终端阻塞读取 | src32/terminal.c:wake_readers、process.c:SYS_TERMINAL / retry_wait；tests/guest/terminal_tests.c | `tests/host/test-terminal-waits.js <ShellBridge 构建目录>`（11 项）；契约 docs/terminal-sessions.md |
 | 阻塞等待 SDK 与 Shell | user/stream.h、user/sdk.h、user/interactive.h、user/gsh.c:external | `tests/host/test-shell-waits.js <ShellBridge 构建目录>`（5 项，目录须含同次构建的 kernel-normal.exe）；契约 docs/os-interface.md |
-| 终端前端 | user/terminal_frontend.c、terminal_model.h | `regression.ps1 -Suite terminal-gui`（GUI 按需）；tests/host/terminal-gui.js |
+| 终端前端 | GUI 前端已移除；terminal_model.h 等共享模型保留 | 旧 GUI 测试待清理，不执行 |
 | 交互启动代理 | src32/interactive.h、process.c、terminal.c；tests/guest/interactive_tests.c | `regression.ps1 -Suite interactive`；契约 docs/interactive-runs.md |
 | Shell | user/gsh.c、gsh_parse.h、gcmd.c；tests/host/shell-gui.js | regression.ps1；契约 docs/user-shell.md |
 | 只读文件工具 | user/tview.c、file_text.h | 宿主模型；`regression.ps1 -Suite terminal-gui`（GUI 按需）；契约 docs/file-tools.md |
@@ -117,7 +117,7 @@ Shell 宿主测试参数：`-ExpectedExitCode 1` 断言预期失败，`-TimeoutS
 | 文本、窗口、绘制 | GUI 绘制已移除；src32/keyboard.c 扫描码解码保留 | tests/host/test-keyboard.js；旧 GUI 测试不执行 |
 | 计算器 | user/calculator.c、src32/api.h、src32/process.c | tests/host/test-calculator.js |
 | 时钟与 RTC | user/clock.c、src32/rtc.c、src32/process.c:SYS_TIME | tests/host/test-clock.js |
-| 文件管理器 | user/files.c 待后续移除；内核 GUI 入口已移除 | 旧 GUI 测试待清理，不执行 |
+| 文件管理器 | GUI 用户程序和内核入口均已移除 | 旧 GUI 测试待清理，不执行 |
 | 网络 | src32/net.h、src32/net.c:net_poll、user/netlib.c | tests/host/test-network.js（仅回环） |
 | 日志与语言资源 | src32/klog.c/.h、src32/locale.c/.h、resources/locale/ | tests/host/test-src32-refactor.js（43 项） |
 | QEMU 测试基础设施 | tools/vm-test.js、tools/qmp.js、verify-system.js | 按改动选择 |

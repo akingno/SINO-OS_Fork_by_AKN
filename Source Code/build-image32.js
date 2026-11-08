@@ -11,15 +11,15 @@ boot.copy(image);loader.copy(image,512);kernel.copy(image,512+4096);
 const fat=Buffer.alloc(layout.BOOT_FAT_SECTORS*512);fat.set([0xf0,0xff,0xff]);
 function setFat(c,v){const n=c+(c>>1);if(c&1){fat[n]=(fat[n]&15)|((v&15)<<4);fat[n+1]=v>>4;}else{fat[n]=v&255;fat[n+1]=(fat[n+1]&240)|(v>>8);}}
 const bridge = (process.argv[3] || '').toLowerCase() === 'true';
-const entries=['README.TXT','ABOUT.TXT','KERNEL.TXT','SOURCES.TXT','UIASSET.BIN','FONT_OFL.TXT','CJK_OFL.TXT','PINYIN.TXT'].map(name=>[name,fs.readFileSync(path.join(root,'disk32',name))]);entries.push(['MBR.BIN',fs.readFileSync(path.join(build,'mbr.bin'))]);
+const entries=['README.TXT','ABOUT.TXT','KERNEL.TXT','SOURCES.TXT','FONT_OFL.TXT'].map(name=>[name,fs.readFileSync(path.join(root,'disk32',name))]);entries.push(['MBR.BIN',fs.readFileSync(path.join(build,'mbr.bin'))]);
 if (bridge || variant === 'test') {
     entries.push(['DEMO.SH', fs.readFileSync(path.join(root, 'disk32', 'DEMO.SH'))]);
     entries.push(['HELLO.F32', fs.readFileSync(path.join(build, 'hello.bin'))]);
 }
 // Keep the full project copyright and MIT terms with bootable distributions.
 entries.push(['LICENSE.TXT',fs.readFileSync(path.join(root,'LICENSE'))]);
-for(const name of ['writer','tview','rdtest','gsh','gcmd','term','termtest','pipetest','fstest','clitest','comptest','poltest','files','probe','fault','iofault','spin','udfault','nettest'])entries.push([name.toUpperCase()+'.SNX',fs.readFileSync(path.join(build,'user',name+'.snx'))]);
-if(bridge)for(const name of ['termqa','brokerqa','memv2'])entries.push([name.toUpperCase()+'.SNX',fs.readFileSync(path.join(build,'user',name+'.snx'))]);
+for(const name of ['writer','tview','rdtest','gsh','gcmd','termtest','pipetest','fstest','clitest','comptest','poltest','probe','fault','iofault','spin','udfault','nettest'])entries.push([name.toUpperCase()+'.SNX',fs.readFileSync(path.join(build,'user',name+'.snx'))]);
+if(bridge)for(const name of ['brokerqa','memv2'])entries.push([name.toUpperCase()+'.SNX',fs.readFileSync(path.join(build,'user',name+'.snx'))]);
 const directory=Buffer.alloc(layout.BOOT_ROOT_ENTRIES*32);directory.write('SINO       ',0,'ascii');directory[11]=8;
 let next=2;const manifest=[];
 for(let i=0;i<entries.length;i++){
@@ -32,5 +32,5 @@ for(let i=0;i<entries.length;i++){
 }
 fat.copy(image,reserved*512);fat.copy(image,(reserved+layout.BOOT_FAT_SECTORS)*512);directory.copy(image,rootSector*512);
 const filename=variant==='test'?'sino32-test.img':'sino.img';fs.writeFileSync(path.join(root,filename),image);
-fs.writeFileSync(path.join(build,`manifest-${variant}.json`),JSON.stringify({name:'SINO',version:'0.10',bits:32,interface:'SINO Platinum Desktop / VBE 1024x768x32',filename,kernelBytes:kernel.length,bssEnd:parseInt(bss[1],16),sha256:crypto.createHash('sha256').update(image).digest('hex'),files:manifest},null,2)+'\n');
+fs.writeFileSync(path.join(build,`manifest-${variant}.json`),JSON.stringify({name:'SINO',version:'0.10',bits:32,interface:'SINO CLI / ShellBridge',filename,kernelBytes:kernel.length,bssEnd:parseInt(bss[1],16),sha256:crypto.createHash('sha256').update(image).digest('hex'),files:manifest},null,2)+'\n');
 console.log(`Built ${filename}: native 32-bit kernel ${kernel.length} bytes, FAT12 + full RAM disk`);

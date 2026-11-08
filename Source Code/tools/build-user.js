@@ -12,8 +12,6 @@ const apps = [
  ['gsh', 'user/gsh.c', 0],
  ['gcmd', 'user/gcmd.c', 0],
  ['brokerqa', 'tests/guest/interactive_tests.c', 0],
- ['term', 'user/terminal_frontend.c', 0],
- ['termqa', 'user/terminal_frontend.c', 1],
  ['termtest', 'tests/guest/terminal_tests.c', 0],
  ['pipetest', 'tests/guest/pipe_tests.c', 0],
  ['fstest', 'tests/guest/file_tests.c', 0],
@@ -26,20 +24,14 @@ const apps = [
  ['spin', 'tests/guest/probe.c', 3],
  ['udfault', 'tests/guest/probe.c', 4],
  ['nettest', 'tests/guest/nettest.c', 0],
- ['files', 'user/files.c', 0],
  ['memv2', 'tests/guest/memory_v2_test.c', 0, 2]
 ];
 for(const [name,source,mode,abi=1] of apps){
- // The frontend and strict probe share one boot image. Strip unused runtime
- // sections only for this new program to fit the existing FAT12 image budget.
- const appFlags=(name==='term'||name==='termqa')?[...flags,'-ffunction-sections','-fno-ident']:flags;
- const runtime=path.join(out,(name==='term'||name==='termqa')?name+'-runtime.o':'runtime.o');
- if(name==='term'||name==='termqa')command(path.join(tc,'gcc.exe'),[...appFlags,'-c','user/runtime.c','-o',runtime]);
- command(path.join(tc,'gcc.exe'),[...appFlags,'-I','user',`-DMODE=${mode}`,`-DSINO_SNX_ABI=${abi}`,'-c',source,'-o',path.join(out,`${name}.o`)]);
- const extra=[];if(name==='termqa'){const obj=path.join(out,name+'-probe.o');command(path.join(tc,'gcc.exe'),[...appFlags,'-I','user','-c','tests/guest/terminal_probe.c','-o',obj]);extra.push(obj);}
+ command(path.join(tc,'gcc.exe'),[...flags,'-I','user',`-DMODE=${mode}`,`-DSINO_SNX_ABI=${abi}`,'-c',source,'-o',path.join(out,`${name}.o`)]);
+ const extra=[];
  if(name==='nettest'){const obj=path.join(out,`${name}-netlib.o`);command(path.join(tc,'gcc.exe'),[...flags,'-c','user/netlib.c','-o',obj]);extra.push(obj);}
  const exe=path.join(out,`${name}.exe`),bin=path.join(out,`${name}.snx`);
- command(path.join(tc,'ld.exe'),['-m','i386pe','--image-base','0x3fff0000','--disable-reloc-section','--disable-dynamicbase','--no-insert-timestamp',...((name==='term'||name==='termqa')?['--gc-sections']:[]),`--defsym=snx_abi=${abi}`,'-T','user/linker.ld',path.join(out,'entry.o'),runtime,path.join(out,`${name}.o`),...extra,'-o',exe]);
+ command(path.join(tc,'ld.exe'),['-m','i386pe','--image-base','0x3fff0000','--disable-reloc-section','--disable-dynamicbase','--no-insert-timestamp',`--defsym=snx_abi=${abi}`,'-T','user/linker.ld',path.join(out,'entry.o'),path.join(out,'runtime.o'),path.join(out,`${name}.o`),...extra,'-o',exe]);
  command(path.join(tc,'objcopy.exe'),['-O','binary',exe,bin]);
  const symbols={};for(const line of run(path.join(tc,'nm.exe'),['-n',exe],{encoding:'utf8'}).split('\n')){const m=line.match(/^([0-9a-f]+) [A-Za-z] (\w+)\s*$/);if(m)symbols[m[2]]=parseInt(m[1],16)-0x40000000;}
  for(const key of ['_user_start','___user_data','___user_end'])if(!Number.isInteger(symbols[key])||symbols[key]<0)throw Error('Missing/invalid native link symbol '+key);
