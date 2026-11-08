@@ -1,7 +1,5 @@
 #include "klog.h"
 #include "console.h"
-#include "gui.h"
-#include "graphics.h"
 #include "kernel.h"
 #include "lib/kstring.h"
 #define SCROLL_LINES CON_ROWS
@@ -136,10 +134,6 @@ void con_flush(void) {
              : (int)(p - start * CON_COLS));
 }
 void console_panic(const char* s, u32 vector, u32 error) {
-  if (gui_active) {
-    gui_panic(s, vector, error);
-    return;
-  }
   con_clear();
   con_color(0x4f);
   con_write("SINO kernel panic\n");

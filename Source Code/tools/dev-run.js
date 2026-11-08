@@ -154,7 +154,7 @@ async function run(directory, verifyOnly) {
             if (child.exitCode !== null) throw Error('QEMU exited: '+fs.readFileSync(path.join(directory,'startup.log'),'utf8'));
             const log = fs.existsSync(logFile)?fs.readFileSync(logFile,'utf8'):'';
             if (log.includes('KERNEL PANIC')) throw Error('Guest kernel panic. See '+logFile);
-            if (log.includes(`SINO BUILD ID: ${build.buildId}\n`) && log.includes('SINO desktop ready')) break;
+            if (log.includes(`SINO BUILD ID: ${build.buildId}\n`) && log.includes('SINO CLI ready')) break;
             if (Date.now()>deadline) throw Error('Guest did not confirm this build ID and desktop readiness. See '+logFile);
             await sleep(100);
         }

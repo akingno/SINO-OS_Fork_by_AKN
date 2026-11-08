@@ -1,6 +1,5 @@
 #include "klog.h"
 #include "object.h"
-#include "gui.h"
 #include "net.h"
 #include "process.h"
 #include "filesys.h"
@@ -50,8 +49,7 @@ void object_unref(int index) {
   if (index < 0 || index >= OBJECTS || !objects[index].refs) return;
   Object* o = &objects[index];
   if (!--o->refs) {
-    if (o->type == OBJ_WINDOW) gui_user_close(o->value);
-    else if (o->type == OBJ_SOCKET) net_close(o->value);
+    if (o->type == OBJ_SOCKET) net_close(o->value);
     else if (o->type == OBJ_PROCESS) process_completion_release(o->value);
     else if (o->type == OBJ_STREAM) process_stream_release(o->value);
     else if (o->type == OBJ_DIRECTORY || o->type == OBJ_FILE || o->type == OBJ_STAGING)

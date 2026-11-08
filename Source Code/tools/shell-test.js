@@ -149,7 +149,7 @@ async function run(directory, {execute, seedDisk, memoryMiB = 64} = {}) {
         child.on('error', error => {childError = error;});
         report.qemu = {executable:exe, pid:child.pid};
         const deadline = Date.now() + 30000;
-        while (!guestLog().includes('SINO desktop ready')) {
+        while (!guestLog().includes('SINO CLI ready')) {
             if (childError) throw childError;
             if (child.exitCode !== null) throw Error('QEMU exited before boot. See qemu-stderr.log.');
             if (guestLog().includes('KERNEL PANIC')) throw Error('Kernel panic during boot.');

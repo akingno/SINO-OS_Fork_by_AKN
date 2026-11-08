@@ -3,7 +3,6 @@
 #include "run_bridge.h"
 #include "rtc.h"
 /* SINO SH: project-specific shell, separate from the SINO32 kernel. */
-#include "graphics.h"
 #include "vfs.h"
 #include "process.h"
 #include "storage.h"

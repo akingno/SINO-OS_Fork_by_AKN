@@ -2,6 +2,7 @@
 #define SINO_LOCALE_H
 #include "types.h"
 #include "locale_keys.h"
+extern int settings_language;
 const char* locale_text(TextKey);
 const char* locale_text_for(int language, TextKey);
 /* Bounded templates support {name} and {count}; returns -1 on overflow. */

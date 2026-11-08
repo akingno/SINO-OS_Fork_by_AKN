@@ -41,7 +41,7 @@ async function boot(executable, directory, buildId) {
             const log = fs.existsSync(kernelLog) ? fs.readFileSync(kernelLog, 'utf8') : '';
             assert(!log.includes('KERNEL PANIC'), 'Kernel panic during boot');
             assert(child.exitCode === null && child.signalCode === null, 'QEMU exited during boot');
-            if (log.includes('SINO desktop ready\n')) {
+            if (log.includes('SINO CLI ready\n')) {
                 assert(log.includes(`SINO BUILD ID: ${buildId}\n`), 'Guest build ID mismatch');
                 assert(log.includes('FAT12 RAM disk ready'), 'FAT12 volume did not mount');
                 assert(log.includes('TIMER IRQ0 delivered'), 'Timer interrupt did not arrive');

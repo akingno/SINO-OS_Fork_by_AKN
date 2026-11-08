@@ -3,16 +3,17 @@
 #include "kernel.h"
 #include "mm/page.h"
 #include "mm/paging.h"
-#include "gui.h"
 #include "storage.h"
 #include "disk.h"
-#include "settings.h"
 #include "process.h"
 #include "vfs.h"
 #include "net.h"
 #include "keyboard.h"
 #include "fs/boot_fat12.h"
 #include "panic.h"
+
+#define SCREEN_WIDTH  1024
+#define SCREEN_HEIGHT 768
 
 volatile u32 ticks, keyboard_irqs, mouse_irqs, mouse_packets;
 volatile i32 mouse_x = 512, mouse_y = 384;
@@ -67,8 +68,8 @@ static int device_command(int mouse, u8 cmd) {
 static void mouse_emit(i32 x, i32 y, u8 buttons, i8 wheel) {
   u8 changed = mouse_buttons ^ buttons;
   mouse_buttons = buttons;
-  mouse_x = x < 0 ? 0 : x >= GUI_WIDTH ? GUI_WIDTH - 1 : x;
-  mouse_y = y < 0 ? 0 : y >= GUI_HEIGHT ? GUI_HEIGHT - 1 : y;
+  mouse_x = x < 0 ? 0 : x >= SCREEN_WIDTH ? SCREEN_WIDTH - 1 : x;
+  mouse_y = y < 0 ? 0 : y >= SCREEN_HEIGHT ? SCREEN_HEIGHT - 1 : y;
   u32 previous = (mouse_head - 1) & 127, next = (mouse_head + 1) & 127;
   if (!changed && !wheel && mouse_head != mouse_tail &&
       !mouse_events[previous].changed && !mouse_events[previous].wheel &&
@@ -125,8 +126,8 @@ void mouse_poll(void) {
     u8 buttons =
         (r.a & 0x20 ? 1 : 0) | (r.a & 0x10 ? 2 : 0) | (r.a & 8 ? 4 : 0);
     mouse_packets++;
-    mouse_emit((i32)((r.b & 65535) * (GUI_WIDTH - 1) / 65535),
-               (i32)((r.c & 65535) * (GUI_HEIGHT - 1) / 65535), buttons,
+    mouse_emit((i32)((r.b & 65535) * (SCREEN_WIDTH - 1) / 65535),
+               (i32)((r.c & 65535) * (SCREEN_HEIGHT - 1) / 65535), buttons,
                (i8)r.d);
   }
   if (flags & 0x200)
@@ -319,8 +320,8 @@ void ps2_byte(int aux, u8 value) {
 static u32 boot_framebuffer(void) {
   const u8* vbe = (const u8*)0x5800;
   u32 fb = *(const u32*)(vbe + 40);
-  if (!fb || *(const u16*)(vbe + 18) != GUI_WIDTH ||
-      *(const u16*)(vbe + 20) != GUI_HEIGHT || vbe[25] != 32 || vbe[27] != 6 ||
+  if (!fb || *(const u16*)(vbe + 18) != SCREEN_WIDTH ||
+      *(const u16*)(vbe + 20) != SCREEN_HEIGHT || vbe[25] != 32 || vbe[27] != 6 ||
       vbe[31] != 8 || vbe[32] != 16 || vbe[33] != 8 || vbe[34] != 8 ||
       vbe[35] != 8 || vbe[36] != 0)
     panic("VBE direct-color mode unavailable", fb, vbe[25]);
@@ -366,9 +367,7 @@ void kmain(void) {
 #endif
   disk_init();
   storage_init();
-  settings_init();
   rtc_init();
-  gui_init();
   sti();
   u32 begin = ticks;
   while (ticks - begin < 3)
@@ -376,19 +375,17 @@ void kmain(void) {
   pr_debug("TIMER IRQ0 delivered in protected mode\n");
 #ifdef SELFTEST
   shell_tests();
-  gui_tests();
 #endif
 #ifdef SINO_SHELL_BRIDGE
   shell_bridge_init();
 #endif
-  pr_debug("SINO desktop ready\n");
-  /* 【简化实现：系统推进】桌面、网络和用户调度串行推进，循环尾统一 halt；
+  pr_debug("SINO CLI ready\n");
+  /* 【简化实现：系统推进】RTC、ShellBridge、网络和用户调度串行推进，循环尾统一 halt；
    * 就绪用户线程也需等主循环再次进入 process_step，延迟受其他工作影响。
    * 替换方向：将调度/空闲决策独立出来，有可运行工作时继续调度，只有无工作
-   * 时休眠；桌面与后台处理需配套任务化，不能只删除 halt 造成忙等。 */
+   * 时休眠；后台处理需配套任务化，不能只删除 halt 造成忙等。 */
   for (;;) {
     rtc_poll();
-    gui_step();
 #ifdef SINO_SHELL_BRIDGE
     shell_bridge_poll();
 #endif

@@ -4,7 +4,6 @@
 #include "mm/uaccess.h"
 #include "vfs.h"
 #include "storage.h"
-#include "gui.h"
 #include "lib/kstring.h"
 #include "mm/page.h"
 
@@ -157,7 +156,6 @@ static int open_at(Handle* owner, u32 h, const char* path, const OpenRequest* r)
     handle_close(owner, (u32)result); return S_LIMIT;
   }
   bind(f, n);
-  if (r->flags & (OPEN_CREATE | OPEN_TRUNCATE)) gui_files_changed();
   return result;
 }
 static int stat(Handle* owner, u32 h, FileStat* out) {
@@ -207,7 +205,7 @@ static int remove_at(Handle* owner, u32 h, const char* path, u32 directory) {
   if (nodes[n].dir != (int)directory) return S_INVALID;
   vfs_path(n, absolute);
   if (vfs_remove(absolute, (int)directory) < 0) return S_BUSY;
-  gui_files_changed(); return 0;
+  return 0;
 }
 static int rename_at(Handle* owner, u32 sh, const char* source, u32 dh, const char* dest) {
   FileObject* s = get(owner, sh, OBJ_DIRECTORY, FS_LOOKUP | FS_REMOVE);
@@ -226,7 +224,7 @@ static int rename_at(Handle* owner, u32 sh, const char* source, u32 dh, const ch
   if (status) return status;
   vfs_path(n, from);
   if (vfs_move(from, to) < 0) return S_INVALID;
-  gui_files_changed(); return 0;
+  return 0;
 }
 static int stage(Handle* owner, u32 h, const char* path, u32 revision) {
   u32 need = FS_LOOKUP | FS_CREATE | FS_WRITE;
@@ -262,7 +260,6 @@ static int finish(Handle* owner, u32 h, int commit, CommitInfo* out) {
                           f->expected_revision, f->pages, f->size, &n);
     if (!status) {
       bind(f, n); f->published = 1; f->revision = vfs_revision[n];
-      gui_files_changed();
     }
   }
   if (!status && !f->published) status = S_AGAIN;
@@ -318,7 +315,6 @@ int filesys_call(Handle* owner, u32 caps, u32 call, u32 a, u32 b, u32 c,
       if (f) {
         int result = read ? vfs_read_at(f->node, io.offset, (u8*)io.buffer, io.bytes)
                           : vfs_write_at(f->node, io.offset, (const u8*)io.buffer, io.bytes);
-        if (!read && result > 0) gui_files_changed();
         return result;
       }
       f = get(owner, a, OBJ_STAGING, read ? FS_READ : FS_WRITE);

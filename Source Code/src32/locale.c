@@ -1,5 +1,5 @@
 #include "locale.h"
-extern int settings_language;
+int settings_language;
 #include "locale_data.inc"
 const char* locale_text_for(int language, TextKey key) {
   if ((u32)key >= TEXT_KEY_COUNT)

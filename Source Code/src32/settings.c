@@ -9,7 +9,7 @@
 #include "mm/page.h"
 #define INK 0x253044u
 #define BLUE 0x3265a8u
-int settings_language, settings_pending;
+int settings_pending;
 static int tab = 1, rw = 1024, rh = 768, rs = 100, rc = 100, rl;
 static int ow, oh, os, oc, ol;
 static int slider_drag;

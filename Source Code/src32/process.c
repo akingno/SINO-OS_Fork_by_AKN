@@ -5,15 +5,14 @@
 #include "mm/uaccess.h"
 #include "object.h"
 #include "vfs.h"
-#include "gui.h"
 #include "storage.h"
 #include "net.h"
-#include "settings.h"
 #include "rtc.h"
 #include "filesys.h"
 #include "pipe.h"
 #include "terminal.h"
 #include "ui_queue.h"
+#include "locale.h"
 #include "lib/kstring.h"
 #include "mm/page.h"
 #include "panic.h"
@@ -1271,67 +1270,21 @@ static int syscall(Frame* f) {
         return result;
       }
     case SYS_OPEN_PATH:
-      if (!(current->caps & CAP_HOME))
-        return S_DENIED;
-      r = homepath(a, path, 0);
-      if (r)
-        return r;
-      return gui_open_path(path);
-    case SYS_FILE_CLIP: {
-      if (a > 2)
-        return S_INVALID;
-      if (a && !(current->caps & CAP_HOME))
-        return S_DENIED;
-      UACCESS_TRY(uaccess_prepare(user_pd, b, sizeof(FileClipboard), (a == 0) ? USER_WRITE : USER_READ));
-      FileClipboard clip;
-      memset(&clip, 0, sizeof(clip));
-      if (a == 1) {
-        UACCESS_TRY(uaccess_copy_string(user_pd, clip.path, b, sizeof(clip.path)));
-        clip.cut = ((const FileClipboard*)b)->cut;
-        if (clip.cut > 1)
-          return S_INVALID;
-        r = homepath(b, path, clip.cut != 0);
-        if (r)
-          return r;
-        memcpy(clip.path, path, strlen(path) + 1);
-      }
-      r = gui_file_clip((int)a, &clip);
-      if (!r && !a)
-        memcpy((void*)b, &clip, sizeof(clip));
-      return r;
-    }
+      return S_INVALID;
+    case SYS_FILE_CLIP:
+      return S_INVALID;
     case SYS_DROP_ZONES:
-      o = handle_get(current->handles, a, OBJ_WINDOW, 2);
-      if (!o)
-        return S_BADHANDLE;
-      if (!(current->caps & CAP_HOME))
-        return S_DENIED;
-      if (c > DROP_ZONES) return S_INVALID;
-      UACCESS_TRY(uaccess_prepare(user_pd, b, c * sizeof(UiDropZone), USER_READ));
-      return gui_user_drop_zones(o->value, (const UiDropZone*)b, c);
+      return S_INVALID;
     case SYS_WINDOW_SIZE:
-      o = handle_get(current->handles, a, OBJ_WINDOW, 1);
-      if (!o)
-        return S_BADHANDLE;
-      if (c < sizeof(WindowSize)) return S_INVALID;
-      UACCESS_TRY(uaccess_prepare(user_pd, b, sizeof(WindowSize), USER_WRITE));
-      return gui_user_size(o->value, (WindowSize*)b);
+      return S_BADHANDLE;
     case SYS_UI_LANGUAGE:
       return settings_language;
     case SYS_WINDOW_TITLE:
-      o = handle_get(current->handles, a, OBJ_WINDOW, 2);
-      if (!o)
-        return S_BADHANDLE;
-      {
-        char title[64];
-        UACCESS_TRY(uaccess_copy_string(user_pd, title, b, sizeof(title)));
-        return gui_user_title(o->value, title);
-      }
+      return S_BADHANDLE;
     case SYS_DUP:
       return handle_duplicate(current->handles, a, b);
     case SYS_WINDOW_POLICY:
-      o = handle_get(current->handles, a, OBJ_WINDOW, 2);
-      return o ? gui_user_policy(o->value, b) : S_BADHANDLE;
+      return S_BADHANDLE;
     case SYS_MOVE:
       r = homepath(a, path, 1);
       if (r)
@@ -1344,17 +1297,12 @@ static int syscall(Frame* f) {
         r = vfs_move(path, dest);
         if (r < 0)
           return r == S_BUSY ? S_BUSY : S_IO;
-        gui_files_changed();
         return 0;
       }
     case SYS_CLIP_GET:
-      if (b > 16384) return S_INVALID;
-      UACCESS_TRY(uaccess_prepare(user_pd, a, b, USER_WRITE));
-      return gui_clip_read((u8*)a, b);
+      return 0;
     case SYS_CLIP_SET:
-      if (b > 16384) return S_INVALID;
-      UACCESS_TRY(uaccess_prepare(user_pd, a, b, USER_READ));
-      return gui_clip_write((const u8*)a, b);
+      return 0;
     case SYS_EXIT:
       current->state = 2;
       current->reason = PROCESS_EXITED;
@@ -1373,40 +1321,10 @@ static int syscall(Frame* f) {
       UACCESS_TRY(uaccess_prepare(user_pd, a, c, USER_READ));
       klog_write_bytes((const void*)a, c);
       return (int)c;
-    case SYS_WINDOW: {
-      char title[64];
-      UACCESS_TRY(uaccess_copy_string(user_pd, title, a, sizeof(title)));
-      if (b < 200 || b > 1000 || c < 120 || c > 714) return S_INVALID;
-      int slot = -1;
-      for (int i = 0; i < HANDLES; i++)
-        if (!current->handles[i].generation) {
-          slot = i;
-          break;
-        }
-      if (slot < 0)
-        return S_LIMIT;
-      int obj = object_new(OBJ_WINDOW, -1);
-      if (obj < 0)
-        return obj;
-      int id = gui_user_open(current->pid, title, (int)b, (int)c);
-      if (id < 0) {
-        objects[obj].refs = 0;
-        return S_LIMIT;
-      }
-      objects[obj].value = id;
-      return handle_open(current->handles, obj, 3);
-    }
+    case SYS_WINDOW:
+      return S_INVALID;
     case SYS_SCENE:
-      o = handle_get(current->handles, a, OBJ_WINDOW, 2);
-      if (!o)
-        return S_BADHANDLE;
-      UACCESS_TRY(uaccess_prepare(user_pd, b, 4, USER_READ));
-      {
-        u32 count = *(const u32*)b;
-        if (count > UI_CANVAS_COMMANDS) return S_INVALID;
-        UACCESS_TRY(uaccess_prepare(user_pd, b, 4 + count * sizeof(UiCommand), USER_READ));
-      }
-      return gui_user_scene(o->value, (const UiScene*)b);
+      return S_BADHANDLE;
     case SYS_EVENT:
       UACCESS_TRY(uaccess_prepare(user_pd, a, sizeof(UiEvent), USER_WRITE));
       return ui_queue_pop(&current->input_queue,(UiEvent*)a);
@@ -1452,19 +1370,16 @@ static int syscall(Frame* f) {
           vfs_remove(path, 0);
         return S_IO;
       }
-      gui_files_changed();
       return 0;
     case SYS_MKDIR:
       r = homepath(a, path, 1);
       if (r)
         return r;
-      gui_files_changed();
       return vfs_create(path, 1, 1) < 0 ? S_IO : 0;
     case SYS_REMOVE:
       r = homepath(a, path, 1);
       if (r)
         return r;
-      gui_files_changed();
       r = vfs_remove(path, (int)b);
       return r < 0 ? (r == S_BUSY ? S_BUSY : S_IO) : 0;
     case SYS_LIST:
