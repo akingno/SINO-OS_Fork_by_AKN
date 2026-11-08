@@ -8,6 +8,10 @@ typedef struct {
 } ShellWords;
 /* Explicit input length rejects embedded NUL. Quotes concatenate, and an empty
  * quoted word still has an argv slot. Failed parses never execute a prefix. */
+/* 【简化实现：Shell 命令组合】这里只解析单命令 argv，主动拒绝未引用的管道
+ * 等运算符；内核已有管道并不意味着当前 Shell 能执行 a | b | c。
+ * 替换方向：在 argv 解析之上增加保留引用语义的分词与管线结构，配合启动代理
+ * 绑定各段标准流、先启动后等待，并统一处理取消/失败回滚；不能仅取消字符拒绝。 */
 static int shell_parse(const char *input, u32 length, ShellWords *words) {
   words->argc = words->used = 0;
   if (length >= SHELL_LINE)

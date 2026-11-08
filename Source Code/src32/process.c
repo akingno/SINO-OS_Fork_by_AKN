@@ -17,6 +17,9 @@
 #include "lib/kstring.h"
 #include "mm/page.h"
 #include "panic.h"
+/* 【简化实现：调度容量】进程和线程使用固定数组，当前上限为 8 x 4。
+ * 替换方向：将执行实体的存储与就绪/等待队列分开，再按资源预算动态分配；
+ * 不应只放大常量，因为扫描、句柄预算及相关 ABI/测试都依赖现有限制。 */
 #define NP 8
 #define NT 4
 #define USER_STACK_BYTES 16384u
@@ -169,6 +172,10 @@ static void free_user_pages(Process* p, u32 start, u32 end) {
       page_free(page);
   }
 }
+/* 【简化实现：虚拟区间】用 32 项数组保存匿名预留区，线性避开已映射页和
+ * 尚未落地的预留区，总量限制 16 MiB；物理页由缺页路径按需补齐。
+ * 替换方向：统一管理映像、栈和匿名区的虚拟区间，记录权限与后备类型，
+ * 支持查找、合并和拆分；保留地址预留与物理页分配的分离。 */
 static int anon_map(Process* p, u32 bytes) {
   if (!bytes || bytes > 0xffffffffu - 4095u)
     return S_INVALID;
@@ -203,6 +210,9 @@ static int anon_map(Process* p, u32 bytes) {
     start = next;
   }
 }
+/* 【简化实现：解除映射】只接受区域起点并释放整区，不能解除中间或部分范围。
+ * 替换方向：在统一虚拟区间管理中拆分/缩短区域，再回收实际存在的页；
+ * 同时处理等待中的用户缓冲区失效及页表、TLB 的生命周期。 */
 static int anon_unmap(Process* p, u32 base) {
   if (base < USER_DYNAMIC_BASE || base >= USER_DYNAMIC_END || (base & 4095u))
     return S_INVALID;
@@ -336,6 +346,10 @@ static int thread_wait_expired(const Thread* t, u32 now) {
   return t->wait_timed && (i32)(now - t->wait_deadline) >= 0;
 }
 /* Readiness allows a retry. The wait record survives until the call finishes. */
+/* 【简化实现：唤醒】每次扫描全部进程/线程，将匹配对象与操作的等待者全部
+ * 置为可重试；retry_wait 再确认条件，因此唤醒不代表已获得数据或空间。
+ * 替换方向：对象等待队列配合统一登记/撤销机制，保留重检和原始截止时间；
+ * 进入可抢占内核后，还需保证检查条件与登记等待之间不会丢失唤醒。 */
 static void thread_unblock(u32 object, u32 op) {
   u32 now = ticks;
   for (int i = 0; i < NP; i++) {
@@ -684,6 +698,10 @@ int process_run_start(Handle* owner, const RunSpec* spec) {
 int process_run_start_directory(Handle* owner, const RunSpec* spec, u32 directory, u32 rights) {
   return process_run_start_bound(owner, spec, directory, rights, 0);
 }
+/* 【简化实现：运行记录与捕获耦合】即使三个标准流均绑定管道，仍占 RUN_COUNT
+ * （当前 2）额度并分配三页有限输入/捕获缓冲，限制了多阶段管线。
+ * 替换方向：将进程启动、完成观察与有限捕获分开，仅为使用捕获的角色分配
+ * 缓冲；管线成员先全部启动，再统一等待，启动失败时关闭端点并回收已启动成员。 */
 int process_run_start_bound(Handle* owner, const RunSpec* spec, u32 directory, u32 rights,
                             const u32* streams) {
   if (spec->size != sizeof(RunSpec) || spec->version != 1 || spec->flags ||
@@ -1537,6 +1555,9 @@ static int syscall(Frame* f) {
         return S_BADHANDLE;
       o->value = !!b;
       return 0;
+    /* 【简化实现：事件等待】只读取事件值，未置位便返回 S_AGAIN，调用方需重试。
+     * 替换方向：接入公共线程等待机制，由 Set/关闭/超时唤醒，明确手动或自动
+     * 复位语义；不能仅将这里改成循环，否则会阻塞整个不可抢占内核。 */
     case SYS_EVENT_WAIT:
       o = handle_get(current->handles, a, OBJ_EVENT, 1);
       if (!o)
@@ -1546,6 +1567,10 @@ static int syscall(Frame* f) {
       return S_INVALID;
   }
 }
+/* 【简化实现：抢占边界】仅处理 Ring 3 的切出，用户态到期可被抢占，内核态
+ * 系统调用必须执行完或显式挂起后才调度；长磁盘操作仍会拖延其他进程。
+ * 替换方向：先限制内核长路径并引入可阻塞 I/O；若进一步支持内核抢占，
+ * 必须配套线程内核上下文、临界区和共享状态同步，不能直接放开中断切换。 */
 int process_interrupt(Frame* f) {
   if ((f->cs & 3) != 3)
     return 0;
@@ -1594,6 +1619,11 @@ int process_interrupt(Frame* f) {
     leave(f);
   return 0;
 }
+/* 【简化实现：调度器】由桌面主循环调用，扫描固定槽位处理退出/超时，按线程
+ * 轮转执行一次，时间片为 2 tick（当前约 20 ms），之后返回主循环。
+ * 公平单位是线程槽而非进程；桌面和内核长任务会影响用户线程的实际延迟。
+ * 替换方向：独立的就绪队列、定时等待队列与空闲路径，明确公平策略，
+ * 让桌面作为被调度的工作推进；优先完成生命周期与等待语义，再增加优先级。 */
 void process_step(void) {
   for (int i = 0; i < NP; i++) {
     Process* p = &processes[i];

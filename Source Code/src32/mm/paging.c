@@ -40,6 +40,10 @@ static void identity_table(u32* pd, u32 index, u32* pt, u32 flags) {
   pd[index] = (u32)pt | PAGE_PRESENT | PAGE_WRITE;
 }
 
+/* 【简化实现：启动映射】固定页表暂时恒等映射低端执行区和初始物理页池，
+ * 供开启分页及建立正式页表使用。这种启动过渡有必要，但不应决定长期布局。
+ * 替换方向：完成正式内核映射后撤掉不再需要的启动映射；先迁移启动数据、
+ * 页表及裸物理指针的访问，不能直接删除这里的映射。 */
 void paging_bootstrap(void) {
   memset(TEMP_PD, 0, PAGE_BYTES);
   /* Entry code, kernel BSS, stack and BIOS handoff all fit in the first 4 MiB. */
@@ -59,6 +63,13 @@ void paging_bootstrap(void) {
   pr_debug("\n");
 }
 
+/* 【简化实现：长期恒等映射】将 identity_bytes 范围映射为 supervisor 可写，
+ * 64 MiB 以上过滤非可用页，低端只排除零页；另按 4 MiB 粒度覆盖帧缓冲。
+ * 因此空闲页、用户页的物理后备也有内核别名，并非只映射内核实际占用区；
+ * supervisor 权限仍阻止 Ring 3 访问这些别名，但映射范围和权限过于宽泛。
+ * 替换方向：按内核段设置权限，显式映射栈、堆、页表、启动资源和设备区域；
+ * 用户后备页通过受控临时映射访问，或另行选择有边界的内核直接映射窗口。
+ * 必须先解耦 page_alloc、页表遍历和映像装载中的物理地址/指针，才能收紧。 */
 void paging_kernel_init(u32 identity_bytes, u32 framebuffer) {
   if (identity_bytes < BOOT_IDENTITY_BYTES || identity_bytes > USER_BASE ||
       identity_bytes % TABLE_BYTES)
@@ -112,6 +123,9 @@ static int active(const u32* pd) {
   return (cr3 & PAGE_MASK) == (u32)pd;
 }
 
+/* 【简化实现：页表访问】从 PDE 取出物理地址后直接转成指针解引用，依赖页表
+ * 所在物理页始终恒等映射。替换方向：使用显式物理页映射或专门的页表访问
+ * 窗口；同步覆盖页表创建/销毁以及 CR3 所需的物理地址，避免混用两类地址。 */
 static u32* user_table(const u32* pd, u32 va) {
   if (va < USER_BASE || va >= USER_V2_END)
     return 0;

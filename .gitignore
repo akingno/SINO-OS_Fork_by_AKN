@@ -9,6 +9,9 @@
 # Personal learning notes and local reference material (keep on disk).
 /akn_learning/
 
+# HTML tutorials for learning kernel internals (not development sources).
+/Source Code/tutorials/
+
 # Downloaded/extracted upstream distributions; not development sources.
 /SINO-*-SysBASIC-*-Chinese/
 /SINO-*-SysBASIC-*-English/

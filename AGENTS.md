@@ -14,6 +14,7 @@
 | `Source Code/tests/` | 稳定套件、Ring 3 探针、共享工具；TESTING.md 为 AI 选测入口 |
 | `Source Code/tests/development/` | 当前功能的临时测试；显式登记和收尾，不自动回归 |
 | `Source Code/docs/` | 技术契约文档 |
+| `Source Code/tutorials/` | 学习用 HTML 教程，开发时不修改；已 gitignore |
 | `Source Code/disk32/` | 启动盘内容与字体资源 |
 | `Documentation/` | 项目文档、许可与截图 |
 | `Build Output/` | 构建产物（不提交） |

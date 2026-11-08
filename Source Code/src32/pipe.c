@@ -30,6 +30,9 @@ void pipe_limits(PipeLimits* out) {
   *out = (PipeLimits){sizeof(*out), 1, PIPE_COUNT, PIPE_BYTES, RUN_IO_MAX,
                       STREAM_WAIT_MAX, 31, 0};
 }
+/* 【简化实现：管道内存】元数据和缓冲各占一整页，即使容量很小也分配两页；
+ * 全局数量和容量采用固定配额。替换方向：元数据改用内核小对象分配器，
+ * 缓冲按需分配；配额仍需保留，是否扩容应与对象、句柄和进程预算一起决定。 */
 int pipe_create(Handle* owner, u32 capacity, PipePair* out) {
   if (!capacity || capacity > PIPE_BYTES) return S_INVALID;
   if (pipe_count >= PIPE_COUNT) return S_LIMIT;
@@ -65,6 +68,10 @@ int pipe_ready(Object* o) {
   return (p->used || !p->writers ? STREAM_READABLE : 0) |
          (!p->writers ? STREAM_HANGUP | (!p->used ? STREAM_EOF : 0) : 0);
 }
+/* 【简化实现：传输并发】按当前可用空间搬运前缀，逐字节处理环形回绕；
+ * 正确性依赖单 CPU、内核不可抢占，不提供跨调用的多写者整段写入原子性。
+ * 替换方向：可将回绕拆成两段复制；引入内核抢占/SMP 时，必须为状态更新与
+ * 等待登记/唤醒建立同步协议。如需小块原子写入，再定义大小界限及背压规则。 */
 int pipe_transfer(Object* o, int reading, void* buffer, u32 size) {
   Pipe* p = (Pipe*)o->value;
   if (size > RUN_IO_MAX) return S_INVALID;

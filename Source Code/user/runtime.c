@@ -2,6 +2,10 @@
 /* GCC's MinGW C entry hook: no host CRT or C++ constructors in native ABI 1. */
 void __main(void) {
 }
+/* 【简化实现：用户态堆】每次 malloc 都直接预留一个匿名区域，首次访问才分配
+ * 物理页；小对象也按页占空间，并受每进程 32 个区域、合计 16 MiB 的限制。
+ * 替换方向：以匿名映射作为堆的底层来源，在区域内按对齐的小块分配、复用和
+ * 合并；大块可单独映射。届时 free 也要先识别所属块，不能继续直接 AnonUnmap。 */
 void *malloc(u32 bytes) {
   int base = AnonMap(bytes);
   return base > 0 ? (void*)(u32)base : 0;

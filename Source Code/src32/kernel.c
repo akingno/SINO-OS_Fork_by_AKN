@@ -382,6 +382,10 @@ void kmain(void) {
   shell_bridge_init();
 #endif
   pr_debug("SINO desktop ready\n");
+  /* 【简化实现：系统推进】桌面、网络和用户调度串行推进，循环尾统一 halt；
+   * 就绪用户线程也需等主循环再次进入 process_step，延迟受其他工作影响。
+   * 替换方向：将调度/空闲决策独立出来，有可运行工作时继续调度，只有无工作
+   * 时休眠；桌面与后台处理需配套任务化，不能只删除 halt 造成忙等。 */
   for (;;) {
     rtc_poll();
     gui_step();

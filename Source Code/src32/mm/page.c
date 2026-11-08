@@ -46,6 +46,11 @@ static void publish_pages(u32 start, u32 end) {
     }
 }
 
+/* 【简化实现：物理内存布局】按 E820 建立逐页状态表，但将地址截在 USER_BASE
+ * （1 GiB），并把 52 MiB 以下整体留给启动资源；usable_memory 记录最高可用
+ * 区域的结束地址，不是可分配字节总和。此限制来自当前恒等映射布局。
+ * 替换方向：按实际内核/启动资源逐段登记保留区，分离物理地址与内核虚拟地址，
+ * 再扩展可管理物理范围；不能只放大上限，否则会与用户虚拟地址窗口冲突。 */
 void page_init(void) {
   u32 count = *(volatile u16*)0x4f00;
   const E820Entry* map = (const E820Entry*)0x5000;
@@ -105,6 +110,11 @@ void page_publish_extended(void) {
   pr_debug("\n");
 }
 
+/* 【简化实现：页分配与地址耦合】每次从固定起点线性找连续空闲页，最多 64 页，
+ * 返回的指针直接等于物理地址，清零和所有调用方都依赖恒等映射。
+ * 替换方向：按实际需求采用空闲页链表/分级位图，连续页可用伙伴分配器；
+ * 物理页分配返回物理地址或页描述符，内核通过显式映射获得可访问指针。
+ * 分配器选型不能代替映射改造；取消恒等映射时，释放接口也必须同步调整。 */
 void* page_alloc_run(u32 count) {
   if (!count || count > MAX_RUN || count > free_pages)
     return 0;
