@@ -25,7 +25,7 @@
 
 ## 当前测试约定
 
-日常验收范围：启动、严格进程、文件与持久化、流与会话、Shell。GUI 整体退出日常验收，包括桌面、应用、终端窗口与渲染、菜单、快捷键、QMP 键鼠和截图检查。默认不追加 GUI 手测，用户单独要求时再提供操作与预期结果。
+日常验收范围：启动、严格进程、文件与持久化、流与会话、Shell。GUI 及其测试、截图辅助与旧转发入口已删除；文字控制台专项允许仅针对其 PS/2 输入发送 QMP 按键并读取 VGA 文字内存，不再提供 GUI 验收。键盘扫描码、终端和编辑器的宿主逻辑测试保留。
 
 每个开发步骤只自动运行与改动直接相关的命令和接口测试，合计最多 50 项（含选跑的旧用例）。每个专项的自动验收可执行最多 20 个相关用例。运行前确认用例数，优先通过摘要脚本查看结果，只在失败时查看对应日志片段。
 
@@ -33,16 +33,15 @@
 
 - 运行前说明模块、命令、选择原因和用例数；统一入口用同一选择加 `-List` 预览。重复/重叠选择自动去重；漏跑、重跑或额外 ID 不能通过。
 - 通过后停止。仅因新的修改、失败或明确的未验证影响扩大或重跑；50/20 是上限，不是目标。测试器检查仅在测试框架变化时运行，纯文档/目录说明修改不启动系统回归。
-- `-Full` 仅供用户显式全量验收，AI 不以此绕过本步限制。压力、GUI 和全量 core 不自动追加。同一轮共用构建与摘要；源码/测试身份变化后遵守重建检查，不强行复用旧镜像。
+- `-Full` 仅供用户显式全量验收，AI 不以此绕过本步限制。压力和全量 core 不自动追加。同一轮共用构建与摘要；源码/测试身份变化后遵守重建检查，不强行复用旧镜像。
 
-历史 Stage 2/3/4 入口已移除，不保留转发。稳定业务用例在 tests/host/suites/ 或对应 GUI 文件，不互相调用；固定 ID 在 tests/support/regression-cases.json，组合仅放在 regression-suites.js / regression-catalog.js。新增或修改入口时同步更新模块指南；全部数量和其他专项见 [当前测试目录](Source Code/docs/test-catalog.md)。
+历史阶段测试和 GUI 入口已移除，不保留转发。稳定业务用例在 tests/host/suites/，不互相调用；固定 ID 在 tests/support/regression-cases.json，组合仅放在 regression-suites.js / regression-catalog.js。统一入口保留 24 个功能组 / 270 个固定 ID（core 23 组 / 261 项，stress 1 组 / 9 项）。新增或修改入口时同步更新模块指南；全部数量和其他专项见 [当前测试目录](Source Code/docs/test-catalog.md)。
 
 常用测试选择（仓库根目录，PowerShell）：
 
 ```powershell
 .\regression.ps1 -Suite persistence   # 独立持久化检查，4 项
 .\regression.ps1 -Suite core -Full    # 非 GUI 基础回归，仅显式手动全量运行
-.\regression.ps1 -Suite terminal-gui  # GUI，仅在明确要求时运行
 .\regression.ps1 -BuildOnly           # 仅准备 ShellBridge 镜像及符号，不执行测试
 ```
 
@@ -56,7 +55,7 @@
 | 运行系统 | `.\启动开发版.cmd` | 重新构建并打开可见 QEMU；先关闭旧开发窗口 |
 | 只编译 | `powershell -NoProfile -ExecutionPolicy Bypass -File .\dev.ps1 -BuildOnly` | 生成 ISO，不启动 VM |
 | 无界面启动检查 | `node 'Source Code/tests/host/test-boot.js' 'Build Output/dev/runs/<本轮构建编号>'` | 使用 BuildOnly 目录，核对 ISO 和启动日志 |
-| 编译并验证 Ring 3 | `powershell -NoProfile -ExecutionPolicy Bypass -File .\dev.ps1 -VerifyOnly` | 无窗口启动，通过键盘运行 probe 并保存截图 |
+| 编译并验证 Ring 3 | `powershell -NoProfile -ExecutionPolicy Bypass -File .\dev.ps1 -VerifyOnly` | 转入 process 无界面专项，8 项，使用私有盘 |
 | 执行客户机命令 | `powershell -NoProfile -ExecutionPolicy Bypass -File .\test.ps1 -Command 'echo hello'` | 在私有无窗口 VM 中执行 |
 | Shell 通道自测 | `powershell -NoProfile -ExecutionPolicy Bypass -File .\test.ps1 -SelfTest -Full` | 验证文本、文件、管道、状态及协议 |
 | Shell 命令检查 | `powershell -NoProfile -ExecutionPolicy Bypass -File .\test.ps1 -SelfTest -Suite commands -Full` | 112 项命令与语法检查 |
@@ -73,18 +72,21 @@ $env:SINO_TOOLCHAIN = Split-Path (Get-Command gcc.exe).Source
 $env:SINO_QEMU_DIR = 'C:\Program Files\qemu'
 ```
 
-含 GUI 的完整回归（14 组，仅按需运行）：`node 'Source Code/verify-system.js'`，按 `docs/testing.md` 准备镜像。
+`node 'Source Code/verify-system.js'` 仅保留 1 个宿主键盘逻辑检查，不需要 ISO；系统功能验收使用 regression.ps1。注册表变更运行 tests/host/test-regression-plan.js（12 项），报告选择变更运行 tests/host/test-report-summary.js --group selections（4 项）；路径相对 Source Code/。
 
-发行启动文件在 `Source Code/release/`：将 `SINO.iso`、`Start SINO.cmd`、`launch.ps1` 放在同一目录，从 ISO 启动，个人文件写入 `Data/data.img`。旧安装向导、装包与预装硬盘发布流程已删除。启动器 GUI 专项入口为 `Source Code/tests/host/test-launcher.ps1`（按需运行，可用 `SINO_ISO` 指定镜像）。
+发行启动文件在 `Source Code/release/`：将 `SINO.iso`、`Start SINO.cmd`、`launch.ps1` 放在同一目录，从 ISO 启动，个人文件写入 `Data/data.img`。旧安装向导、装包、预装硬盘发布流程及 GUI 启动器测试已删除。
 
 Shell 宿主测试参数：`-ExpectedExitCode 1` 断言预期失败，`-TimeoutSeconds 5` 设置超时。报告在 `Build Output/dev/runs/shell-.../`。通道仅在 `-ShellBridge` 构建中启用。
 
 ## 系统地图（路径相对 Source Code/）
 
-32 位 x86 BIOS，单体内核。GUI 移除已完成计划前三步：桌面、窗口管理、图形绘制、设置与内置 Ring 0 应用已移除；窗口相关系统调用保留编号并返回错误。GUI Ring 3 终端前端和文件管理器，以及 UIASSET.BIN、PINYIN.TXT、CJK_OFL.TXT 已删除且不再构建或打包。交互通过 ShellBridge，gsh、gcmd、tview、writer 保留；brokerqa 是无界面 Shell / 会话探针，继续构建并打包到 ShellBridge 镜像。旧 GUI 测试入口待第四步清理，当前不能执行 GUI 验收。普通镜像仍可做无界面启动检查，启动日志为 `SINO CLI ready`。主循环依次推进 RTC、ShellBridge（启用时）、网络、用户线程；语言状态由 locale.c 持有。启动镜像仍固定 2.88 MB，删除资源减少文件占用，不改变镜像总容量。
+32 位 x86 BIOS，单体内核。GUI 移除已完成计划四步：桌面、窗口管理、图形绘制、设置与内置 Ring 0 应用已移除；窗口相关系统调用保留编号并返回错误。GUI Ring 3 终端前端和文件管理器，以及 UIASSET.BIN、PINYIN.TXT、CJK_OFL.TXT 已删除且不再构建或打包。普通镜像通过 VGA 80×25 文字控制台自动进入 Ring 3 gsh；ShellBridge 镜像继续提供独立测试通道，gcmd、tview、writer 保留；brokerqa 是无界面 Shell / 会话探针，继续构建并打包到 ShellBridge 镜像。GUI 测试、注册项和旧转发入口已删除。普通镜像自动启动 conhost.snx 和 gsh.snx，日志依次确认 `SINO CLI ready` 与 `CONSOLE SHELL ready`；US 键盘直接输入，无中文输入法或拼音字典。文字屏幕仅显示 ASCII，UTF-8 文件数据保留。主循环依次推进 RTC、ShellBridge（启用时）、网络、用户线程；语言状态由 locale.c 持有。SYS_CONSOLE=0x150 仅授予内核启动的 conhost；普通或严格启动的相同程序也不能取得设备权限。
+
+启动镜像仍固定 2.88 MB，删除资源减少文件占用，不改变镜像总容量。
 
 | 任务 | 起读文件 / 符号 | 对应验证入口 |
 | --- | --- | --- |
+| 开机文字 Shell | user/console_host.c、src32/console.c、process.c:SYS_CONSOLE、loader.asm | `node 'Source Code/tests/host/test-console.js' <普通 BuildOnly 目录>`；6 项；契约 docs/text-console.md |
 | 构建、引导 | build32.ps1、build-image32.js、src32/loader.asm、src32/kernel.c:kmain | `tests/host/test-boot.js <BuildOnly 构建目录>` |
 | FAT12 启动卷 | src32/fs/boot_fat12.c:fs_init / fs_read / fs_read_at、src32/boot-ramdisk.h | 普通镜像无窗口启动；ShellBridge 验证 `/boot` 读取 |
 | 物理页分配、启动页表 | src32/mm/page.c:page_init / page_alloc_run、src32/mm/paging.c:paging_bootstrap / paging_kernel_init | 普通镜像无窗口启动，核对启动日志 |
@@ -94,7 +96,7 @@ Shell 宿主测试参数：`-ExpectedExitCode 1` 断言预期失败，`-TimeoutS
 | 用户缓冲区校验 | src32/mm/uaccess.c、src32/process.c | ShellBridge 中 fstest.snx / termtest.snx 的 uaccess 系列 |
 | 匿名页按需分配 | src32/process.c:anon_map / process_anon_page / process_interrupt | ShellBridge 中 anon-lazy / anon-oom / anon-fault |
 | 高页、SNX v2 与匿名内存 | src32/mm/page.c、src32/mm/paging.c、user/linker.ld | `tests/host/test-memory.js images <ShellBridge 构建目录>` 或 `anonymous <同一构建目录>`，不依赖历史镜像 |
-| 调度、故障回收 | src32/process.c:process_step / release、src32/entry.asm | `regression.ps1 -Suite process`；tests/host/test-usermode.js 含 GUI |
+| 调度、故障回收 | src32/process.c:process_step / release、src32/entry.asm | `regression.ps1 -Suite process`；8 项 |
 | 系统调用与权限 | src32/api.h → src32/process.c:syscall → src32/object.c；同步 user/sdk.h | `regression.ps1 -Suite policy`；契约 docs/os-interface.md |
 | 完成记录 | src32/process.c:release / SYS_SPAWN_TRACKED / SYS_PROCESS_RESULT | `regression.ps1 -Suite completion`；契约 docs/os-interface.md |
 | 进程完成阻塞等待 | src32/process.c:release / user_completion_result / retry_wait；tests/guest/completion_tests.c | `tests/host/test-completion-waits.js <ShellBridge 构建目录>`（8 项）；契约 docs/os-interface.md |
@@ -105,22 +107,18 @@ Shell 宿主测试参数：`-ExpectedExitCode 1` 断言预期失败，`-TimeoutS
 | 文本会话后端 | src32/terminal.c/.h、process.c:SYS_TERMINAL；tests/guest/terminal_tests.c | `regression.ps1 -Suite terminal`；契约 docs/terminal-sessions.md |
 | 终端阻塞读取 | src32/terminal.c:wake_readers、process.c:SYS_TERMINAL / retry_wait；tests/guest/terminal_tests.c | `tests/host/test-terminal-waits.js <ShellBridge 构建目录>`（11 项）；契约 docs/terminal-sessions.md |
 | 阻塞等待 SDK 与 Shell | user/stream.h、user/sdk.h、user/interactive.h、user/gsh.c:external | `tests/host/test-shell-waits.js <ShellBridge 构建目录>`（5 项，目录须含同次构建的 kernel-normal.exe）；契约 docs/os-interface.md |
-| 终端前端 | GUI 前端已移除；terminal_model.h 等共享模型保留 | 旧 GUI 测试待清理，不执行 |
 | 交互启动代理 | src32/interactive.h、process.c、terminal.c；tests/guest/interactive_tests.c | `regression.ps1 -Suite interactive`；契约 docs/interactive-runs.md |
-| Shell | user/gsh.c、gsh_parse.h、gcmd.c；tests/host/shell-gui.js | regression.ps1；契约 docs/user-shell.md |
-| 只读文件工具 | user/tview.c、file_text.h | 宿主模型；`regression.ps1 -Suite terminal-gui`（GUI 按需）；契约 docs/file-tools.md |
-| 常用命令与欢迎界面 | user/gsh.c、gcmd.c、shell_commands.h、shell_banner.h | `regression.ps1 -Suite terminal-gui`（GUI 按需）；契约 docs/shell-tools.md |
-| 写工作区 | user/write_tool.c、gsh.c；process.c 可信来源 | `regression.ps1 -Suite terminal-gui`（GUI 按需）；契约 docs/workspace-shell.md |
-| 行编辑 | user/gsh.c、line_edit.h、terminal_edit_model.h | 宿主模型；`regression.ps1 -Suite terminal-gui`（GUI 按需）；契约 docs/shell-editing.md |
-| 桌面终端入口 | 已移除；CLI 使用 src32/shell_bridge.c、user/gsh.c | 旧 GUI 测试待清理，不执行 |
-| 打开 / 保存 / 恢复 | GUI 入口已移除；后端 src32/vfs.c → src32/storage.c → src32/disk.c 保留 | 后端按 files / persistence 选测 |
-| 文本、窗口、绘制 | GUI 绘制已移除；src32/keyboard.c 扫描码解码保留 | tests/host/test-keyboard.js；旧 GUI 测试不执行 |
-| 计算器 | user/calculator.c、src32/api.h、src32/process.c | tests/host/test-calculator.js |
-| 时钟与 RTC | user/clock.c、src32/rtc.c、src32/process.c:SYS_TIME | tests/host/test-clock.js |
-| 文件管理器 | GUI 用户程序和内核入口均已移除 | 旧 GUI 测试待清理，不执行 |
-| 网络 | src32/net.h、src32/net.c:net_poll、user/netlib.c | tests/host/test-network.js（仅回环） |
+| Shell | user/gsh.c、gsh_parse.h、gcmd.c | `regression.ps1 -Suite shell-waits`；契约 docs/user-shell.md |
+| 只读文件工具 | user/tview.c、file_text.h | tests/host/test-file-text.c 宿主模型；契约 docs/file-tools.md |
+| 常用命令与欢迎文本 | user/gsh.c、gcmd.c、shell_commands.h、shell_banner.h | shell-commands（112 项，仅显式全量）；契约 docs/shell-tools.md |
+| 写工作区 | user/write_tool.c、gsh.c；process.c 可信来源 | 文件机制按 files 选测；契约 docs/workspace-shell.md；原 GUI 集成覆盖已移除 |
+| 行编辑与文本模型 | user/gsh.c、line_edit.h、terminal_edit_model.h、terminal_model.h | tests/host/test-line-edit.c / test-line-model.c / test-terminal-model.c；契约 docs/shell-editing.md |
+| 保存与恢复 | src32/vfs.c → src32/storage.c → src32/disk.c | files / persistence |
+| 键盘解码 | src32/keyboard.c | tests/host/test-keyboard.js（宿主逻辑） |
+| 时钟与 RTC | src32/rtc.c、src32/process.c:SYS_TIME | `regression.ps1 -Suite rtc-driver` |
+| 网络 | src32/net.h、src32/net.c:net_poll、user/netlib.c | `regression.ps1 -Suite network`（仅回环） |
 | 日志与语言资源 | src32/klog.c/.h、src32/locale.c/.h、resources/locale/ | tests/host/test-src32-refactor.js（43 项） |
-| QEMU 测试基础设施 | tools/vm-test.js、tools/qmp.js、verify-system.js | 按改动选择 |
+| QEMU 测试基础设施 | tools/shell-test.js、tools/qmp.js、tests/support/regression-vm.js | 按改动选择；verify-system.js 仅宿主键盘检查 |
 
 ## 关键边界
 

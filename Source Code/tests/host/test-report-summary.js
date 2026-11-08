@@ -33,10 +33,10 @@ for (const alter of [
 check(!analyze({version:1, result:'FAIL', stage:'build', suites:[], testsExecuted:false}).passed);
 }
 if (group === 'all' || group === 'selections') {
-for (const suite of ['persistence', 'terminal-gui']) check(analyze(fixture(suite)).passed);
-const wrongSelection = fixture('persistence'); wrongSelection.suite = 'terminal-gui';
+for (const suite of ['persistence', 'shell-waits']) check(analyze(fixture(suite)).passed);
+const wrongSelection = fixture('persistence'); wrongSelection.suite = 'shell-waits';
 check(!analyze(wrongSelection).passed);
-const unknownSelection = fixture(); unknownSelection.suite = 'unknown';
+const unknownSelection = fixture(); unknownSelection.suite = 'terminal-gui';
 check(!analyze(unknownSelection).passed);
 }
 if (group === 'all' || group === 'io') {

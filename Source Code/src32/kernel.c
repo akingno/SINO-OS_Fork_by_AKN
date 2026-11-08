@@ -11,6 +11,7 @@
 #include "keyboard.h"
 #include "fs/boot_fat12.h"
 #include "panic.h"
+#include "console.h"
 
 #define SCREEN_WIDTH  1024
 #define SCREEN_HEIGHT 768
@@ -317,16 +318,6 @@ void ps2_byte(int aux, u8 value) {
     __asm__ volatile("nop");
 }
 
-static u32 boot_framebuffer(void) {
-  const u8* vbe = (const u8*)0x5800;
-  u32 fb = *(const u32*)(vbe + 40);
-  if (!fb || *(const u16*)(vbe + 18) != SCREEN_WIDTH ||
-      *(const u16*)(vbe + 20) != SCREEN_HEIGHT || vbe[25] != 32 || vbe[27] != 6 ||
-      vbe[31] != 8 || vbe[32] != 16 || vbe[33] != 8 || vbe[34] != 8 ||
-      vbe[35] != 8 || vbe[36] != 0)
-    panic("VBE direct-color mode unavailable", fb, vbe[25]);
-  return fb;
-}
 void kernel_tests(void) {
   page_allocator_test();
   __asm__ volatile("int3");
@@ -353,7 +344,8 @@ void kmain(void) {
   u32 identity_bytes = (usable_memory + 0x3fffffu) & ~0x3fffffu;
   if (identity_bytes < BOOT_IDENTITY_BYTES)
     identity_bytes = BOOT_IDENTITY_BYTES;
-  paging_kernel_init(identity_bytes, boot_framebuffer());
+  paging_kernel_init(identity_bytes, 0);
+  con_init();
   page_publish_extended();
   if (!fs_init())
     panic("FAT12 mount failed", 0, 0);
@@ -378,6 +370,9 @@ void kmain(void) {
 #endif
 #ifdef SINO_SHELL_BRIDGE
   shell_bridge_init();
+#else
+  if (process_launch_console() < 0)
+    panic("Console host launch failed", 0, 0);
 #endif
   pr_debug("SINO CLI ready\n");
   /* 【简化实现：系统推进】RTC、ShellBridge、网络和用户调度串行推进，循环尾统一 halt；

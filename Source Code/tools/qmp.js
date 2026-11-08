@@ -10,7 +10,6 @@ class QMP {
   hmp(command){return this.call('human-monitor-command',{'command-line':command});}
   async move(x,y){await this.call('input-send-event',{events:[{type:'abs',data:{axis:'x',value:Math.round(x*32767/1023)}},{type:'abs',data:{axis:'y',value:Math.round(y*32767/767)}}]});}
   async click(x,y,button='left'){await this.move(x,y);await this.call('input-send-event',{events:[{type:'btn',data:{button,down:true}}]});await this.call('input-send-event',{events:[{type:'btn',data:{button,down:false}}]});}
-  async key(qcode){await this.call('send-key',{keys:[{type:'qcode',data:qcode}],'hold-time':25});}
   close(){if(this.socket)this.socket.destroy();for(const item of this.pending.values()){clearTimeout(item.timer);item.reject(Error('QMP closed'));}this.pending.clear();}
 }
 module.exports={QMP};

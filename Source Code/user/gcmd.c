@@ -109,9 +109,7 @@ int main(void) {
   if (streq(command, "about") || streq(command, "credits"))
     return put("SINO 0.10 + SINO user Shell\nProject-specific C/assembly; not "
                "a FreeDOS or Linux kernel fork.\nTools: NASM, GCC/Binutils, "
-               "Node.js, QEMU; firmware: SeaBIOS/VGA BIOS.\nFonts: Jarrah, "
-               "Kurrajong, Mallee and GNU Unifont (SIL OFL 1.1).\nPinyin "
-               "readings: mozillazg/pinyin-data (MIT).\nReferences: Intel "
+               "Node.js, QEMU; firmware: SeaBIOS/VGA BIOS.\nReferences: Intel "
                "architecture manuals and QEMU documentation.\n") < 0;
   if (streq(command, "args")) {
     char n[12];

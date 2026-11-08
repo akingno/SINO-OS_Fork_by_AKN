@@ -1,6 +1,11 @@
 param([switch]$BuildOnly,[switch]$VerifyOnly)
 $ErrorActionPreference = 'Stop'
 if ($BuildOnly -and $VerifyOnly) { throw 'Choose either BuildOnly or VerifyOnly.' }
+if ($VerifyOnly) {
+    # The process suite verifies Ring 3 without a GUI frontend or keyboard input.
+    & (Join-Path $PSScriptRoot 'regression.ps1') -Suite process
+    exit $LASTEXITCODE
+}
 $devRoot = Join-Path $PSScriptRoot 'Build Output\dev'
 New-Item -ItemType Directory -Path $devRoot -Force | Out-Null
 $buildLock = $null
@@ -19,8 +24,6 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Build failed. No VM was started.' }
     if ($BuildOnly) {
         & node $helper record $runRoot
-    } elseif ($VerifyOnly) {
-        & node $helper run $runRoot --verify-only
     } else {
         & node $helper run $runRoot
     }

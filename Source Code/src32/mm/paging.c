@@ -76,8 +76,8 @@ void paging_kernel_init(u32 identity_bytes, u32 framebuffer) {
     panic("Invalid kernel identity span", identity_bytes, 0);
   u32 identity_count = identity_bytes / TABLE_BYTES;
   u32 vbe = framebuffer / TABLE_BYTES;
-  if (vbe < identity_count || vbe > TABLE_ENTRIES - VBE_TABLES ||
-      (vbe < USER_END_PDE && vbe + VBE_TABLES > USER_FIRST_PDE))
+  if (framebuffer && (vbe < identity_count || vbe > TABLE_ENTRIES - VBE_TABLES ||
+      (vbe < USER_END_PDE && vbe + VBE_TABLES > USER_FIRST_PDE)))
     panic("Invalid VBE framebuffer range", framebuffer, 0);
 
   u32* pd = page_alloc();
@@ -93,7 +93,7 @@ void paging_kernel_init(u32 identity_bytes, u32 framebuffer) {
         if (!page_boot_usable(i * TABLE_BYTES + slot * PAGE_BYTES))
           pt[slot] = 0;
   }
-  for (u32 i = 0; i < VBE_TABLES; i++) {
+  for (u32 i = 0; framebuffer && i < VBE_TABLES; i++) {
     u32* pt = page_alloc();
     if (!pt)
       panic("No memory for VBE page table", vbe + i, free_pages);
@@ -110,9 +110,11 @@ void paging_kernel_init(u32 identity_bytes, u32 framebuffer) {
   pr_debug(" CR3=");
   pr_debug_hex((u32)pd);
   pr_debug(", null page unmapped\n");
+  if (framebuffer) {
   pr_debug("VBE framebuffer mapped: ");
   pr_debug_hex(framebuffer);
   pr_debug(" 1024x768x32\n");
+  } else pr_debug("VGA text console: 80x25\n");
 }
 
 void paging_activate_kernel(void) { paging_activate(kernel_pd); }

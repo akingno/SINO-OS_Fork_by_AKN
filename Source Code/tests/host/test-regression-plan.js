@@ -18,7 +18,7 @@ async function test(id, action) { await action(); passed++; console.log('PASS ' 
     await test('plan.stress-isolation', () => {
         const core = createPlan('core', {full:true});
         assert(!core.names.includes('process-stress'));
-        assert(!core.names.some(name => catalog[name].gui));
+        assert.equal(core.count, 261);
         assert.equal(createPlan('stress').count, 9);
     });
     await test('plan.total-budget', () => {
@@ -30,7 +30,9 @@ async function test(id, action) { await action(); passed++; console.log('PASS ' 
         assert.equal(createPlan('shell-transport', {full:true}).count, 25);
     });
     await test('plan.unknown', () => {
-        for (const selection of ['', 'missing', 'files,', '__proto__'])
+        for (const selection of ['', 'missing', 'files,', '__proto__', 'terminal-gui',
+            'files-gui', 'frontend-gui', 'shell-gui', 'file-tools-gui', 'shell-tools-gui',
+            'workspace-gui', 'line-edit-gui', 'gui-persistence-write', 'gui-persistence-read'])
             assert.throws(() => createPlan(selection), /Unknown regression/);
     });
     await test('plan.seed-order', () => {
@@ -39,6 +41,8 @@ async function test(id, action) { await action(); passed++; console.log('PASS ' 
             assert(names.indexOf(catalog[name].seedFrom) < names.indexOf(name));
     });
     await test('plan.stable-ids', () => {
+        assert.deepEqual(Object.keys(catalog).sort(),
+            Object.keys(require('../support/regression-cases.json')).sort());
         const ids = selection => createPlan(selection).cases.map(item => item.id).sort();
         assert.deepEqual(ids('files,policy'), ids('policy,files'));
     });

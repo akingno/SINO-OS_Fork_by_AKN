@@ -4,7 +4,6 @@
 #define SINO_KERNEL_H
 #include "../../src32/locale.h"
 #include "../../src32/vfs.h"
-int settings_language;
 static void check(const char* id, int ok) {
   printf("CHECK\t%s\t%d\n", id, !!ok);
 }

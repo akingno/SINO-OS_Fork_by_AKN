@@ -6,6 +6,7 @@ command(path.join(root,'tools/nasm-3.02/nasm.exe'),['-f','win32','user/entry.asm
 command(path.join(tc,'gcc.exe'),[...flags,'-c','user/runtime.c','-o',path.join(out,'runtime.o')]);
 // Each row names the output, source path, MODE and optional SNX ABI.
 const apps = [
+ ['conhost', 'user/console_host.c', 0],
  ['writer', 'user/write_tool.c', 0],
  ['tview', 'user/tview.c', 0],
  ['rdtest', 'tests/guest/read_tests.c', 0],

@@ -868,9 +868,7 @@ static int command(Context* c, int argc, char** argv) {
         "SINO 0.10 + SINO SH\nProject-specific C/assembly generated and "
         "written for this project.\nNot a FreeDOS or Linux kernel fork; SINO "
         "is this project's name.\nThird-party tools: NASM, GCC/Binutils, "
-        "Node.js and QEMU.\nFirmware: SeaBIOS / VGA BIOS (QEMU).\nUI fonts: "
-        "Jarrah, Kurrajong, Mallee and GNU Unifont (SIL OFL 1.1).\nPinyin "
-        "character readings: mozillazg/pinyin-data (MIT).\nReferences include "
+        "Node.js and QEMU.\nFirmware: SeaBIOS / VGA BIOS (QEMU).\nReferences include "
         "Intel architecture manuals and QEMU documentation.\nSource details: "
         "cat /boot/sources.txt\n");
     return 0;

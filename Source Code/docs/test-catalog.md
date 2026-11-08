@@ -2,7 +2,7 @@
 
 日常按 [模块选测指南](../tests/TESTING.md) 选择命令；本文是完整目录，无需每次通读。临时开发项独立登记在 [development/INDEX.md](../tests/development/INDEX.md)，不计入下面稳定回归。
 
-统一入口登记 **33 个功能组、302 个固定用例 ID**：`core` 23 组/261 项，`stress` 1 组/9 项，终端 GUI 9 组/32 项。此数不包括下面独立列出的启动、内存、测试器单元检查和原有系统专项。组合按固定 ID 去重，重复入口不产生新覆盖；内部断言、夹具、兼容转发和辅助文件不额外计数。
+统一入口登记 **24 个功能组、270 个固定用例 ID**：`core` 23 组/261 项，`stress` 1 组/9 项。GUI 的 9 组/32 项及旧独立 GUI 入口已删除。此数不包括下面独立列出的启动、内存、测试器单元检查和原有系统专项。组合按固定 ID 去重，重复入口不产生新覆盖；内部断言、夹具、兼容转发和辅助文件不额外计数。
 
 ## 统一入口：命令与接口
 
@@ -37,24 +37,11 @@
 
 `regression.ps1 -Suite stress`：9 项，包含 1 次显式资源基线准备和 8 次相同探针恢复循环。也可用 `-Suite process-stress`。不纳入普通 `core`。
 
-## 终端与应用 GUI：仅按需
-
-`regression.ps1 -Suite terminal-gui` 为全部 32 项；可单选下表。GUI 键鼠、窗口和场景读取不进入普通命令与接口套件。
-
-| 选择 | 用例数 | 范围 |
-| --- | ---: | --- |
-| `files-gui` | 1 | 文件管理器窗口自测 |
-| `frontend-gui` | 12 | 终端前端、焦点、关闭、前台任务 |
-| `shell-gui` | 5 | Shell 交互与会话隔离 |
-| `file-tools-gui` | 4 | 读取工具与分页器 |
-| `shell-tools-gui` | 4 | 欢迎界面、帮助及文本命令 |
-| `workspace-gui` | 5 | 写工作区及其独立冷启动持久化 |
-| `line-edit-gui` | 1 | 行编辑、历史、补全与粘贴 |
-
 ## 普通启动与内存
 
 | 入口（tests/host/） | 用例数 | 范围 |
 | --- | ---: | --- |
+| `test-console.js <普通 BuildOnly 目录>` | 6 | 开机提示、编辑/历史、工作区、取消、ASCII 输入、退出重启；QMP 键盘和 VGA 文字内存，不读取 GUI 场景或截图 |
 | `test-boot.js <普通 BuildOnly 目录>` | 1 | ISO 身份、El Torito、FAT12、计时器、普通启动隔离；ID 为 boot.ordinary |
 | `test-memory.js images <ShellBridge 目录>` | 9 | 64 MiB / 1 GiB、SNX v1/v2、高页、线程栈与冷启动 |
 | `test-memory.js anonymous <ShellBridge 目录>` | 5 | 匿名映射、配额、跨页 I/O、故障和 OOM |
@@ -76,27 +63,9 @@
 
 infrastructure 还编译 7 个宿主模型：`test-terminal-model.c`、`test-gsh.c`、`test-file-text.c`、`test-text-scan.c`、`test-line-edit.c`、`test-line-model.c`、`test-ui-queue.c`。`test-src32-storage.c`、`test-klog.c`、`test-locale.c` 由基础设施入口编译。`test-rtc.c` 由 rtc-driver 编译；其中的多次断言不是独立运行用例。
 
-## 原有系统/GUI 专项：仅按需
+## 保留的独立宿主入口
 
-以下仍是独立系统检查，部分包含键鼠、截图或 GUI。`verify-system.js` 组合 14 个组；`verify-desktop.js` 组合其中 9 个组，其中重复的 9 个组不额外计为新覆盖。
-
-| 入口（tests/host/） | 范围 |
-| --- | --- |
-| `test-keyboard.js` | 宿主键盘逻辑 |
-| `test-files.js` | 文件管理器集成 |
-| `test-iso.js` | 普通 ISO 与桌面启动 |
-| `test-terminal-replacement.js` | 桌面终端入口替换 |
-| `run-selftest.js` | SELFTEST 镜像内核检查 |
-| `test-desktop.js` | 桌面文件、保存和窗口集成 |
-| `test-recovery.js` | 持久化与恢复集成 |
-| `test-performance.js` | 桌面性能 |
-| `test-compatibility.js` | 无 SSE2 CPU 回退 |
-| `test-typography.js` | 文本排版 |
-| `test-chinese-files.js` | 中文路径与文件 |
-| `test-settings.js` | 设置与模式 |
-| `test-usermode.js` | 含窗口的 Ring 3 集成 |
-| `test-network.js` | 系统回环网络集成 |
-| `test-launcher.ps1` | 发行启动器；其 test-launcher-guest.js 为辅助，不独立计数 |
+`node 'Source Code/verify-system.js'` 仅运行 `test-keyboard.js`（1 个宿主程序），不读取 ISO、不启动 VM、不生成截图。原来的桌面、启动器和 GUI 自测入口及转发已删除。系统功能验收使用上面的统一入口。
 
 ## 客户机探针与辅助模块
 
@@ -112,7 +81,6 @@ infrastructure 还编译 7 个宿主模型：`test-terminal-model.c`、`test-gsh
 - `policy_tests.c`
 - `probe.c`
 - `read_tests.c`
-- `terminal_probe.c`
 - `terminal_tests.c`
 
 测试夹具、通道、QMP、资源观察和工具转发都是基础设施，不作为新测试项。固定清单为 `tests/support/regression-cases.json` 和 `memory-cases.json`；标签调整时保留已有 ID，新增或删除覆盖时同步调整清单与注册表。

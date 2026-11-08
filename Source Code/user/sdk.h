@@ -15,6 +15,11 @@ static inline int api(u32 n, u32 a, u32 b, u32 c) {
                    : "memory", "cc");
   return (int)n;
 }
+/* Console device access belongs exclusively to the kernel-started conhost. */
+static inline int ConsoleReadKey(void) { return api(SYS_CONSOLE, 0, 0, 0); }
+static inline int ConsolePresent(const ConsoleFrame* frame) {
+  return api(SYS_CONSOLE, 1, (u32)frame, sizeof(*frame));
+}
 static inline int api_wait(u32 call, int handle, const void* buffer, u32 selector, u32 timeout) {
   __asm__ volatile("int $0x80" : "+a"(call)
                    : "b"(handle), "c"(buffer), "d"(selector), "S"(timeout)

@@ -1,49 +1,16 @@
-SINO 0.10 Desktop
+SINO CLI 0.10
 
-File operations
-- Right-click an empty desktop area to create a folder or text file.
-- Right-click a file to open, rename, copy, cut, paste, move it to Trash, or view its information.
-- Deleting an item again from Trash removes it permanently. Empty non-empty folders before deleting them.
-- Drag a file to a folder, file window, desktop, or Trash and release to move it.
-- Desktop icons can be dragged to reposition them. Their positions persist only for the current session.
-- Double-click a folder to navigate inside the current file window. Double-click a desktop disk or folder to open a new window.
-- Ctrl+N creates a window or document; Ctrl+O opens by path; Ctrl+S saves; Ctrl+W closes.
-- Ctrl+C / X / V copy, cut, and paste. The text editor also supports Ctrl+A and Ctrl+Z.
+Boot starts the text console and isolated user Shell automatically.
+Type help for commands. Input uses the US keyboard layout; there is no IME.
+Arrow keys move the caret or recall history. Tab completes commands and paths.
+Ctrl+C cancels the foreground command; Ctrl+D sends EOF.
+Exiting the Shell starts a fresh Shell session.
 
-Chinese and Pinyin
-- Press Ctrl+Space to switch between English and Pinyin, or click the language toggle at the upper right.
-- Pinyin input is available in filename dialogs, the text editor, and the terminal.
-- Type a syllable; Space selects the first character, keys 1–7 choose candidates, [ ] change pages, or click a candidate.
-- Esc cancels composition; Enter inserts the typed Pinyin. Switch back to EN before typing English commands or file extensions.
-- Type v for ü, for example lv. Tone marks are not required.
-- Common words include nihao, zhongwen, wenjian, wenjianjia, xinjian, and baocun.
-- This is a basic Pinyin method with single-character candidates and a small common-word list; it has no sentence prediction.
-- Chinese uses a 16-pixel bitmap font; Latin text retains the classic desktop's original-size font.
-- Filenames and document contents use UTF-8. Cursor movement, Backspace, character selection, and copy handle complete Chinese characters.
+Your workspace is /home/user. Run sync before powering off to save changes.
+/boot is read-only; /tmp is temporary. Keep SINO.iso attached while running.
+The host launcher stores personal data in Data/data.img.
+The VGA text display supports ASCII; UTF-8 file data remains supported.
 
-Applications and windows
-- The SINO menu launches File Manager, Text Editor, and Terminal.
-- Double-click .app entries in the Applications folder to run them.
-- Drag a title bar to move a window. File and text windows can be resized from the lower-right corner.
-- Alt+Tab switches windows; the Window menu restores minimized windows. Up to eight windows can be open at once.
-- F1 File Manager / F2 Terminal / F3 Text Editor
-- F7 About SINO
-
-Saving and limits
-- Files under /home/user are stored on a dedicated SINO data disk and persist across reboot.
-- Use Tools > Save Personal Files to Disk or run sync in Terminal to save explicitly.
-- /boot is read-only optical media; /tmp is temporary. Without a data disk, files exist only in memory.
-- The filesystem supports 128 file nodes, up to 64 KB per file, and documents up to 16 KB.
-- Filenames are limited to 31 bytes (up to 10 Chinese characters); paths are limited to 127 bytes.
-- Moving is supported within the current folder. Clipboard copy supports files but does not copy folders recursively.
-
-Kernel, desktop, drivers, and applications are C/assembly written for this project.
-Third parties include QEMU, the classic bitmap fonts, GNU Unifont, and pinyin-data; their licenses are retained.
-This is a custom 32-bit operating-system prototype, not compatible with DOS, Windows, Linux, or macOS applications.
-See About / Credits in Terminal or cat /boot/sources.txt for detailed provenance.
-
-System settings
-- Press F7 or choose SINO > System Settings to view the version, switch English/Chinese, and adjust resolution, scaling, and contrast.
-- After applying display settings, confirm within 15 seconds or the previous mode is restored. Settings are saved on the personal data disk.
-- The host launcher boots SINO.iso and keeps personal files in Data/data.img.
-- Run sync before closing the VM. Keep the ISO attached for every boot.
+This custom C/assembly OS is not compatible with Windows, Linux or DOS programs.
+Tools include NASM, GCC/Binutils, Node.js and QEMU; firmware is SeaBIOS/VGA BIOS.
+See /boot/license.txt and /boot/sources.txt for licensing and source information.

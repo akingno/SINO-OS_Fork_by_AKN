@@ -27,9 +27,14 @@ void con_init(void) {
   color = 7;
   con_clear();
   outb(0x3d4, 0x0a);
-  outb(0x3d5, 6);
+  outb(0x3d5, 14);
   outb(0x3d4, 0x0b);
-  outb(0x3d5, 7);
+  outb(0x3d5, 15);
+}
+void console_present(const u16* frame, u32 position) {
+  volatile u16* video = (volatile u16*)0xb8000;
+  for (u32 i = 0; i < CON_COLS * CON_ROWS; i++) video[i] = frame[i];
+  cursor(position < CON_COLS * CON_ROWS ? (int)position : -1);
 }
 void con_clear(void) {
   line = column = utf_pending = 0;

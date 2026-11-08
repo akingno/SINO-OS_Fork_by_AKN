@@ -18,6 +18,7 @@
 
 | 模块 / 修改范围 | 默认命令与参考数量 | 仅在这些改动时追加 |
 | --- | --- | --- |
+| 开机文字控制台、ASCII 键盘和 Shell 前端 | 普通 `dev.ps1 -BuildOnly` 后运行 `node 'Source Code/tests/host/test-console.js' <构建目录>`；6 项，`--list` 预览 | 设备授权改动追加 policy；会话/命令启动变化追加 terminal / interactive / shell-waits；不恢复 GUI 套件 |
 | 引导、镜像、FAT12 启动卷 | `.\dev.ps1 -BuildOnly`，再 `node 'Source Code/tests/host/test-boot.js' '<本次普通构建目录>'`；1 项 | 涉及用户态启动/隔离时追加相应进程或内存专项 |
 | 匿名映射、懒分配、SDK 堆；`anon_map/unmap` | 下方内存命令的 `anonymous`；5 项 | 映像、高页或线程栈布局变化时追加 `images` |
 | 物理页、页表、高页、SNX、用户栈；`page_* / paging_*` | 下方内存命令的 `images`；9 项 | 涉及匿名映射/OOM 时加 `anonymous`；启动页表/物理池初始化变化时加普通启动检查 |
@@ -34,9 +35,11 @@
 | Shell / SDK 阻塞等待 | `.\regression.ps1 -Suite shell-waits`；5 项 | 影响具体管道或终端等待 API 时追加对应等待专项；纯命令语法另按其解析器/命令选择，不自动跑 112 项 |
 | 交互启动代理 / 会话所有权 | `.\regression.ps1 -Suite interactive`；1 项 | Shell 结果交付变化加 `shell-waits`；控制者/终端生命周期变化加 `terminal-waits` |
 | 回环网络 | `.\regression.ps1 -Suite network`；1 项 | 只追加实际影响的标准流/进程机制；不扩大为外部网络验收 |
-| RTC 采样、解码、缓存 | `.\regression.ps1 -Suite rtc-driver`；1 项 | GUI 时钟入口只在用户要求 GUI 验证时追加 |
-| 测试计划、ID、去重或数量限制 | `node 'Source Code/tests/host/test-regression-plan.js'`；12 项 | 报告文件读取变化加报告 `io` 组；4 项；报告契约变化选 `contracts` 组，18 项 |
-| GUI、桌面或应用窗口 | 默认不自动运行；用户明确要求时查完整目录的对应 GUI 入口 | 只有受影响的 GUI 项，不因改内核机制追加整套 GUI |
+| RTC 采样、解码、缓存 | `.\regression.ps1 -Suite rtc-driver`；1 项 | 仅追加实际受影响的时间接口 |
+| 测试计划、ID、去重或数量限制 | `node 'Source Code/tests/host/test-regression-plan.js'`；12 项 | 报告选择变化加 `test-report-summary.js --group selections`；4 项；报告文件读取变化加 `io` 组，4 项；报告契约变化选 `contracts` 组，18 项 |
+| 键盘扫描码解码 | `node 'Source Code/verify-system.js'`；1 个宿主程序 | 无需 ISO；不启动 VM |
+
+`dev.ps1 -VerifyOnly` 转入同一个 `process` 套件（8 项），不再通过窗口键盘输入或截图验证；`verify-system.js` 仅保留宿主键盘检查。GUI 测试与选择名称已删除，旧名称在构建前拒绝。
 
 共享调度器/内存等底层机制确实影响多个接口时，应按实际影响追加，不能为少跑而漏掉必要边界。表中没有给出小入口的解析器、语言资源或存储故障检查，应先找到对应宿主测试或建立小专项，不以 `-Full` 代替选测。
 

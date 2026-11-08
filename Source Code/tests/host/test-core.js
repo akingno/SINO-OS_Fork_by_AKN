@@ -53,7 +53,7 @@ async function run(directory, suite = 'core', {full = false} = {}) {
     const names = executionPlan.names;
     const reportFile = path.join(directory, 'regression-report.json');
     const report = {version:4, suite, plannedCases:executionPlan.count, full, result:'FAIL', startedAt:new Date().toISOString(),
-        scope:names.some(name => catalog[name].gui) ? 'explicit GUI selection' : 'headless functional regression',
+        scope:'headless functional regression',
         suites:names.map(name => ({name, result:'NOT-RUN'})), testHashes:{}};
     writeJSON(reportFile, report);
     let build;

@@ -206,7 +206,6 @@ async function run(directory, {execute, seedDisk, memoryMiB = 64} = {}) {
             try {
                 const registers = await qmp.hmp('info registers');
                 fs.writeFileSync(path.join(directory,'failure-registers.txt'),registers);
-                if (job.gui) await qmp.call('screendump',{filename:'failure.ppm'});
             } catch (diagnosticError) {report.diagnosticError=diagnosticError.message;}
         }
     } finally {

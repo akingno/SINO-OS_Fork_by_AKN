@@ -8,7 +8,6 @@
 /* Use host libc and the utility stubs below. */
 #define SINO_KSTRING_H
 volatile u32 ticks;
-int settings_language;
 static u8 storage_test_boot_drive;
 static u32 storage_test_boot_signature;
 int streq(const char*, const char*);

@@ -10,9 +10,9 @@
 | --- | --- | --- |
 | 编译并启动 | `.\启动开发版.cmd` | 重新构建并打开 QEMU 窗口；先关闭旧开发窗口 |
 | 只编译 | `dev.ps1 -BuildOnly` | 生成 ISO，不启动 VM |
-| 编译并验证 Ring 3 | `dev.ps1 -VerifyOnly` | 无窗口启动，通过键盘运行 probe 并保存截图 |
+| 编译并验证 Ring 3 | `dev.ps1 -VerifyOnly` | 转入 process 无界面专项（8 项），使用私有盘 |
 
-构建产物在 `Build Output/dev/runs/<构建编号>/`。
+构建产物在 `Build Output/dev/runs/<构建编号>/`。GUI 已移除，可见 QEMU 窗口显示 80×25 文字控制台并自动进入 gsh；US 键盘直接输入，没有中文输入法。启动与中断信息仍写入 kernel.log。普通启动不自动发送键鼠输入或生成截图。文字控制台的 6 项专项见 [text-console.md](text-console.md)。
 
 ## 测试源码位置
 
@@ -33,15 +33,13 @@ node 'Source Code/tests/host/test-boot.js' 'Build Output/dev/runs/<本轮构建�
 
 检查该目录内 ISO 的哈希、El Torito 启动目录和内嵌启动镜像。随后从只读 CD 启动私有 VM，通过内核日志确认构建编号、FAT12 挂载、计时器中断和启动完成。检查普通镜像的 ShellBridge 隔离。每次执行使用新的空白数据盘，日志保存在构建目录下的 `boot-*`。此入口仅使用日志，无键鼠和截图操作。
 
-## 发行启动器（GUI 按需）
+## 发行启动器
 
 `release/Start SINO.cmd` 和 `release/launch.ps1` 与 `SINO.iso` 放在同一目录。
 启动器始终从 ISO 启动，首次运行创建 16 MiB 的 `Data/data.img`，个人文件由 Shell 的 `sync` 提交。
 装包、安装向导、预装硬盘发布与升级流水线已删除。
 
-按需运行 `tests/host/test-launcher.ps1`，可用 `SINO_ISO` 指定本轮镜像。
-它在 `build32/launcher-qa` 使用私有数据盘，检查 CMD 启动、ISO 附件、键鼠、窗口恢复和重复启动。
-此 GUI 专项不属于日常验收。
+旧 GUI 启动器测试已删除。
 
 ## 环境要求
 
@@ -66,7 +64,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\test.ps1 -SelfTest -Full
 - `-ExpectedExitCode 1`：断言预期失败
 - `-TimeoutSeconds 5`：单命令超时
 
-报告和输出在 `Build Output/dev/runs/shell-.../`。通道仅在 `-ShellBridge` 构建中启用，普通开发桌面构建不启用。
+报告和输出在 `Build Output/dev/runs/shell-.../`。通道仅在 `-ShellBridge` 构建中启用，普通开发构建不启用。
 
 ## 非 GUI 回归与独立持久化检查
 
@@ -106,7 +104,6 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\test.ps1 -SelfTest -Full
 
 - `tests/host/suites/`：按功能组织的业务用例，禁止调用其他业务套件。
 - `tests/support/guest-context.js`：命令通道、探针、资源计数和内存检查。
-- `tests/support/gui-context.js`：只供明确选择的 GUI 套件使用的键鼠、窗口与文本观察。
 - `tests/support/regression-suites.js`、`regression-catalog.js`：组合关系、业务入口、显式冷启动种子。
 - `tests/host/test-core.js`、`tests/support/regression-vm.js`：调度、私有 VM 生命周期、构建身份及结果检查。
 
@@ -125,14 +122,6 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\test.ps1 -SelfTest -Full
 
 一个探针执行算一个用例，其内部断言或命名条件另行保留。RTC 的反复缓存读取不再被当作上百个独立用例；内存模式由 13/18 个条件改为 9/5 次真实执行，覆盖条件均保留。当前全部入口与数量见 [test-catalog.md](test-catalog.md)。
 
-## 终端 GUI 集成（仅按需）
-
-```powershell
-.\regression.ps1 -Suite terminal-gui
-```
-
-独立运行文件管理器窗口自测、终端窗口、Shell 键盘交互、文件工具、写工作区和行编辑集成。该选择使用自己的空白私有盘、夹具和资源基线；由 GUI Shell 写入并同步其持久化数据，再冷启动核对。它不先运行普通回归，也不被普通回归调用。不比较像素的窗口/按键测试同样归属 GUI。也可单选 `frontend-gui`、`shell-gui`、`file-tools-gui`、`shell-tools-gui`、`workspace-gui`、`line-edit-gui` 或 `files-gui`；它们各自建立资源基线和夹具，不通过前端套件串联调用。
-
 ## 独立 CLI 运行
 
 ```
@@ -141,13 +130,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\run.ps1 -Program /boot/cli
 
 构建新 ISO，在严格进程中运行单个程序，取得独立 stdout/stderr 和最终状态。输入 ≤ 4 KiB，详见 [bounded-cli.md](bounded-cli.md)。
 
-## GUI/系统完整回归（14 组，仅按需）
+## 宿主键盘检查
 
-```
+```powershell
 node 'Source Code/verify-system.js'
 ```
 
-需准备普通和 SELFTEST 两种镜像；该入口包含 GUI，不属于日常验收。14 组覆盖：启动/应用、指针/键盘、文件/拖放、中文/拼音、设置/模式、网络、文件管理器、桌面终端替换。其中 `tests/host/test-iso.js` 通过 QMP 启动 Shell 并保存截图。
+此入口仅运行 `tests/host/test-keyboard.js`，编译实际 keyboard.c 做扫描码逻辑检查（1 个宿主程序），不需要 ISO。原 GUI 套件、辅助模块和旧转发入口已删除；系统功能使用 `regression.ps1` 按模块选测，原 GUI 选择名称会在构建前被拒绝。
 
 ## src32 基础设施契约测试
 
@@ -175,7 +164,7 @@ node 'Source Code/tests/host/test-src32-refactor.js'
 ## 测试约定
 
 - 日常验收范围：启动、严格进程、文件与持久化、流与会话、Shell
-- GUI 整体退出日常验收（桌面、应用、终端窗口与渲染、菜单、快捷键、QMP 键鼠和截图检查）
+- GUI 及其窗口、键鼠和截图测试已删除；宿主终端/编辑模型继续保留
 - 每个开发步骤最多运行 50 项相关测试
 - 运行前确认用例数，优先用摘要脚本查看结果
 - 专项 VM 测试使用独立测试盘，不用日常开发盘
@@ -184,5 +173,5 @@ node 'Source Code/tests/host/test-src32-refactor.js'
 
 - 无硬件在环、外部网卡/互操作测试
 - 无安全认证或全面的畸形映像模糊测试
-- Ring 0 遗留应用的崩溃仍会影响内核
+- 无桌面或窗口终端；普通镜像提供 VGA 文字 Shell，ShellBridge 镜像提供宿主命令通道
 - 快照存储有有界目录/文件数，无断电硬件模拟器

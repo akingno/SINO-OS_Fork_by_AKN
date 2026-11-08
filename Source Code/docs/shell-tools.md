@@ -31,7 +31,7 @@ gcmd.snx retains strict caps=0 and zero directory rights:
 | `time` | RTC time, HH:MM:SS |
 | `uptime` | Current boot tick count divided by queried tick frequency |
 | `uname [-a]`, `ver` | SINO identity/version and i386 architecture |
-| `about`, `credits` | Source, toolchain, firmware, font and pinyin attribution |
+| `about`, `credits` | Source, toolchain and firmware attribution |
 
 Single quotes preserve backslashes for echo, for example `echo -e 'a\nb'`.
 Unsupported escapes fail with code2 before printing any argument prefix.

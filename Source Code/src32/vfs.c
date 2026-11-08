@@ -565,31 +565,12 @@ void vfs_init(void) {
   }
   nodes[apps].readonly = nodes[apps].pinned = 1;
   const char* welcome =
-      "Welcome to SINO Platinum Desktop.\n\nUse the SINO menu to launch "
-      "applications.\nDouble-click desktop icons or files to open them.\nFile "
-      "> New Folder / New Text Document creates real files.\n\nHome files are "
-      "stored on the SINO data disk. /tmp is temporary.\n";
+      "Welcome to SINO CLI.\nType help to list commands.\n"
+      "US keyboard input; Ctrl+C cancels, Ctrl+D sends EOF.\n"
+      "Home files are persistent after sync; /tmp is temporary.\n";
   int n = vfs_create("/home/user/welcome.txt", 0, 0);
   if (n < 0 || vfs_write(n, (const u8*)welcome, strlen(welcome), 0) < 0)
     panic("VFS welcome", 0, 0);
-  const char* desktop_readme =
-      "欢迎使用 SINO "
-      "中文桌面\n\n右键桌面空白处可新建文件夹和文本文件。\n右键文件可打开、重命"
-      "名、复制、剪切或移到废纸篓。\n按住文件拖到文件夹、文件窗口或桌面，然后松"
-      "开移动。\n拖到废纸篓可收纳文件；文件窗口内双击文件夹可进入。\n\nCtrl+"
-      "空格切换英文和拼音，也可点击右上角 EN / "
-      "中。\n输入拼音后按空格选第一个候选，1-7 选字，[ ] "
-      "翻页。\n候选字也可以用鼠标点击，回车可输入拼音原文。\n支持 "
-      "nihao、zhongwen、wenjian、xinjian 等常用词。\n\nCtrl+S 保存，Ctrl+C / X "
-      "/ V "
-      "复制、剪切和粘贴。\n个人磁盘的文件保存在数据盘，重启后仍然保留。\n\n拖动"
-      "标题栏移动窗口，右下角调整文件和文本窗口大小。\nAlt+Tab "
-      "切换窗口，在“窗口”菜单恢复最小化窗口。\nF1 文件管理器 / F2 终端 / F3 "
-      "文本编辑 / F4 计算器\nF6 时钟 / F7 关于 SINO\n";
-  n = vfs_create("/home/user/Desktop/Read Me.txt", 0, 0);
-  if (n < 0 ||
-      vfs_write(n, (const u8*)desktop_readme, strlen(desktop_readme), 0) < 0)
-    panic("Desktop readme", 0, 0);
   const char* release =
       "NAME=SINO\nVERSION=0.10\nKERNEL=SINO32\nSHELL=SINO SH\n";
   n = vfs_create("/etc/os-release", 0, 0);

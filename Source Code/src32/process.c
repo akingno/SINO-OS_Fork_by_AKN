@@ -13,6 +13,7 @@
 #include "terminal.h"
 #include "ui_queue.h"
 #include "locale.h"
+#include "console.h"
 #include "lib/kstring.h"
 #include "mm/page.h"
 #include "panic.h"
@@ -533,19 +534,14 @@ static int launch_policy(const char* path, u32 caps, const char* arguments,
   if (completion >= 0)
     completions[objects[completion].value].result.pid = p->pid;
   p->policy = policy;
-  p->input_frontend=policy==PROCESS_COMPAT && nodes[n].readonly && nodes[n].boot>=0 && (streq(executable,"/boot/term.snx")||streq(executable,"/boot/termqa.snx"));
-  p->workspace_frontend=policy==PROCESS_COMPAT && nodes[n].readonly && nodes[n].boot>=0 && streq(executable,"/boot/term.snx");
+  p->input_frontend = p->workspace_frontend = 0;
   if (!next_pid)
     next_pid = 1;
   p->state = 1;
   p->caps = caps & 7; /* Boot utilities have no write, network or management
                          grant, regardless of launcher. */
-  if (nodes[n].readonly && nodes[n].boot >= 0 &&
-      (streq(executable, "/boot/term.snx")||streq(executable,"/boot/termqa.snx")))
+  if (p->input_frontend)
     p->caps = 0;
-  if (nodes[n].readonly && nodes[n].boot >= 0 &&
-      streq(executable, "/boot/files.snx"))
-    p->caps &= CAP_HOME;
   u32 j = 0;
   while (nodes[n].name[j] && j < 31) {
     p->name[j] = nodes[n].name[j];
@@ -560,6 +556,14 @@ static int launch_policy(const char* path, u32 caps, const char* arguments,
   return (int)p->pid;
 }
 /* Both old tracked launches and bounded runs use the same startup transaction. */
+int process_launch_console(void) {
+  int pid = launch_policy("/boot/conhost.snx", 0, "", PROCESS_COMPAT, -1);
+  if (pid > 0)
+    for (u32 i = 0; i < NP; i++)
+      if (processes[i].pid == (u32)pid && processes[i].state == 1)
+        processes[i].input_frontend = processes[i].workspace_frontend = 1;
+  return pid;
+}
 static int tracked_launch(Handle* owner, const char* path, const char* args, RunData* run) {
   int slot;
   for (slot = 0; slot < PROCESS_COMPLETIONS && completions[slot].used; slot++);
@@ -944,6 +948,16 @@ static int syscall(Frame* f) {
     return filesys_call(current->handles, current->caps, f->eax, a, b, c,
                         user_pd);
   switch (f->eax) {
+    case SYS_CONSOLE: {
+      if (!current->input_frontend) return S_DENIED;
+      if (!a) return b || c ? S_INVALID : key_read();
+      if (a != 1 || c != sizeof(ConsoleFrame)) return S_INVALID;
+      UACCESS_TRY(uaccess_prepare(user_pd, b, c, USER_READ));
+      const ConsoleFrame* frame = (const ConsoleFrame*)b;
+      if (frame->cursor > CONSOLE_COLUMNS * CONSOLE_ROWS) return S_INVALID;
+      console_present(frame->cells, frame->cursor);
+      return S_OK;
+    }
     case SYS_ANON_MAP:
       return b || c ? S_INVALID : anon_map(current, a);
     case SYS_ANON_UNMAP:

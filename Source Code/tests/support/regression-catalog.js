@@ -1,6 +1,5 @@
 /* Only this catalog and the runner compose business suites. Imports are lazy. */
 const leaf = (name, method = 'run') => api => require('../host/suites/' + name)[method](api);
-const guiLeaf = (name, method = 'run') => api => require('../host/' + name)[method](api);
 const snapshot = name => records => require('../host/suites/' + name).snapshot(records);
 const catalog = {
     infrastructure: {host:leaf('host-contracts', 'infrastructure')},
@@ -26,18 +25,7 @@ const catalog = {
     'pipe-waits': {run:leaf('waits', 'pipes')},
     'completion-waits': {run:leaf('waits', 'completion')},
     'terminal-waits': {run:leaf('waits', 'terminal')},
-    'shell-waits': {run:leaf('waits', 'shell')},
-    'files-gui': {run:leaf('files-gui'), gui:true},
-    'frontend-gui': {run:guiLeaf('terminal-gui'), gui:true},
-    'shell-gui': {run:guiLeaf('shell-gui'), gui:true},
-    'file-tools-gui': {run:guiLeaf('file-tools-gui'), gui:true},
-    'shell-tools-gui': {run:guiLeaf('shell-tools-gui'), gui:true},
-    'workspace-gui': {run:guiLeaf('workspace-gui'), gui:true},
-    'line-edit-gui': {run:guiLeaf('line-edit-gui'), gui:true},
-    'gui-persistence-write': {run:guiLeaf('workspace-gui', 'persist'), gui:true,
-        snapshot:snapshot('gui-persistence')},
-    'gui-persistence-read': {run:leaf('gui-persistence', 'read'), gui:true,
-        seedFrom:'gui-persistence-write'}
+    'shell-waits': {run:leaf('waits', 'shell')}
 };
 const manifest = require('./regression-cases.json');
 for (const [name, definition] of Object.entries(catalog)) {

@@ -111,14 +111,7 @@ async function availablePort() {
     return port;
 }
 
-async function typeProbe(qmp) {
-    await qmp.key('f2');
-    await sleep(150);
-    const special = {' ':'spc','/':'slash','.':'dot','\n':'ret'};
-    for (const ch of 'run /boot/probe.snx\n') {await qmp.key(special[ch] || ch);await sleep(40);}
-}
-
-async function run(directory, verifyOnly) {
+async function run(directory) {
     await check();
     const build = record(directory);
     const exe = qemuPath();
@@ -134,12 +127,12 @@ async function run(directory, verifyOnly) {
     const args = ['-L',firmware,'-name',name,'-machine','pc,vmport=on','-accel','tcg','-m','64M','-vga','std','-nic','none',
         '-drive','file=SINO.iso,format=raw,media=cdrom,if=ide,index=2,readonly=on',
         '-drive','file=../../data.img,format=raw,if=ide,index=0','-boot','order=d','-rtc','base=localtime',
-        '-display',verifyOnly?'none':'gtk,show-menubar=off,show-cursor=off,zoom-to-fit=off',
+        '-display','gtk,show-menubar=off,show-cursor=off,zoom-to-fit=off',
         '-debugcon','file:kernel.log','-global','isa-debugcon.iobase=0xe9','-qmp',`tcp:127.0.0.1:${port},server=on,wait=off`];
     const logFile = path.join(directory,'kernel.log');
     const stderr = fs.openSync(path.join(directory,'startup.log'),'w');
     let child;
-    try {child = spawn(exe,args,{cwd:directory,detached:true,windowsHide:verifyOnly,stdio:['ignore','ignore',stderr]});}
+    try {child = spawn(exe,args,{cwd:directory,detached:true,windowsHide:false,stdio:['ignore','ignore',stderr]});}
     finally {fs.closeSync(stderr);}
     let spawnError;
     child.on('error',error => {spawnError=error;});
@@ -155,7 +148,7 @@ async function run(directory, verifyOnly) {
             const log = fs.existsSync(logFile)?fs.readFileSync(logFile,'utf8'):'';
             if (log.includes('KERNEL PANIC')) throw Error('Guest kernel panic. See '+logFile);
             if (log.includes(`SINO BUILD ID: ${build.buildId}\n`) && log.includes('SINO CLI ready')) break;
-            if (Date.now()>deadline) throw Error('Guest did not confirm this build ID and desktop readiness. See '+logFile);
+            if (Date.now()>deadline) throw Error('Guest did not confirm this build ID and CLI readiness. See '+logFile);
             await sleep(100);
         }
         qmp = await connect(port);
@@ -167,25 +160,10 @@ async function run(directory, verifyOnly) {
         if (!mounted.some(b=>b.file===build.iso&&b.readonly)) throw Error('The built ISO is not mounted read-only.');
         if (mounted.length!==2 || !mounted.some(b=>b.file===dataFile)) throw Error('Unexpected VM disk attachment.');
         if (sha(fs.readFileSync(build.iso))!==build.isoSha256) throw Error('ISO changed after build verification.');
-        const checks = ['source fingerprint unchanged during build','ISO embeds current boot image','guest reports matching build ID','desktop ready without kernel panic','QMP reports running','only development ISO and data disk attached'];
-        if (verifyOnly) {
-            await typeProbe(qmp);
-            const until = Date.now()+15000;
-            while (!fs.readFileSync(logFile,'utf8').includes('RING3 PROBE PASS')) {
-                if (Date.now()>until) throw Error('Native Ring 3 probe timed out. See '+logFile);
-                if (fs.readFileSync(logFile,'utf8').includes('KERNEL PANIC')) throw Error('Kernel panic during native probe.');
-                await sleep(100);
-            }
-            await sleep(200);
-            const probeLog = fs.readFileSync(logFile,'utf8');
-            if (probeLog.includes('USER PROBE FAIL') || probeLog.includes('USER fault contained') || probeLog.includes('KERNEL PANIC')) throw Error('Native probe reported a fault or failure. See '+logFile);
-            checks.push('keyboard input launches /boot/probe.snx; Ring 3 probe passes');
-        }
-        await qmp.call('screendump',{filename:'desktop.ppm'});
-        const report = {...build,result:'PASS',verifiedAt:new Date().toISOString(),qemu:exe,qmpPort:port,pid:child.pid,mounted,checks,screenshot:path.join(directory,'desktop.ppm')};
+        const checks = ['source fingerprint unchanged during build','ISO embeds current boot image','guest reports matching build ID','CLI ready without kernel panic','QMP reports running','only development ISO and data disk attached'];
+        const report = {...build,result:'PASS',verifiedAt:new Date().toISOString(),qemu:exe,qmpPort:port,pid:child.pid,mounted,checks};
         writeJSON(path.join(directory,'verification.json'),report);
-        if (verifyOnly) {await qmp.call('quit');state.running=false;writeJSON(currentFile,state);}
-        console.log(`PASS ${build.buildId}\nISO: ${build.iso}\nSHA256: ${build.isoSha256}\nReport: ${path.join(directory,'verification.json')}\n${verifyOnly?'Verification VM stopped.':'Development desktop is running. Close its window before the next development launch.'}`);
+        console.log(`PASS ${build.buildId}\nISO: ${build.iso}\nSHA256: ${build.isoSha256}\nReport: ${path.join(directory,'verification.json')}\nDevelopment VM is running. Close its window before the next development launch.`);
     } catch (error) {
         child.kill();
         state.running=false;
@@ -212,6 +190,7 @@ if (require.main === module) (async()=>{
     } else if (command==='record') {
         console.log(JSON.stringify(record(directory),null,2));
     } else if (command==='run') {
-        await run(directory,process.argv.includes('--verify-only'));
-    } else throw Error('Use check, prepare <run-directory> <build-id>, record <run-directory>, or run <run-directory> [--verify-only].');
+        if (process.argv.length !== 4) throw Error('Use dev.ps1 -VerifyOnly for headless Ring 3 checks.');
+        await run(directory);
+    } else throw Error('Use check, prepare <run-directory> <build-id>, record <run-directory>, or run <run-directory>.');
 })().catch(error=>{console.error(error.message);process.exitCode=1;});

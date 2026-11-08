@@ -15,7 +15,7 @@ async function runVM({directory, build, name, definition, seeds}) {
     fs.copyFileSync(build.iso, iso, fs.constants.COPYFILE_EXCL);
     fs.writeFileSync(path.join(folder, 'build.json'), JSON.stringify({...build, iso}));
     fs.writeFileSync(path.join(folder, 'shell-job.json'), JSON.stringify({
-        selfTest:true, timeoutMs:15000, suite:definition.shell, gui:!!definition.gui,
+        selfTest:true, timeoutMs:15000, suite:definition.shell,
         casePlan:definition.cases
     }));
     const seed = definition.seedFrom && seeds.get(definition.seedFrom);
@@ -24,13 +24,12 @@ async function runVM({directory, build, name, definition, seeds}) {
         assert.equal(hash(seed.path), seed.sha256, 'private seed unchanged before clone');
     }
     const execute = definition.run && (async context => {
-        // Headless suites can inspect memory but cannot send input or read GUI scenes.
-        const selected = definition.gui ? context : {...context, qmp:{hmp:command => {
+        // Suites can inspect memory but cannot send input or read rendered scenes.
+        const selected = {...context, qmp:{hmp:command => {
             assert.match(command, /^pmemsave /, 'headless memory inspection only');
             return context.qmp.hmp(command);
         }}};
-        let api = createGuest(selected);
-        if (definition.gui) api = await require('./gui-context').createGui(api);
+        const api = createGuest(selected);
         await definition.run(api);
     });
     const code = await shell.run(folder, {execute, seedDisk:seed?.path});

@@ -265,3 +265,7 @@ This does not replace historical-binary fixtures or excluded GUI regressions.
 G5a appends SYS_CALENDAR=0x14b for a versioned 32-byte read-only RTC calendar query in both policies, preserving SYS_TIME. ABI, failure-output rules and tests are documented in [shell-tools.md](shell-tools.md). G1-G5a frontend/Shell integration is now available through the opt-in user Shell entry.
 
 G5b appends SYS_WORKSPACE=0x14c (trusted read-only boot frontend only) and SYS_DIRECTORY_COMMIT=0x14d (owned COMMIT directory required). Strict ambient Sync remains denied. See [workspace-shell.md](workspace-shell.md).
+
+## Native text console
+
+SYS_CONSOLE=0x150 is restricted to the conhost process created by the trusted kernel boot entry. Strict processes, writable copies and ordinary launches of conhost receive S_DENIED. EBX=0 reads one decoded PS/2 key (ECX=EDX=0; zero means no input); EBX=1 presents a ConsoleFrame at ECX with EDX=sizeof(ConsoleFrame). The kernel validates the complete read buffer and cursor before writing 2000 VGA cells. Cursor 2000 hides the caret. All existing syscall IDs and feature bits stay unchanged. See [text-console.md](text-console.md).

@@ -44,14 +44,9 @@ in ring 0; new SNX1 applications run in isolated ring-3 processes. This is a fun
 
 Host source map, exact downloads and checksums: SOURCES.md in the project folder.
 
-CHINESE SUPPORT
-  GNU Unifont 16.0.04 CJK/punctuation bitmap subset: unifoundry.com.
-  Dual licensed upstream; SINO chooses SIL OFL 1.1.
-  /boot/cjk_ofl.txt includes upstream licensing and copyright notices.
-  Pinyin character readings: mozillazg/pinyin-data, MIT.
-  Pinned commit 9193766130af24d2ac54230be979b2e98ac66223.
-  /boot/pinyin.txt includes the MIT license and copyright.
-  UTF-8 handling, candidate UI and the small phrase list are custom SINO code.
+TEXT CONSOLE
+  US keyboard input, VGA 80x25 text output; no Chinese IME or Pinyin data.
+  File bytes and UTF-8 filenames remain supported.
 
 BOOT, STORAGE AND SETTINGS (0.10)
   Custom BIOS boot and four-device ATA PIO driver.

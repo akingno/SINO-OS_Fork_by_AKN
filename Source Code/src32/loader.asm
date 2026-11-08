@@ -105,42 +105,9 @@ start:
     add word [disk_lba], 18
     cmp word [disk_lba], BOOT_SECTORS
     jb .track
-    ; Save the 8x16 ROM font for early diagnostics; the desktop loads OFL fonts.
-    mov ax, 0x1130
-    mov bh, 6
+    ; The native console uses standard 80x25 VGA text, with US keyboard input.
+    mov ax, 0x0003
     int 0x10
-    push ds
-    mov ax, es
-    mov ds, ax
-    mov si, bp
-    xor ax, ax
-    mov es, ax
-    mov di, 0x6000
-    mov cx, 4096
-    rep movsb
-    pop ds
-    ; Ask the supplied VBE BIOS for 1024x768, 32-bit direct color.
-    xor ax, ax
-    mov es, ax
-    mov di, 0x5800
-    mov ax, 0x4f01
-    mov cx, 0x144
-    int 0x10
-    cmp ax, 0x004f
-    jne failure
-    test word [es:0x5800], 0x80
-    jz failure
-    cmp byte [es:0x5819], 32
-    jne failure
-    mov ax, 0x4f02
-    mov bx, 0x4144
-    int 0x10
-    cmp ax, 0x004f
-    jne failure
-    xor ax, ax
-    mov es, ax
-    mov word [es:0x4f04], 0x144
-    mov byte [es:0x4f06], 16
     ; A20, flat GDT, then a 32-bit far jump into the native kernel.
     cli
     in al, 0x92

@@ -1,3 +1,0 @@
-const {shellWindow,scene,waitFor}=require('../support/ui-test');
-const {VM}=require('../../tools/vm-test'),assert=require('node:assert/strict');
-(async()=>{const vm=new VM('compatibility-qa',4561);try{await vm.start({fresh:true,cpu:'pentium3'});assert.equal(await vm.value('graphics_sse2'),0);await vm.key('f2');const w=await shellWindow(vm);await waitFor(async()=>(await scene(vm,w)).some(c=>c.kind===9),'shell renders on no-SSE2');await vm.shot('no-sse2');console.log('PASS: no-SSE2 CPU fallback boots and renders native applications.');}finally{await vm.stop();}})().catch(e=>{console.error(e);process.exitCode=1;});

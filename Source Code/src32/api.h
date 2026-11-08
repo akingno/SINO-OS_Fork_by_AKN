@@ -100,10 +100,15 @@ enum {
   SYS_DIRECTORY_COMMIT,
   SYS_ANON_MAP,
   SYS_ANON_UNMAP,
+  SYS_CONSOLE,
   SYS_CALL_END /* Append future calls before this sentinel. */
 };
 
 enum { PROCESS_COMPAT = 0, PROCESS_STRICT = 1 };
+
+#define CONSOLE_COLUMNS 80u
+#define CONSOLE_ROWS 25u
+typedef struct { u32 cursor; u16 cells[CONSOLE_COLUMNS * CONSOLE_ROWS]; } ConsoleFrame;
 enum { FEATURE_SYSTEM_INFO = 1, FEATURE_STRICT_POLICY = 2, FEATURE_START_INFO = 4 };
 #define FEATURE_COMPLETION 8u
 #define FEATURE_BOUNDED_RUN 16u
