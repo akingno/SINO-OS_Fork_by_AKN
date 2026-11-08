@@ -81,7 +81,7 @@ Shell 宿主测试参数：`-ExpectedExitCode 1` 断言预期失败，`-TimeoutS
 
 ## 系统地图（路径相对 Source Code/）
 
-32 位 x86 BIOS，单体内核。桌面和剩余旧工具在 Ring 0。文件管理器（F1）、计算器（F4）、时钟（F6）已迁到 Ring 3。SI-SHELL（F2 / Terminal.app 可写，F12 只读）完全在 Ring 3 运行。画图及 SNP 专用实现已删除。文本编辑器仍在 Ring 0。主循环依次推进 RTC、桌面、网络、用户线程。
+32 位 x86 BIOS，单体内核。GUI 移除已完成内核解耦和源码删除（计划第一、二步）：桌面、窗口管理、图形绘制、设置与内置 Ring 0 应用已移除；窗口相关系统调用保留编号并返回错误。交互通过 ShellBridge，gsh 等 CLI 程序继续在 Ring 3 运行。GUI Ring 3 程序、磁盘资源和旧 GUI 测试入口待后续步骤清理，当前不能执行 GUI 验收。普通镜像仍可做无界面启动检查，启动日志为 `SINO CLI ready`。主循环依次推进 RTC、ShellBridge（启用时）、网络、用户线程；语言状态由 locale.c 持有。
 
 | 任务 | 起读文件 / 符号 | 对应验证入口 |
 | --- | --- | --- |
@@ -112,12 +112,12 @@ Shell 宿主测试参数：`-ExpectedExitCode 1` 断言预期失败，`-TimeoutS
 | 常用命令与欢迎界面 | user/gsh.c、gcmd.c、shell_commands.h、shell_banner.h | `regression.ps1 -Suite terminal-gui`（GUI 按需）；契约 docs/shell-tools.md |
 | 写工作区 | user/write_tool.c、gsh.c；process.c 可信来源 | `regression.ps1 -Suite terminal-gui`（GUI 按需）；契约 docs/workspace-shell.md |
 | 行编辑 | user/gsh.c、line_edit.h、terminal_edit_model.h | 宿主模型；`regression.ps1 -Suite terminal-gui`（GUI 按需）；契约 docs/shell-editing.md |
-| 桌面终端入口 | src32/gui.c Terminal 入口、user/gsh.c | tests/host/test-terminal-replacement.js；契约 docs/desktop-shell.md |
-| 打开 / 保存 / 恢复 | src32/gui.c → src32/vfs.c → src32/storage.c → src32/disk.c | tests/host/test-desktop.js、tests/host/test-recovery.js（均为 GUI，按需运行） |
-| 文本、窗口、绘制 | src32/gui.c、src32/keyboard.c、src32/graphics.c | tests/host/test-keyboard.js、tests/host/test-typography.js |
+| 桌面终端入口 | 已移除；CLI 使用 src32/shell_bridge.c、user/gsh.c | 旧 GUI 测试待清理，不执行 |
+| 打开 / 保存 / 恢复 | GUI 入口已移除；后端 src32/vfs.c → src32/storage.c → src32/disk.c 保留 | 后端按 files / persistence 选测 |
+| 文本、窗口、绘制 | GUI 绘制已移除；src32/keyboard.c 扫描码解码保留 | tests/host/test-keyboard.js；旧 GUI 测试不执行 |
 | 计算器 | user/calculator.c、src32/api.h、src32/process.c | tests/host/test-calculator.js |
 | 时钟与 RTC | user/clock.c、src32/rtc.c、src32/process.c:SYS_TIME | tests/host/test-clock.js |
-| 文件管理器 | user/files.c、src32/gui.c、src32/process.c | tests/host/test-files.js、tests/host/test-desktop.js |
+| 文件管理器 | user/files.c 待后续移除；内核 GUI 入口已移除 | 旧 GUI 测试待清理，不执行 |
 | 网络 | src32/net.h、src32/net.c:net_poll、user/netlib.c | tests/host/test-network.js（仅回环） |
 | 日志与语言资源 | src32/klog.c/.h、src32/locale.c/.h、resources/locale/ | tests/host/test-src32-refactor.js（43 项） |
 | QEMU 测试基础设施 | tools/vm-test.js、tools/qmp.js、verify-system.js | 按改动选择 |

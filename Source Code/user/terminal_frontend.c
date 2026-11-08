@@ -7,7 +7,10 @@
 #include "terminal_model.h"
 #include "terminal_edit_model.h"
 #include "line_edit.h"
-#include "../src32/theme.h"
+/* Keep the remaining frontend buildable until GUI user apps are removed. */
+#define THEME_TERM_BG   0x061216u
+#define THEME_TERM_INK  0xdae8e8u
+#define THEME_TERM_HINT 0x48a8b0u
 static char paste_text[256];
 static u32 paste_size, paste_position;
 static TerminalEditView edit_view;
