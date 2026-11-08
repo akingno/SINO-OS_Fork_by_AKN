@@ -1,5 +1,7 @@
 # SINO OS — AKN Fork
 
+> 目前为了专注底层开发，暂时删除了 GUI 界面 🙂；如果想体验 GUI，可以切换到 `main` 分支。
+
 > 基于 [SkysoftStudio-Felix/SINO-OS](https://github.com/SkysoftStudio-Felix/SINO-OS) (`bf0cad1`) 的独立衍生版本。原版是一个用 GPT-6 辅助开发的 32 位 x86 桌面操作系统原型；本 fork 由 [akingno](https://github.com/akingno) 维护，借助 AI 工具重写内核与子系统，重点在于完善用户态与内核态的权限隔离和内存管理，底层完善与 CLI 应用开发。开发过程中通过阶段性重构保持模块化与解耦（内存管理、文件系统、panic 等子系统各自独立），测试代码统一存放于 `tests/`，以缩减 AI 工具的上下文需求并保持可维护性。
 
 ## 图形桌面
