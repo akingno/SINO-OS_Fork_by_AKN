@@ -11,7 +11,6 @@
 #include "filesys.h"
 #include "pipe.h"
 #include "terminal.h"
-#include "ui_queue.h"
 #include "locale.h"
 #include "console.h"
 #include "lib/kstring.h"
@@ -50,7 +49,6 @@ typedef struct {
   void* kernel_stack;
   Thread thread[NT];
   Handle handles[HANDLES];
-  UiQueue input_queue;
   char name[32];
   u32 policy, workspace_frontend, input_frontend;
 
@@ -824,13 +822,6 @@ int process_kill(u32 pid, i32 code) {
     }
   return S_NOTFOUND;
 }
-void process_message(u32 pid, UiEvent e) {
-  for (int i = 0; i < NP; i++)
-    if (processes[i].state == 1 && processes[i].pid == pid) {
-      Process* p = &processes[i];
-      ui_queue_push(&p->input_queue,e,p->input_frontend);
-    }
-}
 static int homepath(u32 address, char* path, int writing) {
   char raw[VFS_PATH];
   u32* user_pd = current->pd;
@@ -1340,8 +1331,7 @@ static int syscall(Frame* f) {
     case SYS_SCENE:
       return S_BADHANDLE;
     case SYS_EVENT:
-      UACCESS_TRY(uaccess_prepare(user_pd, a, sizeof(UiEvent), USER_WRITE));
-      return ui_queue_pop(&current->input_queue,(UiEvent*)a);
+      return S_INVALID; /* Reserved GUI event call. */
     case SYS_CLOSE:
       r = handle_close(current->handles, a);
       if (r == S_OK)

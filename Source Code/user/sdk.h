@@ -249,9 +249,6 @@ static inline int Sync(void) {
   }
   return r;
 }
-static inline int Window(const char *p, int w, int h) {
-  return api(SYS_WINDOW, (u32)p, (u32)w, (u32)h);
-}
 static inline int Calendar(CalendarTime *value) {
   return api(SYS_CALENDAR, (u32)value, sizeof(*value), 0);
 }
@@ -261,38 +258,10 @@ static inline int Time(TimeOfDay *value) {
 static inline int UiLanguage(void) {
   return api(SYS_UI_LANGUAGE, 0, 0, 0);
 }
-static inline int WindowTitle(int h, const char *title) {
-  return api(SYS_WINDOW_TITLE, (u32)h, (u32)title, 0);
-}
-static inline int Scene(int h, const UiScene *s) {
-  return api(SYS_SCENE, (u32)h, (u32)s, 0);
-}
-static inline int Event(UiEvent *e) {
-  return api(SYS_EVENT, (u32)e, 0, 0);
-}
 static inline int Close(int h) {
   return api(SYS_CLOSE, (u32)h, 0, 0);
 }
 static inline int OpenPath(const char *p) { return api(SYS_OPEN_PATH,(u32)p,0,0); }
-static inline int FileClip(int set,FileClipboard *p) { return api(SYS_FILE_CLIP,(u32)set,(u32)p,0); }
-static inline int DropZones(int h,const UiDropZone *z,u32 n) { return api(SYS_DROP_ZONES,(u32)h,(u32)z,n); }
-static inline int GetWindowSize(int h,WindowSize *s) { return api(SYS_WINDOW_SIZE,(u32)h,(u32)s,sizeof(*s)); }
 void copy(char *, const char *);
-int text_encode(u32, char *);
-u32 text_previous(const char *, u32);
 void Log(const char *);
-void ui_begin(UiScene *);
-void ui_canvas_begin(UiCanvas *);
-int ui_canvas_fill(UiCanvas *, int, int, int, int, u32);
-int ui_canvas_text(UiCanvas *, int, int, int, const char *, u32);
-int ui_canvas_line(UiCanvas *, int, int, int, int, u32);
-int ui_canvas_ellipse(UiCanvas *, int, int, int, int, u32);
-void ui_text(UiScene *, int, int, const char *);
-void ui_mono(UiScene *, int, int, const char *, u32);
-void ui_mono_clip(UiScene *, int, int, int, const char *, u32);
-int ui_dialog(int, UiScene *, const char *, char *, int);
-void ui_button(UiScene *, int, int, int, const char *);
-void ui_fill(UiScene *, int, int, int, int, u32);
-void ui_panel(UiScene *, int, int, int, int, u32, int);
-int ui_hit(UiEvent *, int, int, int, int);
 #endif

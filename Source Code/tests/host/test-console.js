@@ -10,7 +10,7 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const persistence = process.argv.includes('--persistence');
 const {volume} = require(path.join(root, 'tools/test-volume'));
 const cases = persistence ? ['console.persist-create', 'console.persist-update', 'console.persist-delete'] : ['console.autostart', 'console.edit-history', 'console.workspace',
-    'console.cancel', 'console.ascii-input', 'console.restart'];
+    'console.cancel', 'console.ascii-input', 'console.restart', 'console.scrollback', 'console.scroll-input', 'console.scroll-output'];
 async function main(arg) {
     if (arg === '--list') { console.log(cases.join('\n') + '\n' + cases.length + ' cases'); return; }
     assert(arg, 'Pass an ordinary BuildOnly directory');
@@ -52,7 +52,7 @@ async function main(arg) {
         if(await fn())return;assert(Date.now()<end,'Timeout: '+label);await sleep(50);
     }}
     async function screen(){const file=path.join(directory,'vga.bin');await q.hmp(`pmemsave 0xb8000 4000 "${file.replaceAll('\\','/')}"`);
-        const b=fs.readFileSync(file);return Array.from({length:25},(_,y)=>Array.from({length:80},(_,x)=>String.fromCharCode(b[(y*80+x)*2])).join('').trimEnd()).join('\n').trimEnd();}
+        const b=fs.readFileSync(file);assert(Array.from({length:2000},(_,i)=>b[i*2+1]).every(a=>a===7),'monochrome VGA');return Array.from({length:25},(_,y)=>Array.from({length:80},(_,x)=>String.fromCharCode(b[(y*80+x)*2])).join('').trimEnd()).join('\n').trimEnd();}
     async function key(...codes){await q.call('send-key',{keys:codes.map(data=>({type:'qcode',data})),'hold-time':15});await sleep(65);}
     async function type(text){const codes={' ':'spc','\n':'ret','.':'dot','/':'slash','-':'minus',';':'semicolon'};
         for(const c of text){if(c==='>')await key('shift','dot');else await key(codes[c]||c);}}
@@ -105,7 +105,36 @@ async function main(arg) {
         await check(cases[4],async()=>{await key('ctrl','spc');await command('echo nihao','\nnihao\n');});
         await check(cases[5],async()=>{const before=log().length;await key('ctrl','d');
             await until(()=>log().slice(before).includes('CONSOLE SHELL restarting'),'restart');
-            await until(async()=>(await screen()).endsWith('gsh:/ $'),'new prompt');await command('echo restarted','\nrestarted\n');});
+            await until(async()=>{const s=await screen();return !s.includes('nihao')&&s.endsWith('gsh:/ $');},'new prompt');await command('echo restarted','\nrestarted\n');});
+        await check(cases[6],async()=>{
+            // A long wrapped command plus its output exercises the same circular history.
+            await command('echo '+ 'abcdefghij'.repeat(16),'abcdefghij');
+            await command('help','');
+            const live = await screen();
+            await key('shift','pgup');
+            await until(async()=>{const s=await screen();return s!==live&&s.split('\n')[24]==='gsh:/ $';},'pinned prompt');
+            const older=await screen();
+            await sleep(200);assert.equal(await screen(),older,'history stays still while idle');
+            await key('shift','pgdn');
+            await until(async()=>(await screen())===live,'return to live output');
+        });
+        await check(cases[7],async()=>{
+            await type('echo draft');await key('shift','pgup');
+            await until(async()=>(await screen()).split('\n')[24]==='gsh:/ $ echo draft','pinned draft');
+            await key('left');await type('x');await key('ret');
+            await until(async()=>{const s=await screen();return s.includes('\ndrafxt\n')&&s.endsWith('gsh:/ $');},'resume draft editing');
+        });
+        await check(cases[8],async()=>{
+            await type('sleep 3\n');await sleep(300);
+            await key('shift','pgup');
+            const before=(await screen()).split('\n').slice(0,24).join('\n');
+            await sleep(3400);
+            await until(async()=>{const lines=(await screen()).split('\n');
+                return lines[24]==='gsh:/ $'&&lines.slice(0,24).join('\n')===before;
+            },'new output keeps history anchored');
+            await key('shift','pgdn');
+            await until(async()=>{const s=await screen();return s.includes('gsh:/ $ sleep 3\n')&&s.endsWith('gsh:/ $');},'completed command retained');
+        });
         }
         assert.equal(sources().sha256,build.sourceSha256,'source unchanged during tests');report.result='PASS';
     } catch(e){report.error=e.stack;throw e;}

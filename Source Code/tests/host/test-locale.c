@@ -15,7 +15,7 @@ int main(void) {
         complete = 0;
   check("locale.complete-catalog", complete);
   check("locale.language-fallback",
-        !strcmp(locale_text_for(99, GUI_LABEL_DESKTOP), "Desktop"));
+        !strcmp(locale_text_for(99, VFS_ERROR_UNKNOWN_ERROR), "Unknown error"));
   check("locale.invalid-key",
         !strcmp(locale_text((TextKey)-1), "[invalid text key]") &&
             !strcmp(locale_text(TEXT_KEY_COUNT), "[invalid text key]"));
@@ -32,24 +32,16 @@ int main(void) {
         locale_format(out, sizeof(out), VFS_ERROR_NODE_LIMIT, "", VFS_NODES) >
                 0 &&
             !strcmp(out, expected));
-  check("locale.user-text-preserved",
-        locale_format(out, sizeof(out), GUI_TEMPLATE_FILE_PROPERTIES, "桌面",
-                      42) > 0 &&
-            !strcmp(out, "桌面  File  42 bytes"));
-  check("locale.folder-properties",
-        locale_format(out, sizeof(out), GUI_TEMPLATE_FOLDER_PROPERTIES, "桌面",
-                      0) > 0 &&
-            !strcmp(out, "桌面  Folder  0 bytes"));
   check("locale.format-overflow",
-        locale_format(out, 4, GUI_TEMPLATE_FILE_PROPERTIES, "桌面", 42) == -1 &&
+        locale_format(out, 4, VFS_ERROR_NODE_LIMIT, "未知错误", 42) == -1 &&
             !out[0]);
   check("locale.format-zero-capacity",
-        locale_format(out, 0, GUI_TEMPLATE_FILE_PROPERTIES, "", 0) == -1);
+        locale_format(out, 0, VFS_ERROR_NODE_LIMIT, "", 0) == -1);
   settings_language = 0;
-  const char* zh = locale_text(GUI_LABEL_DESKTOP);
+  const char* zh = locale_text(VFS_ERROR_UNKNOWN_ERROR);
   settings_language = 1;
   check("locale.live-language",
-        !strcmp(zh, "桌面") &&
-            !strcmp(locale_text(GUI_LABEL_DESKTOP), "Desktop"));
+        !strcmp(zh, "未知错误") &&
+            !strcmp(locale_text(VFS_ERROR_UNKNOWN_ERROR), "Unknown error"));
   return 0;
 }

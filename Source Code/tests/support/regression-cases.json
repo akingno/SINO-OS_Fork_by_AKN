@@ -1053,14 +1053,6 @@
       "name": "locale.vfs-node-limit-en"
     },
     {
-      "id": "locale.user-text-preserved",
-      "name": "locale.user-text-preserved"
-    },
-    {
-      "id": "locale.folder-properties",
-      "name": "locale.folder-properties"
-    },
-    {
       "id": "locale.format-overflow",
       "name": "locale.format-overflow"
     },
@@ -1115,10 +1107,6 @@
     {
       "id": "model.line-model",
       "name": "model.line-model"
-    },
-    {
-      "id": "model.ui-queue",
-      "name": "model.ui-queue"
     }
   ],
   "rtc-driver": [

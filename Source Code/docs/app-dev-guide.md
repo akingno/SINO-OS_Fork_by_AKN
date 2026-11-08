@@ -1,12 +1,12 @@
 # 用户态应用开发指南
 
-用户态应用是独立运行在 Ring 3 的程序，包括 Shell、终端前端、文件管理器等，并非 Shell 的专用名称。
+用户态应用是独立运行在 Ring 3 的程序，包括 Shell、控制台宿主、文件工具等，并非 Shell 的专用名称。
 
 ## 基本环境
 
 使用 w64devkit GCC/GNU Binutils 和源码包含的 NASM 3.02 交叉编译。不链接宿主 CRT。应用入口为 `int main(void)`，退出或返回终止进程并释放句柄和地址空间。
 
-`user/sdk.h` 和 `user/runtime.c` 定义 ABI 1 的 UI 命令、文件/进程/消息包装函数。INT 0x80 进入内核，所有用户指针经过页表权限检查。
+`user/sdk.h` 和 `user/runtime.c` 定义原生 ABI 的文件、进程、流和文本会话包装函数。INT 0x80 进入内核，所有用户指针经过页表权限检查。
 
 ## 构建流程
 
@@ -25,53 +25,28 @@ SNX1 在 32 字节头中存储 magic、ABI 版本、映像大小、入口点、�
 - 仅整数 C（无 FPU/SIMD、libc、异常或动态链接）
 - 8 个进程，每进程 4 线程
 - 每进程 24 个本地句柄
-- 每进程 15 个待处理输入事件
-- 8 个桌面窗口
 - 每线程 16 KiB 栈
 - 线程函数必须调用 `SYS_THREAD_EXIT`，不能直接 return
 - Read/Write 返回 `src32/api.h` 中定义的统一负数错误码
 - Home 写能力不授权写入 `/boot`、`/etc` 或内核内存
 
-## 窗口与绘图
+## 文字控制台
 
-Window/Scene/Event 提供 UI 展示。内核每画布最多验证复制 256 命令（旧 UiScene 保持 64 命令兼容）。不共享帧缓冲或内核指针。
-
-绘图原语：
-
-| 命令 | 说明 |
-| --- | --- |
-| UI_PANEL | 填充矩形 |
-| UI_TEXT | 文本（Font 0/1/2） |
-| UI_CELL_TEXT | 固定网格 UTF-8 文本行（终端用，Font 2） |
-| UI_LINE | 有符号线段（±1000 × ±714） |
-| UI_ELLIPSE | 有界填充椭圆 |
-| UI_GRID | 网格 |
-| UI_SELECTION | 选区 |
-
-`ui_canvas_begin/fill/text/line/ellipse` 构建最多 256 命令的 UiCanvas，溢出返回 `S_LIMIT`。Font 2 ASCII 前进 7 像素，非 ASCII 前进 21 像素，每命令字符串上限 79 字节。
-
-窗口策略标志（可组合）：
-
-| 标志 | 值 | 说明 |
-| --- | --- | --- |
-| WINDOW_CLOSE_REQUEST | 1 | 接收关闭请求消息 |
-| WINDOW_APP_KEYS | 2 | F5/F8 交给应用而非全局快捷键 |
-| WINDOW_NO_IME | 4 | 非文本应用排除拼音输入 |
-| WINDOW_DESKTOP_COMMANDS | 8 | 接收桌面命令消息 |
-
-用户窗口最大 1000×714。
+普通镜像由受信任的 `conhost.snx` 持有 SYS_CONSOLE 设备权限，使用 VGA 80×25 单色文字帧。
+应用通过文本会话和标准流收发数据，不直接访问显存或键盘。Shift+PageUp/PageDown 由 conhost 处理，历史浏览时输入光标所在行固定在底部。
+窗口、绘图、GUI 事件 SDK 和 Forms 接口已移除；旧系统调用编号保留并返回错误。
 
 ## 权限策略
 
 ### 兼容策略
 
-继承原有全局文件和桌面访问。现有应用（文件管理器等）使用此策略。
+按启动时授予的能力访问旧式全局接口，主要供兼容程序和探针使用。
 
 ### 严格策略（caps=0）
 
 `run -s` 启动的进程默认拒绝一切，仅允许白名单中的系统调用。Shell、文件工具和新用户程序运行在此策略下。
 
-受保护只读 boot 节点（`/boot/files.snx`、`/boot/term.snx` 等）的加载器在解析后移除所有能力位，不区分大小写或别名路径。
+受保护只读 boot 节点的加载器在解析后移除所有能力位，不区分大小写或别名路径。
 
 ## 常用系统调用
 
@@ -82,11 +57,6 @@ Window/Scene/Event 提供 UI 展示。内核每画布最多验证复制 256 命�
 - `UiLanguage()`：当前 UI 语言（0 中文，1 英文）
 - `Time(TimeOfDay*)`：缓存的本地 RTC 时间（12 字节，时/分/秒）
 - `CalendarTime(CalendarTime*)`：完整日期时间（32 字节）
-
-### 窗口
-
-- `WindowTitle(handle, title)`：设置窗口标题，最多 63 UTF-8 字节
-- `GetWindowSize(handle, WindowSize*)`：获取逻辑客户区宽高
 
 ### 进程
 
@@ -117,7 +87,7 @@ Window/Scene/Event 提供 UI 展示。内核每画布最多验证复制 256 命�
 
 ### 写工作区（Stage G5b）
 
-- `SYS_WORKSPACE`：仅限由只读 boot/term.snx 发起的可信来源
+- `SYS_WORKSPACE`：由内核启动的可信 conhost 获取工作区授权后，按交互协议委托给 Shell 和写工具
 - `SYS_DIRECTORY_COMMIT`：提交整代 home 快照
 
 ### 行编辑（Stage G5c）
@@ -135,9 +105,9 @@ Window/Scene/Event 提供 UI 展示。内核每画布最多验证复制 256 命�
 
 ## 示例应用
 
-- `user/hello.c`：最简示例
-- `user/files.c`：文件管理器（CAP_HOME，桌面集成）
-- `user/gsh.c`：SI-SHELL（caps=0，120×25 终端）
+- `user/console_host.c`：受信任的文字控制台宿主
+- `user/gsh.c`：严格 Ring 3 Shell
+- `user/tview.c`、`user/write_tool.c`：读取和写入文件的工具
 
 ## 详细契约文档
 
@@ -152,5 +122,5 @@ Window/Scene/Event 提供 UI 展示。内核每画布最多验证复制 256 命�
 - [shell-tools.md](shell-tools.md) — 日常命令
 - [workspace-shell.md](workspace-shell.md) — 写工作区
 - [shell-editing.md](shell-editing.md) — 行编辑
-- [desktop-shell.md](desktop-shell.md) — 桌面终端入口
+- [text-console.md](text-console.md) — 开机文字控制台
 - [boot-image.md](boot-image.md) — 启动镜像布局

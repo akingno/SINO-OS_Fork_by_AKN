@@ -35,7 +35,7 @@
 - 通过后停止。仅因新的修改、失败或明确的未验证影响扩大或重跑；50/20 是上限，不是目标。测试器检查仅在测试框架变化时运行，纯文档/目录说明修改不启动系统回归。
 - `-Full` 仅供用户显式全量验收，AI 不以此绕过本步限制。压力和全量 core 不自动追加。同一轮共用构建与摘要；源码/测试身份变化后遵守重建检查，不强行复用旧镜像。
 
-历史阶段测试和 GUI 入口已移除，不保留转发。稳定业务用例在 tests/host/suites/，不互相调用；固定 ID 在 tests/support/regression-cases.json，组合仅放在 regression-suites.js / regression-catalog.js。统一入口保留 24 个功能组 / 270 个固定 ID（core 23 组 / 261 项，stress 1 组 / 9 项）。新增或修改入口时同步更新模块指南；全部数量和其他专项见 [当前测试目录](Source Code/docs/test-catalog.md)。
+历史阶段测试和 GUI 入口已移除，不保留转发。稳定业务用例在 tests/host/suites/，不互相调用；固定 ID 在 tests/support/regression-cases.json，组合仅放在 regression-suites.js / regression-catalog.js。统一入口保留 24 个功能组 / 267 个固定 ID（core 23 组 / 258 项，stress 1 组 / 9 项）。新增或修改入口时同步更新模块指南；全部数量和其他专项见 [当前测试目录](Source Code/docs/test-catalog.md)。
 
 常用测试选择（仓库根目录，PowerShell）：
 
@@ -86,7 +86,7 @@ Shell 宿主测试参数：`-ExpectedExitCode 1` 断言预期失败，`-TimeoutS
 
 | 任务 | 起读文件 / 符号 | 对应验证入口 |
 | --- | --- | --- |
-| 开机文字 Shell | user/console_host.c、src32/console.c、process.c:SYS_CONSOLE、loader.asm | `node 'Source Code/tests/host/test-console.js' <普通 BuildOnly 目录>`；6 项；追加 `--persistence` 为 3 项跨重启自动保存检查；契约 docs/text-console.md |
+| 开机文字 Shell | user/console_host.c、src32/console.c、process.c:SYS_CONSOLE、loader.asm | `node 'Source Code/tests/host/test-console.js' <普通 BuildOnly 目录>`；9 项；追加 `--persistence` 为 3 项跨重启自动保存检查；契约 docs/text-console.md |
 | 构建、引导 | build32.ps1、build-image32.js、src32/loader.asm、src32/kernel.c:kmain | `tests/host/test-boot.js <BuildOnly 构建目录>` |
 | FAT12 启动卷 | src32/fs/boot_fat12.c:fs_init / fs_read / fs_read_at、src32/boot-ramdisk.h | 普通镜像无窗口启动；ShellBridge 验证 `/boot` 读取 |
 | 物理页分配、启动页表 | src32/mm/page.c:page_init / page_alloc_run、src32/mm/paging.c:paging_bootstrap / paging_kernel_init | 普通镜像无窗口启动，核对启动日志 |
@@ -117,7 +117,7 @@ Shell 宿主测试参数：`-ExpectedExitCode 1` 断言预期失败，`-TimeoutS
 | 键盘解码 | src32/keyboard.c | tests/host/test-keyboard.js（宿主逻辑） |
 | 时钟与 RTC | src32/rtc.c、src32/process.c:SYS_TIME | `regression.ps1 -Suite rtc-driver` |
 | 网络 | src32/net.h、src32/net.c:net_poll、user/netlib.c | `regression.ps1 -Suite network`（仅回环） |
-| 日志与语言资源 | src32/klog.c/.h、src32/locale.c/.h、resources/locale/ | tests/host/test-src32-refactor.js（43 项） |
+| 日志与语言资源 | src32/klog.c/.h、src32/locale.c/.h、resources/locale/ | tests/host/test-src32-refactor.js（41 项） |
 | QEMU 测试基础设施 | tools/shell-test.js、tools/qmp.js、tests/support/regression-vm.js | 按改动选择；verify-system.js 仅宿主键盘检查 |
 
 ## 关键边界

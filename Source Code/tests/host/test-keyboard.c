@@ -13,6 +13,9 @@ int main(void){
  assert(key(58)==0);assert(key(30)=='A');keyboard_decode(42);assert(key(30)=='a');assert(key(12)=='_');keyboard_decode(170);key(58);assert(key(30)=='a');
  keyboard_decode(29);keyboard_decode(0xe0);keyboard_decode(29);keyboard_decode(157);assert(key(31)==19);keyboard_decode(0xe0);keyboard_decode(157);assert(key(31)=='s');
  assert(ext(28)==13);assert(ext(53)=='/');assert(ext(75)==0x14b);assert(ext(83)==0x153);
+ keyboard_decode(42);assert(ext(73)==KEY_SHIFT_PAGE_UP);assert(ext(81)==KEY_SHIFT_PAGE_DOWN);
+ assert(ext(75)==0x14b);keyboard_decode(170);assert(ext(73)==0x149);assert(ext(81)==0x151);
+ keyboard_decode(54);assert(key(73)==KEY_SHIFT_PAGE_UP);assert(key(81)==KEY_SHIFT_PAGE_DOWN);keyboard_decode(182);
  assert(key(71)=='7');assert(key(82)=='0');assert(key(83)=='.');assert(key(74)=='-');assert(key(78)=='+');assert(key(55)=='*');
  keyboard_decode(54);assert(key(74)=='-');assert(key(78)=='+');assert(key(55)=='*');assert(key(71)==0x147);keyboard_decode(182);
  key(69);assert(key(71)==0x147);key(69);assert(key(71)=='7');

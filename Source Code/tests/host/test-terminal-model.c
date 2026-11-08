@@ -1,6 +1,6 @@
 /* Hosted assertions against the frontend's actual text model. */
 #include <stdio.h>
-#include "../../user/terminal_model.h"
+#include "../../user/console_view.h"
 static TerminalModel other_model;
 static int terminal_model_selftest(TerminalModel *m) {
 #define REQUIRE_MODEL(test) \
@@ -53,10 +53,53 @@ static int terminal_model_selftest(TerminalModel *m) {
   terminal_model_init(m, 80, 25);
   for (int i = 0; i < 26; i++)
     terminal_model_write(m, (const u8 *)"\xe4\xbd\xa0", 3);
-  char encoded[80];
-  u32 next;
-  int n = terminal_model_segment(m, 0, 0, encoded, &next);
-  REQUIRE_MODEL(n == 78 && next == 80 && encoded[n] == 0);
+  /* Normal layout, anchored history, pinned live input and ring eviction. */
+  terminal_model_init(m, 80, 25);
+  TerminalEditView v = {0};
+  ConsoleFrame frame;
+  terminal_model_write(m, (const u8 *)"hello\n$ ", 8);
+  console_view_frame(m, &v, &frame);
+  REQUIRE_MODEL(frame.cursor == 82 && frame.cells[80] == '$' && frame.cells[24 * 80] == ' ');
+  for (u32 i = 0; i < 60; i++) {
+    terminal_model_codepoint(m, 'A' + i % 26);
+    terminal_model_codepoint(m, '\n');
+  }
+  TerminalEdit e = {0}; e.bytes = e.cursor = 7;
+  const char *prompt = "$ draft";
+  for (u32 i = 0; i < e.bytes; i++) e.text[i] = prompt[i];
+  terminal_edit_apply(m, &v, &e);
+  terminal_model_scroll(m, 23);
+  u32 top = terminal_model_row(m, 0), offset = m->scroll;
+  terminal_edit_apply(m, &v, &e);
+  REQUIRE_MODEL(m->scroll == offset && terminal_model_row(m, 0) == top);
+  console_view_frame(m, &v, &frame);
+  REQUIRE_MODEL(frame.cells[24 * 80] == '$' && frame.cells[24 * 80 + 2] == 'd');
+  REQUIRE_MODEL(frame.cursor == 24 * 80 + 7 && frame.cells[0] == m->cells[top][0]);
+  terminal_model_scroll(m, -1000);
+  REQUIRE_MODEL(m->scroll == 0);
+  v.active = 0;
+  terminal_model_scroll(m, 23);
+  top = terminal_model_row(m, 0);
+  terminal_model_write(m, (const u8 *)"x\ny\n", 4);
+  REQUIRE_MODEL(terminal_model_row(m, 0) == top && m->scroll == 25);
+  terminal_model_scroll(m, 1000);
+  REQUIRE_MODEL(m->scroll == m->used - m->rows);
+  for (u32 i = 0; i < 180; i++) terminal_model_write(m, (const u8 *)"z\n", 2);
+  REQUIRE_MODEL(m->used == TERMINAL_HISTORY && m->scroll == TERMINAL_HISTORY - m->rows);
+  REQUIRE_MODEL(terminal_model_row(m, 0) == (m->line + 1) % TERMINAL_HISTORY);
+  console_view_frame(m, &v, &frame);
+  REQUIRE_MODEL(frame.cursor == 24 * 80 && frame.cells[24 * 80] == ' ');
+  /* A wrapped input pins the caret row, even when it is not the last model row. */
+  m->scroll = 0; v.active = 0;
+  e.bytes = 170; e.cursor = 90;
+  for (u32 i = 0; i < e.bytes; i++) e.text[i] = 'a' + i / 80;
+  terminal_edit_apply(m, &v, &e);
+  terminal_model_scroll(m, 23);
+  console_view_frame(m, &v, &frame);
+  REQUIRE_MODEL(frame.cursor == 24 * 80 + 10 && frame.cells[24 * 80] == 'b');
+  e.action = 2; e.bytes = e.cursor = 7;
+  terminal_edit_apply(m, &v, &e);
+  REQUIRE_MODEL(!m->scroll && m->used == 1);
 #undef REQUIRE_MODEL
   return 0;
 }

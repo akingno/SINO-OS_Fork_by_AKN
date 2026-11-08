@@ -8,9 +8,11 @@ typedef struct {
 } TerminalEditView;
 static void terminal_edit_apply(TerminalModel *m, TerminalEditView *v,
                                 const TerminalEdit *e) {
+  u32 browsing = m->scroll;
   if (e->action == 2) {
     terminal_model_init(m, m->columns, m->rows);
     v->active = 0;
+    browsing = 0;
   }
   if (!v->active) {
     v->line = m->line;
@@ -49,6 +51,10 @@ static void terminal_edit_apply(TerminalModel *m, TerminalEditView *v,
     u32 distance =
         (m->line + TERMINAL_HISTORY - v->caret_line) % TERMINAL_HISTORY;
     m->scroll = distance >= m->rows ? distance - m->rows + 1 : 0;
+  }
+  if (browsing) {
+    u32 maximum = m->used > m->rows ? m->used - m->rows : 0;
+    m->scroll = browsing > maximum ? maximum : browsing;
   }
 }
 #endif

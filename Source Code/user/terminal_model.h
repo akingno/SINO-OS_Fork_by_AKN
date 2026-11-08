@@ -6,9 +6,8 @@
 #define TERMINAL_HISTORY 128u
 #define TERMINAL_CONTINUATION 0x110000u
 
-/* Each frontend owns its history and streaming decoder. Unicode uses three
- * seven-pixel cells, matching UI_CELL_TEXT and the existing 17-pixel CJK font.
- */
+/* Frontend-owned history and streaming UTF-8 decoder. Non-ASCII occupies
+ * three model cells; the VGA frontend renders unsupported characters as ?. */
 typedef struct {
   u32 cells[TERMINAL_HISTORY][TERMINAL_COLUMNS];
   u8 wrapped[TERMINAL_HISTORY];
@@ -52,6 +51,10 @@ static void terminal_model_newline(TerminalModel *m, int wrapped) {
   if (m->used < TERMINAL_HISTORY)
     m->used++;
   terminal_model_blank(m, m->line);
+  if (m->scroll) {
+    u32 maximum = m->used > m->rows ? m->used - m->rows : 0;
+    if (m->scroll < maximum) m->scroll++;
+  }
   m->wrapped[m->line] = (u8)wrapped;
 }
 static void terminal_model_erase(TerminalModel *m, u32 column) {
@@ -63,7 +66,6 @@ static void terminal_model_erase(TerminalModel *m, u32 column) {
     row[i] = ' ';
 }
 static void terminal_model_codepoint(TerminalModel *m, u32 cp) {
-  m->scroll = 0;
   if (cp == '\r') {
     m->column = 0;
     return;
@@ -156,42 +158,5 @@ static u32 terminal_model_row(const TerminalModel *m, u32 visible) {
   u32 shown = m->used < m->rows ? m->used : m->rows;
   return (m->line + TERMINAL_HISTORY + 1 - shown - m->scroll + visible) %
          TERMINAL_HISTORY;
-}
-/* Emit a whole-codepoint segment for the 79-byte scene string. Row history is
- * clipped on resize, without reflow. Continuation cells never become text. */
-static int terminal_model_segment(const TerminalModel *m, u32 row, u32 column,
-                                  char out[80], u32 *next) {
-  u32 end = m->columns, count = 0;
-  while (end && m->cells[row][end - 1] == ' ')
-    end--;
-  while (column < end) {
-    u32 cp = m->cells[row][column];
-    if (cp == TERMINAL_CONTINUATION) {
-      column++;
-      continue;
-    }
-    u32 width = cp >= 128 ? 3 : 1;
-    if (column + width > m->columns) {
-      cp = '?';
-      width = 1;
-    }
-    u32 bytes = cp < 128 ? 1 : cp < 2048 ? 2 : cp < 65536 ? 3 : 4;
-    if (count + bytes > 79)
-      break;
-    if (bytes == 1)
-      out[count++] = (char)cp;
-    else {
-      out[count++] = (char)((bytes == 2   ? 0xc0
-                             : bytes == 3 ? 0xe0
-                                          : 0xf0) |
-                            (cp >> (6 * (bytes - 1))));
-      for (u32 i = bytes - 1; i; i--)
-        out[count++] = (char)(0x80 | ((cp >> (6 * (i - 1))) & 63));
-    }
-    column += width;
-  }
-  *next = column >= end ? m->columns : column;
-  out[count] = 0;
-  return (int)count;
 }
 #endif

@@ -18,7 +18,7 @@ async function test(id, action) { await action(); passed++; console.log('PASS ' 
     await test('plan.stress-isolation', () => {
         const core = createPlan('core', {full:true});
         assert(!core.names.includes('process-stress'));
-        assert.equal(core.count, 261);
+        assert.equal(core.count, 258);
         assert.equal(createPlan('stress').count, 9);
     });
     await test('plan.total-budget', () => {

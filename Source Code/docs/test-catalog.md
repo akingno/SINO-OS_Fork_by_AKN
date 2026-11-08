@@ -2,7 +2,7 @@
 
 日常按 [模块选测指南](../tests/TESTING.md) 选择命令；本文是完整目录，无需每次通读。临时开发项独立登记在 [development/INDEX.md](../tests/development/INDEX.md)，不计入下面稳定回归。
 
-统一入口登记 **24 个功能组、270 个固定用例 ID**：`core` 23 组/261 项，`stress` 1 组/9 项。GUI 的 9 组/32 项及旧独立 GUI 入口已删除。此数不包括下面独立列出的启动、内存、测试器单元检查和原有系统专项。组合按固定 ID 去重，重复入口不产生新覆盖；内部断言、夹具、兼容转发和辅助文件不额外计数。
+统一入口登记 **24 个功能组、267 个固定用例 ID**：`core` 23 组/258 项，`stress` 1 组/9 项。GUI 的 9 组/32 项及旧独立 GUI 入口已删除。此数不包括下面独立列出的启动、内存、测试器单元检查和原有系统专项。组合按固定 ID 去重，重复入口不产生新覆盖；内部断言、夹具、兼容转发和辅助文件不额外计数。
 
 ## 统一入口：命令与接口
 
@@ -25,7 +25,7 @@
 | `completion-waits` | 8 | 完成记录阻塞等待 |
 | `terminal-waits` | 11 | 终端阻塞读取 |
 | `shell-waits` | 5 | Shell/SDK 等待集成 |
-| `infrastructure`（手动全量） | 50 | 存储、日志、语言资源和 7 个宿主模型 |
+| `infrastructure`（手动全量） | 47 | 存储、日志、语言资源和 6 个宿主模型 |
 | `rtc-driver` | 1 | RTC 解码、采样和缓存 |
 | `shell-transport`（手动全量） | 25 | Shell 通道和帧恢复 |
 | `shell-commands`（手动全量） | 112 | 命令、语法和 Shell 文件操作 |
@@ -62,7 +62,7 @@
 | `test-src32-refactor.js` | 43 | 存储 25、klog 3、locale 14、源码未变 1；是 infrastructure 的组成部分 |
 | `test-keyboard.js` | 1 个宿主程序 | 实际 keyboard.c 的逻辑检查，不计为 GUI 自动操作 |
 
-infrastructure 还编译 7 个宿主模型：`test-terminal-model.c`、`test-gsh.c`、`test-file-text.c`、`test-text-scan.c`、`test-line-edit.c`、`test-line-model.c`、`test-ui-queue.c`。`test-src32-storage.c`、`test-klog.c`、`test-locale.c` 由基础设施入口编译。`test-rtc.c` 由 rtc-driver 编译；其中的多次断言不是独立运行用例。
+infrastructure 还编译 6 个宿主模型：`test-terminal-model.c`、`test-gsh.c`、`test-file-text.c`、`test-text-scan.c`、`test-line-edit.c`、`test-line-model.c`。`test-src32-storage.c`、`test-klog.c`、`test-locale.c` 由基础设施入口编译。`test-rtc.c` 由 rtc-driver 编译；其中的多次断言不是独立运行用例。
 
 ## 保留的独立宿主入口
 

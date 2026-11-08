@@ -228,55 +228,6 @@ typedef struct {
   u32 size, version, policy, caps, features, reserved;
 } StartInfo;
 enum { CAP_HOME = 1, CAP_NETWORK = 2, CAP_MANAGE = 4 };
-enum {
-  UI_FILL = 1,
-  UI_TEXT,
-  UI_BUTTON,
-  UI_LINE,
-  UI_PANEL,
-  UI_GRID,
-  UI_SELECTION,
-  UI_ELLIPSE,
-  UI_CELL_TEXT /* Font 2, seven-pixel cells, non-ASCII occupies three cells. */
-};
-enum {
-  WINDOW_CLOSE_REQUEST = 1,
-  WINDOW_APP_KEYS = 2,
-  WINDOW_NO_IME = 4,
-  WINDOW_DESKTOP_COMMANDS = 8
-};
-enum {
-  MSG_CLICK = 1,
-  MSG_KEY,
-  MSG_CLOSE,
-  MSG_MOUSE_MOVE,
-  MSG_MOUSE_UP,
-  MSG_TEXT,
-  MSG_CONTEXT,
-  MSG_COMMAND,
-  MSG_FILES_CHANGED,
-  MSG_SCROLL, MSG_INPUT_REJECTED
-};
-#define UI_COMMANDS 64
-#define UI_CANVAS_COMMANDS 256
-typedef struct {
-  i32 kind, x, y, w, h;
-  u32 color;
-  char text[80];
-} UiCommand;
-typedef struct {
-  u32 count;
-  UiCommand commands[UI_COMMANDS];
-} UiScene;
-/* Variable-length SYS_SCENE keeps original 64-command ABI 1 clients valid. */
-typedef struct {
-  u32 count;
-  UiCommand commands[UI_CANVAS_COMMANDS];
-} UiCanvas;
-typedef struct {
-  u32 type, window;
-  i32 x, y, key;
-} UiEvent;
 typedef struct {
   u32 hour, minute, second;
 } TimeOfDay;
@@ -290,23 +241,6 @@ typedef struct {
   char name[32];
   u32 size, dir;
 } FileInfo;
-/* Generic file transfer rectangles. Paths are copied/validated by the kernel;
-   no Node, Window or framebuffer address crosses this interface. */
-#define DROP_ZONES 32
-#define DROP_SOURCE 1u
-#define DROP_TARGET 2u
-typedef struct {
-  i32 x, y, w, h;
-  u32 flags;
-  char path[128];
-} UiDropZone;
-typedef struct {
-  char path[128];
-  u32 cut;
-} FileClipboard;
-typedef struct {
-  u32 width, height;
-} WindowSize;
 #define USER_BASE 0x40000000u
 #define USER_DYNAMIC_BASE 0x40400000u
 #define USER_DYNAMIC_END 0x80000000u

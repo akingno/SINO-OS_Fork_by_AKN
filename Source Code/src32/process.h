@@ -40,6 +40,5 @@ int process_interrupt(Frame *);
 /* Validate or populate a missing page in the current process's anonymous range. */
 int process_anon_page(u32* pd, u32 page, int populate);
 u32 process_user_limit(const u32* pd, u32 address);
-void process_message(u32, UiEvent);
 void process_tests(void);
 #endif

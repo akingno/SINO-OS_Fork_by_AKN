@@ -1,7 +1,6 @@
 #include "netlib.h"
 static int failed;
 static volatile int http_done, dns_done;
-static UiScene scene;
 static char response[512];
 static void check(int ok, const char *s) {
   if (!ok) {
@@ -146,21 +145,5 @@ int main(void) {
             stats.icmp_replies > 0,
         "network statistics");
   Log("NETWORK USER TEST PASS\n");
-  int w = Window("SINO 网络工具 / 回环验证", 640, 390);
-  ui_begin(&scene);
-  ui_text(&scene, 24, 57, "回环网络实测通过：127.0.0.1");
-  ui_text(&scene, 24, 104, "ICMP echo / UDP echo / TCP 建连、传输、关闭");
-  ui_text(&scene, 24, 144, "HTTP 本地 GET / 超时重传 / 缓冲边界");
-  ui_text(&scene, 24, 190, "外部网卡、ARP、DHCP 与公网尚未启用。");
-  ui_text(&scene, 24, 234, response);
-  ui_button(&scene, 24, 320, 130, "关闭");
-  Scene(w, &scene);
-  for (;;) {
-    UiEvent e;
-    if (Event(&e) == 0 &&
-        (ui_hit(&e, 24, 320, 130, 26) || (e.type == MSG_KEY && e.key == 27)))
-      break;
-    Yield(1);
-  }
   return failed;
 }

@@ -10,7 +10,7 @@ async function infrastructure({directory, command, readJSON}) {
         path.join(folder, 'output.txt'), {SINO_REFACTOR_REPORT_DIR:folder});
     const result = readJSON(path.join(folder, 'src32-refactor-report.json'));
     assert.equal(result.goalSatisfied, true);
-    assert(result.checks.length >= 43 && result.checks.every(c => c.result === 'PASS'));
+    assert(result.checks.length >= 41 && result.checks.every(c => c.result === 'PASS'));
     const model = path.join(folder, 'terminal-model.exe');
     await command(host.tool('gcc'), [path.join(hostRoot, 'test-terminal-model.c'),
         '-std=c11', '-O2', '-Wall', '-Wextra', '-Werror', '-Wno-unused-function', '-o', model],
@@ -35,12 +35,12 @@ async function infrastructure({directory, command, readJSON}) {
     const editor=path.join(folder,'line-edit.exe');
     await command(host.tool('gcc'),[path.join(hostRoot,'test-line-edit.c'),'-std=c11','-O2','-Wall','-Wextra','-Werror','-o',editor],path.join(folder,'line-edit-build.txt'));
     const editOutput=path.join(folder,'line-edit-output.txt');await command(editor,[],editOutput);assert.equal(fs.readFileSync(editOutput,'utf8').trim(),'LINE EDIT PASS');
-    for(const [name,marker] of [['line-model','LINE MODEL PASS'],['ui-queue','UI QUEUE PASS']]){
+    for(const [name,marker] of [['line-model','LINE MODEL PASS']]){
       const exe=path.join(folder,name+'.exe');await command(host.tool('gcc'),[path.join(hostRoot,'test-'+name+'.c'),'-std=c11','-O2','-Wall','-Wextra','-Werror','-Wno-unused-function','-o',exe],path.join(folder,name+'-build.txt'));
       const output=path.join(folder,name+'-output.txt');await command(exe,[],output);assert.equal(fs.readFileSync(output,'utf8').trim(),marker);
     }
     const caseIds = result.checks.map(item => item.id).concat(['model.terminal', 'model.gsh-parser',
-        'model.file-text', 'model.text-scan', 'model.line-edit', 'model.line-model', 'model.ui-queue']);
+        'model.file-text', 'model.text-scan', 'model.line-edit', 'model.line-model']);
     return {checks:caseIds.length, caseIds, modelOutput, parserOutput, fileTextOutput, scanOutput,
         report:path.join(folder, 'src32-refactor-report.json')};
 }

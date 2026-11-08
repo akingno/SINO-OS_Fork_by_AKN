@@ -1,6 +1,7 @@
 /* Trusted text device owner. Shell commands still run as strict Ring 3 jobs. */
 #include "interactive.h"
-#include "terminal_edit_model.h"
+#include "console_view.h"
+#include "../src32/keyboard.h"
 static TerminalModel model;
 static TerminalEditView view;
 static TerminalEdit edit;
@@ -9,19 +10,7 @@ static InteractiveSpec intent;
 static int control, directory, shell, child;
 
 static int present(void) {
-  frame.cursor = CONSOLE_COLUMNS * CONSOLE_ROWS;
-  for (u32 y = 0; y < CONSOLE_ROWS; y++) {
-    u32 row = terminal_model_row(&model, y);
-    for (u32 x = 0; x < CONSOLE_COLUMNS; x++) {
-      u32 cp = y < model.used ? model.cells[row][x] : ' ';
-      frame.cells[y * CONSOLE_COLUMNS + x] = 0x0700u |
-          (cp == TERMINAL_CONTINUATION ? ' ' : cp >= 32 && cp < 127 ? cp : '?');
-    }
-    u32 caret = view.active ? view.caret_line : model.line;
-    u32 column = view.active ? view.caret_column : model.column;
-    if (row == caret && y < model.used && column < CONSOLE_COLUMNS)
-      frame.cursor = y * CONSOLE_COLUMNS + column;
-  }
+  console_view_frame(&model, &view, &frame);
   return ConsolePresent(&frame);
 }
 static void cleanup(void) {
@@ -77,6 +66,12 @@ int main(void) {
         if (!pending) pending = ConsoleReadKey();
         if (pending < 0) { cleanup(); return 1; }
         if (!pending) break;
+        if (pending == KEY_SHIFT_PAGE_UP || pending == KEY_SHIFT_PAGE_DOWN) {
+          int page = (int)model.rows - 2;
+          terminal_model_scroll(&model, pending == KEY_SHIFT_PAGE_UP ? page : -page);
+          dirty = 1; pending = 0; continue;
+        }
+        if (model.scroll) { model.scroll = 0; dirty = 1; }
         int status = input(pending);
         if (status == S_AGAIN) break;
         if (status < 0) { cleanup(); return 1; }

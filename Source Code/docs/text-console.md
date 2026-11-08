@@ -27,6 +27,15 @@ node 'Source Code/tests/host/test-console.js' 'Build Output/dev/runs/<普通构�
 
 追加 `--persistence`（预览为 `--list --persistence`）运行 3 项：console.persist-create、console.persist-update、console.persist-delete。专项不发送 sync，在创建/追加/改名/删除后直接停止 QEMU，再使用同一私有盘启动，核对字节、路径及删除结果。
 
-6 项固定 ID：console.autostart、console.edit-history、console.workspace、console.cancel、console.ascii-input、console.restart。
+9 项固定 ID：console.autostart、console.edit-history、console.workspace、console.cancel、console.ascii-input、console.restart、console.scrollback、console.scroll-input、console.scroll-output。
 专项使用独立无窗口 VM 和空白私有盘，通过 QMP 发送 PS/2 按键、读取 0xb8000 的文字字节，不调用桌面、窗口、截图或鼠标接口。
-报告与日志在构建目录 console-* 下。临时开发覆盖已提升为该稳定入口，不计入统一注册表的 270 项。
+报告与日志在构建目录 console-* 下。临时开发覆盖已提升为该稳定入口，不计入统一注册表的 267 项。
+
+## 键盘滚屏与单色显示
+
+Shift+PageUp / Shift+PageDown 每次移动 23 行（历史区域为 24 行，保留一行重叠），最多保留 128 行。
+普通 PageUp/PageDown 继续传给前台程序。浏览时新输出保持原视口；最早历史被覆盖时夹紧到仍保留的内容。
+输入行平常保持自然位置，不足 25 行时不强制置底；浏览历史时将当前输入光标所在的那一行固定到第 25 行，光标继续可见。
+长输入的其他折行保留在历史中。普通输入或编辑键先返回当前输入位置，再交给 Shell；Ctrl+C / Ctrl+D 的原有行为不变。
+清屏和会话重启清空历史与滚动位置。conhost 管理历史和输入视图，内核只负责提交字符帧和固定灰白字黑底属性；panic 同样单色。
+旧 GUI 事件队列、场景绘图 SDK、Forms 声明和 GUI 专用语言资源已删除，相关系统调用编号继续保留并返回错误。

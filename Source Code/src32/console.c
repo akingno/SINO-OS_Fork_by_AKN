@@ -7,10 +7,9 @@ static u32 cells[SCROLL_LINES][CON_COLS];
 static u32 utf_pending;
 static int utf_need;
 static u32 line, column;
-static u8 color = 7;
 static void blank(u32 n) {
   for (u32 i = 0; i < CON_COLS; i++)
-    cells[n % SCROLL_LINES][i] = 0x07000020;
+    cells[n % SCROLL_LINES][i] = ' ';
 }
 static void cursor(int pos) {
   outb(0x3d4, 0x0a);
@@ -24,7 +23,6 @@ static void cursor(int pos) {
   }
 }
 void con_init(void) {
-  color = 7;
   con_clear();
   outb(0x3d4, 0x0a);
   outb(0x3d5, 14);
@@ -33,7 +31,7 @@ void con_init(void) {
 }
 void console_present(const u16* frame, u32 position) {
   volatile u16* video = (volatile u16*)0xb8000;
-  for (u32 i = 0; i < CON_COLS * CON_ROWS; i++) video[i] = frame[i];
+  for (u32 i = 0; i < CON_COLS * CON_ROWS; i++) video[i] = 0x0700u | (frame[i] & 0xffu);
   cursor(position < CON_COLS * CON_ROWS ? (int)position : -1);
 }
 void con_clear(void) {
@@ -42,9 +40,6 @@ void con_clear(void) {
   for (u32 i = 0; i < SCROLL_LINES; i++)
     blank(i);
   con_flush();
-}
-void con_color(u8 value) {
-  color = value;
 }
 static void put_codepoint(u32 c) {
   if (c == '\r') {
@@ -65,7 +60,7 @@ static void put_codepoint(u32 c) {
   }
   if (c == '\b') {
     if (column)
-      cells[line % SCROLL_LINES][--column] = ((u32)color << 24) | ' ';
+      cells[line % SCROLL_LINES][--column] = ' ';
     return;
   }
   if (c < 32)
@@ -76,9 +71,9 @@ static void put_codepoint(u32 c) {
     column = 0;
     blank(line);
   }
-  cells[line % SCROLL_LINES][column++] = ((u32)color << 24) | c;
+  cells[line % SCROLL_LINES][column++] = c;
   for (int i = 1; i < width; i++)
-    cells[line % SCROLL_LINES][column++] = ((u32)color << 24) | 0x110000;
+    cells[line % SCROLL_LINES][column++] = 0x110000;
   if (column == CON_COLS) {
     column = 0;
     line++;
@@ -128,9 +123,9 @@ void con_flush(void) {
   for (u32 y = 0; y < CON_ROWS; y++)
     for (u32 x = 0; x < CON_COLS; x++) {
       u32 c =
-          start + y <= line ? cells[(start + y) % SCROLL_LINES][x] : 0x07000020;
+          start + y <= line ? cells[(start + y) % SCROLL_LINES][x] : ' ';
       v[y * CON_COLS + x] =
-          (u16)(((c >> 24) << 8) | ((c & 0x1fffff) < 128 ? (c & 127) : '?'));
+          (u16)(0x0700u | (c < 128 ? c : '?'));
     }
   u32 p = line * CON_COLS + column;
   cursor(p < start * CON_COLS ||
@@ -140,7 +135,6 @@ void con_flush(void) {
 }
 void console_panic(const char* s, u32 vector, u32 error) {
   con_clear();
-  con_color(0x4f);
   con_write("SINO kernel panic\n");
   con_write(s);
   con_put('\n');

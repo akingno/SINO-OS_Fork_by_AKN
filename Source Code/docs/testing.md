@@ -74,7 +74,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\test.ps1 -SelfTest -Full
 .\regression.ps1 -Suite core -Full
 ```
 
-`core` 由 23 个功能组、261 个用例组成，包含基础设施、RTC、Shell 通道/命令、进程、策略、完成记录、CLI、文件、管道、文本会话、交互代理、回环网络、独立持久化及测试器失败拒绝。它不调用终端窗口、QMP 键鼠、绘制场景或截图接口。宿主的终端/编辑模型属于无 GUI 逻辑测试，仍保留。
+`core` 由 23 个功能组、258 个用例组成，包含基础设施、RTC、Shell 通道/命令、进程、策略、完成记录、CLI、文件、管道、文本会话、交互代理、回环网络、独立持久化及测试器失败拒绝。它不调用终端窗口、QMP 键鼠、绘制场景或截图接口。宿主的终端/编辑模型属于无 GUI 逻辑测试，仍保留。
 
 独立验证持久化：
 

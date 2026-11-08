@@ -71,13 +71,8 @@ file writes and default desktop entry switching belong to subsequent work.
 
 ## Tests
 
-`tests/host/test-file-text.c` compiles the actual decoder/layout helpers, covering
-controls, malformed/partial UTF-8, four-byte codepoints, a sequence straddling
-byte512, empty input and wide-character wrapping. `tests/host/file-tools-gui.js`
-uses real QMP keyboard events and private-VM fixtures to exercise the Shell,
-broker, strict file tools, paging and resource cleanup. Fixtures are created
-by rdtest.snx, then removed; they must not be created on a daily development disk.
-GUI checks run only through `regression.ps1 -Suite terminal-gui`. Inspect explicit saved runs with
-test-summary.ps1; the full GUI/system gate remains a separate scope.
+`tests/host/test-file-text.c` covers the actual decoder/layout helpers. The text console uses
+`tests/host/test-console.js` with PS/2 keyboard input and VGA text memory; GUI acceptance
+and its old entry points have been removed. Shift+PageUp/PageDown scrollback belongs to conhost.
 
-G5a adds head/tail/wc/grep/hexdump/tree/find using the same catalog and file identity checks; see [shell-tools.md](shell-tools.md) for syntax, raw-byte counting versus text display and traversal bounds. tree/find also receive ENUM. Default frontend width is now120 cells.
+G5a adds head/tail/wc/grep/hexdump/tree/find using the same catalog and file identity checks; see [shell-tools.md](shell-tools.md) for syntax, raw-byte counting versus text display and traversal bounds. tree/find also receive ENUM. The ordinary VGA console is 80 columns wide.

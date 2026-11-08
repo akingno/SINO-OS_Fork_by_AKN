@@ -59,6 +59,8 @@ int keyboard_decode(unsigned char scan) {
       return 13;
     if (code == 53)
       return '/';
+    if (shift && (code == 73 || code == 81))
+      return 0x300 | (int)code;
     if (code >= 71 && code <= 83)
       return 0x100 | (int)code;
     return 0;
@@ -92,7 +94,7 @@ int keyboard_decode(unsigned char scan) {
     static const char keypad[] = "789-456+1230.";
     if (num ^ !!shift)
       return keypad[code - 71];
-    return 0x100 | (int)code;
+    return (shift && (code == 73 || code == 81) ? 0x300 : 0x100) | (int)code;
   }
   char c = plain[code];
   if (control && c == ' ')
