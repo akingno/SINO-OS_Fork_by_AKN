@@ -3,6 +3,7 @@
 #include "kernel.h"
 #include "mm/page.h"
 #include "mm/paging.h"
+#include "mm/kmap.h"
 #include "storage.h"
 #include "disk.h"
 #include "process.h"
@@ -318,6 +319,7 @@ void ps2_byte(int aux, u8 value) {
 
 void kernel_tests(void) {
   page_allocator_test();
+  kmap_selftest();
   __asm__ volatile("int3");
   u32 v = 2;
   __asm__ volatile("int $0x80" : "+a"(v)::"memory");

@@ -2,6 +2,8 @@
 #include "../klog.h"
 #include "addr.h"
 #include "page.h"
+#include "paging.h"
+#include "kmap.h"
 #include "../lib/kstring.h"
 #include "../panic.h"
 
@@ -127,8 +129,15 @@ static phys_t alloc_run(u32 count) {
       memset(mem_map + i, PAGE_USED, count);
       free_pages -= count;
       phys_t page = i * PAGE_SIZE;
-      /* Every allocatable page is inside the direct mapping for now. */
-      memset(phys_to_virt(page), 0, count * PAGE_SIZE);
+      if (!direct_map_end || page + count * PAGE_SIZE <= direct_map_end) {
+        memset(phys_to_virt(page), 0, count * PAGE_SIZE);
+      } else {
+        for (u32 k = 0; k < count; k++) {
+          void* mapped = kmap(page + k * PAGE_SIZE);
+          memset(mapped, 0, PAGE_SIZE);
+          kunmap(mapped);
+        }
+      }
       if (page >= BOOT_IDENTITY_BYTES && !logged_extended_allocation) {
         logged_extended_allocation = 1;
         pr_debug("PAGE first extended allocation=");

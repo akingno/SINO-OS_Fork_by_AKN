@@ -37,5 +37,6 @@
  * KMAP_BASE  - KMAP_BASE+4MiB   KMAP window (PDE 1022, shared page table) */
 #define KMAP_PDE_INDEX      1022u
 #define KMAP_BASE           0xFF800000u
+#define KMAP_SLOTS          8u
 
 #endif

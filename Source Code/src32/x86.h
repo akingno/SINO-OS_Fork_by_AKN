@@ -58,4 +58,7 @@ static inline phys_t read_cr3(void) {
 static inline void write_cr3(phys_t directory) {
   __asm__ volatile("mov %0,%%cr3" ::"r"(directory) : "memory");
 }
+static inline void invlpg(u32 address) {
+  __asm__ volatile("invlpg (%0)" ::"r"(address) : "memory");
+}
 #endif

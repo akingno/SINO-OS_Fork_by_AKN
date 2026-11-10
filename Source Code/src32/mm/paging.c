@@ -3,6 +3,7 @@
 #include "../klog.h"
 #include "page.h"
 #include "paging.h"
+#include "kmap.h"
 #include "layout.h"
 #include "../lib/kstring.h"
 #include "../panic.h"
@@ -85,6 +86,7 @@ void paging_kernel_init(void) {
   pd[KMAP_PDE_INDEX] = make_entry(virt_to_phys(kmap_pt), PAGE_PRESENT | PAGE_WRITE);
 
   paging_activate(pd);
+  kmap_init(kmap_pt);
   kernel_pd = pd;
   direct_map_end = dm_end;
   memcpy(kernel_pde_snapshot, pd, PAGE_SIZE);
