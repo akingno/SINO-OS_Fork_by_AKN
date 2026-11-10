@@ -185,7 +185,7 @@ static int restore(Snapshot s) {
     if (nodes[i].used && storage_tracks_node(i)) {
       for (u32 p = 0; p < VFS_PAGES; p++)
         if (nodes[i].pages[p])
-          page_free(nodes[i].pages[p]);
+          kpage_free(nodes[i].pages[p]);
       nodes[i].used = 0;
     }
   r = (Reader){BANK_START(s.bank) + 1, 512, s.bytes};

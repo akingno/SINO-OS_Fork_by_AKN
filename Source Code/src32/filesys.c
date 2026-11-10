@@ -36,16 +36,16 @@ void filesys_release(int pointer) {
   FileObject* f = (FileObject*)pointer;
   if (f->node >= 0 && live(f->node, f->generation)) vfs_refs[f->node]--;
   if (f->parent >= 0 && live(f->parent, f->parent_generation)) vfs_refs[f->parent]--;
-  for (u32 i = 0; i < VFS_PAGES; i++) if (f->pages[i]) page_free(f->pages[i]);
-  page_free(f);
+  for (u32 i = 0; i < VFS_PAGES; i++) if (f->pages[i]) kpage_free(f->pages[i]);
+  kpage_free(f);
 }
 /* Reserve resources before a create/truncate can become visible. */
 static int reserve(Handle* owner, u32 type, u32 rights, FileObject** out) {
-  FileObject* f = page_alloc();
+  FileObject* f = kpage_alloc();
   if (!f) return S_NOMEM;
   f->node = f->parent = -1;
   int object = object_new(type, (int)f);
-  if (object < 0) { page_free(f); return object; }
+  if (object < 0) { kpage_free(f); return object; }
   int h = handle_open(owner, object, rights);
   if (h < 0) { object_unref(object); return h; }
   *out = f;

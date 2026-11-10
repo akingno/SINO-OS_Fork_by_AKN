@@ -2,6 +2,7 @@
 /* Preemption only at user boundaries. Kernel/desktop remain non-preemptible. */
 #include "process.h"
 #include "mm/paging.h"
+#include "mm/kmap.h"
 #include "mm/uaccess.h"
 #include "object.h"
 #include "vfs.h"
@@ -75,8 +76,8 @@ static void run_free(RunData* run) {
   if (run->pending_directory) object_unref((int)run->pending_directory - 1);
   for (int i = 0; i < 3; i++)
     if (run->pending_pipe[i]) object_unref((int)run->pending_pipe[i] - 1);
-  for (int i = 0; i < 3; i++) if (run->buffer[i]) page_free(run->buffer[i]);
-  page_free(run);
+  for (int i = 0; i < 3; i++) if (run->buffer[i]) kpage_free(run->buffer[i]);
+  kpage_free(run);
   run_count--;
 }
 static struct {
@@ -135,11 +136,11 @@ static void release(Process* p) {
     if (leases[i].pid == p->pid)
       leases[i].pid = 0;
   handles_close(p->handles);
-  if (p->interactive) page_free(p->interactive);
+  if (p->interactive) kpage_free(p->interactive);
   if (p->pd)
     paging_user_destroy(p->pd);
   if (p->kernel_stack)
-    page_free(p->kernel_stack);
+    kpage_free(p->kernel_stack);
   /* Publish only after execution resources and owned handles are gone. */
   if (p->completion_object) {
     int object = (int)p->completion_object - 1;
@@ -155,17 +156,17 @@ static void release(Process* p) {
   }
   memset(p, 0, sizeof(*p));
 }
-static void* alloc_user_page(Process* p, u32 va, int write) {
-  void* page = page_alloc();
+static phys_t alloc_user_page(Process* p, u32 va, int write) {
+  phys_t page = page_alloc();
   if (page && !paging_user_map(p->pd, va, page, write)) {
     page_free(page);
-    return 0;
+    return PHYS_NULL;
   }
   return page;
 }
 static void free_user_pages(Process* p, u32 start, u32 end) {
   for (u32 va = start; va < end; va += PAGE_SIZE) {
-    void* page = paging_user_unmap(p->pd, va);
+    phys_t page = paging_user_unmap(p->pd, va);
     if (page)
       page_free(page);
   }
@@ -292,7 +293,7 @@ static int paging_probe_setup(Process* p, int exhaust) {
      new page table cannot. Keep the earlier mappings for launch rollback. */
   void** held = 0;
   while (free_pages > 1) {
-    void** page = page_alloc();
+    void** page = kpage_alloc();
     if (!page)
       break;
     *page = held;
@@ -302,7 +303,7 @@ static int paging_probe_setup(Process* p, int exhaust) {
                        free_pages == 1 && !paging_user_flags(p->pd, high);
   while (held) {
     void** next = *held;
-    page_free(held);
+    kpage_free(held);
     held = next;
   }
   if (!failed_cleanly || free_pages != before)
@@ -462,13 +463,13 @@ static int launch_policy(const char* path, u32 caps, const char* arguments,
   p->abi = h->abi;
   p->code_end = USER_BASE + h->data_offset;
   p->pd = paging_user_create();
-  p->kernel_stack = page_alloc();
+  p->kernel_stack = kpage_alloc();
   if (!p->pd || !p->kernel_stack) {
     release(p);
     return S_NOMEM;
   }
   for (u32 offset = 0; offset < h->memory_bytes; offset += PAGE_SIZE) {
-    void* page = alloc_user_page(p, USER_BASE + offset, offset >= h->data_offset);
+    phys_t page = alloc_user_page(p, USER_BASE + offset, offset >= h->data_offset);
     if (!page) {
       release(p);
       return S_NOMEM;
@@ -476,18 +477,23 @@ static int launch_policy(const char* path, u32 caps, const char* arguments,
     u32 length = h->image_bytes > offset ? h->image_bytes - offset : 0;
     if (length > PAGE_SIZE)
       length = PAGE_SIZE;
-    if (length)
-      memcpy(page, bytes + offset, length);
+    if (length) {
+      void* mapped = kmap(page);
+      memcpy(mapped, bytes + offset, length);
+      kunmap(mapped);
+    }
   }
-  u8* params = alloc_user_page(p, p->abi == 2 ? USER_V2_ARGUMENTS : USER_V1_ARGUMENTS, 0);
-  if (!params) {
+  phys_t params_page = alloc_user_page(p, p->abi == 2 ? USER_V2_ARGUMENTS : USER_V1_ARGUMENTS, 0);
+  if (!params_page) {
     release(p);
     return S_NOMEM;
   }
-  memcpy(params, arguments, strlen(arguments) + 1);
   char executable[128];
   vfs_path(n, executable);
+  u8* params = kmap(params_page);
+  memcpy(params, arguments, strlen(arguments) + 1);
   memcpy(params + 256, executable, strlen(executable) + 1);
+  kunmap(params);
   if (!alloc_user_stack(p, 0)) {
     release(p);
     return S_NOMEM;
@@ -632,7 +638,7 @@ int process_interactive_start(Handle* owner, const InteractiveSpec* spec,
     if (grant < 0)
       return grant;
   }
-  CliInfo* cli = page_alloc();
+  CliInfo* cli = kpage_alloc();
   if (!cli) {
     if (grant >= 0)
       object_unref(grant);
@@ -646,7 +652,7 @@ int process_interactive_start(Handle* owner, const InteractiveSpec* spec,
   memcpy(cli->bytes, spec->argv, spec->bytes);
   int h = tracked_launch(owner, path, "", 0);
   if (h < 0) {
-    page_free(cli);
+    kpage_free(cli);
     if (grant >= 0)
       object_unref(grant);
     return h;
@@ -659,7 +665,7 @@ int process_interactive_start(Handle* owner, const InteractiveSpec* spec,
       break;
     }
   if (!child) {
-    page_free(cli);
+    kpage_free(cli);
     if (grant >= 0)
       object_unref(grant);
     handle_close(owner, h);
@@ -712,11 +718,11 @@ int process_run_start_bound(Handle* owner, const RunSpec* spec, u32 directory, u
   if ((!directory && rights) || (directory && !rights)) return S_INVALID;
   if (streams && streams[0] && spec->input_bytes) return S_INVALID;
   if (run_count >= RUN_COUNT) return S_LIMIT;
-  RunData* run = page_alloc();
+  RunData* run = kpage_alloc();
   if (!run) return S_NOMEM;
   run_count++;
   for (int i = 0; i < 3; i++) {
-    run->buffer[i] = page_alloc();
+    run->buffer[i] = kpage_alloc();
     if (!run->buffer[i]) { run_free(run); return S_NOMEM; }
   }
   /* Caller has bounded and validated these kernel/user input ranges. */

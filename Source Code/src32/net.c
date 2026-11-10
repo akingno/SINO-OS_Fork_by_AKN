@@ -94,7 +94,7 @@ static int loop_tx(const u8* p, u32 size) {
     net_loop.stats.dropped++;
     return S_AGAIN;
   }
-  u8* page = page_alloc();
+  u8* page = kpage_alloc();
   if (!page)
     return S_NOMEM;
   memcpy(page, p, size);
@@ -119,7 +119,7 @@ int net_socket(int type) {
     return S_INVALID;
   for (int i = 0; i < NS; i++)
     if (!sockets[i]) {
-      Socket* s = page_alloc();
+      Socket* s = kpage_alloc();
       if (!s)
         return S_NOMEM;
       s->type = type;
@@ -133,7 +133,7 @@ int net_socket(int type) {
 }
 static void destroy(int n) {
   if (valid(n)) {
-    page_free(sockets[n]);
+    kpage_free(sockets[n]);
     sockets[n] = 0;
   }
 }
@@ -544,7 +544,7 @@ void net_poll(void) {
     u32 size = lengths[tail];
     tail = (tail + 1) & 7;
     input(p, size);
-    page_free(p);
+    kpage_free(p);
   }
   for (int i = 0; i < NS; i++) {
     Socket* s = sockets[i];
@@ -628,7 +628,7 @@ void net_tests(void) {
   /* Drop the first SYN in the real receive queue and expire its RTO. */
   if (tail == head)
     panic("TCP SYN queue", 0, 0);
-  page_free(packets[tail]);
+  kpage_free(packets[tail]);
   tail = (tail + 1) & 7;
   net_loop.stats.dropped++;
   ticks += 50;

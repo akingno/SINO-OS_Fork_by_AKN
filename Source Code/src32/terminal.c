@@ -56,7 +56,7 @@ static void unref(Terminal* t) {
   if (!--t->refs) {
     if (t->root)
       object_unref(t->root - 1);
-    page_free(t);
+    kpage_free(t);
     count--;
   }
 }
@@ -66,7 +66,7 @@ void terminal_release(int value, int client) {
     Terminal* t = c->terminal;
     if (t->foreground == c->pid)
       reset(t);
-    page_free(c);
+    kpage_free(c);
     unref(t);
   } else {
     Terminal* t = (Terminal*)value;
@@ -88,7 +88,7 @@ static int create(Handle* owner, u32 w, u32 h) {
     return S_INVALID;
   if (count >= 2)
     return S_LIMIT;
-  Terminal* t = page_alloc();
+  Terminal* t = kpage_alloc();
   if (!t)
     return S_NOMEM;
   t->refs = 1;
@@ -132,14 +132,14 @@ static int attach(Terminal* t, Handle* target, u32 pid) {
       break;
     }
   if (!handle) {
-    Client* c = page_alloc();
+    Client* c = kpage_alloc();
     if (!c)
       return S_NOMEM;
     c->terminal = t;
     c->pid = pid;
     int o = object_new(OBJ_TERM_CLIENT, (int)c);
     if (o < 0) {
-      page_free(c);
+      kpage_free(c);
       return o;
     }
     t->refs++;
@@ -284,14 +284,14 @@ int terminal_bind_interactive(void* session, Handle* handles, u32 pid,
   Terminal* t = session;
   if (t->closed)
     return S_CLOSED;
-  Client* c = page_alloc();
+  Client* c = kpage_alloc();
   if (!c)
     return S_NOMEM;
   c->terminal = t;
   c->pid = pid;
   int object = object_new(OBJ_TERM_CLIENT, (int)c);
   if (object < 0) {
-    page_free(c);
+    kpage_free(c);
     return object;
   }
   t->refs++;
@@ -403,7 +403,7 @@ static int interactive_call(Terminal* t, Client* c, Object* control,
   }
   if (r->op != IX_START || r->extra > 1 || r->bytes != sizeof(InteractiveSpec)) return S_INVALID;
   UACCESS_TRY(uaccess_prepare(user_pd, r->buffer, sizeof(InteractiveSpec), USER_READ));
-  InteractiveSpec* q = page_alloc();
+  InteractiveSpec* q = kpage_alloc();
   if (!q) {
     if (r->extra == 1 && t->phase == 1) {
       memset(&t->result, 0, sizeof(t->result));
@@ -421,7 +421,7 @@ static int interactive_call(Terminal* t, Client* c, Object* control,
   if ((!role && (t->shell || t->foreground ||
                  (q->program != 1 && q->program != IX_SHELL) || q->id)) ||
       (role && (!t->shell || t->phase != 1))) {
-    page_free(q);
+    kpage_free(q);
     return S_BUSY;
   }
   if (role) {
@@ -429,7 +429,7 @@ static int interactive_call(Terminal* t, Client* c, Object* control,
     const u8* b = (const u8*)&t->request;
     for (u32 i = 0; i < sizeof(*q); i++)
       if (a[i] != b[i]) {
-        page_free(q);
+        kpage_free(q);
         return S_INVALID;
       }
   }
@@ -465,7 +465,7 @@ static int interactive_call(Terminal* t, Client* c, Object* control,
     t->result.status = status;
     publish_result(t);
   }
-  page_free(q);
+  kpage_free(q);
   return status;
 }
 

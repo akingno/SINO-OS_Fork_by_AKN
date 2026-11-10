@@ -295,11 +295,11 @@ int vfs_write(int index, const u8* data, u32 length, int append) {
   u32 total = offset + length, old = (n->size + 4095) / 4096,
       needed = (total + 4095) / 4096, allocated = old;
   while (allocated < needed) {
-    n->pages[allocated] = page_alloc();
+    n->pages[allocated] = kpage_alloc();
     if (!n->pages[allocated]) {
       while (allocated > old) {
         allocated--;
-        page_free(n->pages[allocated]);
+        kpage_free(n->pages[allocated]);
         n->pages[allocated] = 0;
       }
       return vfs_fail("out of memory", VFS_ERROR_NOT_ENOUGH_MEMORY);
@@ -310,7 +310,7 @@ int vfs_write(int index, const u8* data, u32 length, int append) {
     n->pages[(offset + i) / 4096][(offset + i) % 4096] = data[i];
   while (old > needed) {
     old--;
-    page_free(n->pages[old]);
+    kpage_free(n->pages[old]);
     n->pages[old] = 0;
   }
   n->size = total;
@@ -345,7 +345,7 @@ int vfs_remove(const char* path, int dir) {
   changed(index);
   for (u32 i = 0; i < VFS_PAGES; i++)
     if (n->pages[i])
-      page_free(n->pages[i]);
+      kpage_free(n->pages[i]);
   memset(n, 0, sizeof(*n));
   storage_changed();
   return 0;
@@ -452,9 +452,9 @@ int vfs_buffer_write(u8** pages, u32* size, u32 offset, const u8* data, u32 leng
   if (total < *size) total = *size;
   u32 old = (*size + 4095) / 4096, need = (total + 4095) / 4096, have = old;
   while (have < need) {
-    pages[have] = page_alloc();
+    pages[have] = kpage_alloc();
     if (!pages[have]) {
-      while (have > old) { have--; page_free(pages[have]); pages[have] = 0; }
+      while (have > old) { have--; kpage_free(pages[have]); pages[have] = 0; }
       return S_NOMEM;
     }
     have++;
@@ -503,7 +503,7 @@ int vfs_publish(int parent, const char* name, u32 generation, u32 revision,
   for (u32 i = 0; i < VFS_PAGES; i++) {
     u8* old = n->pages[i];
     n->pages[i] = pages[i]; pages[i] = 0;
-    if (old) page_free(old);
+    if (old) kpage_free(old);
   }
   n->size = size;
   changed(index);

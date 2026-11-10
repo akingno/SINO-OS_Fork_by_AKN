@@ -10,7 +10,7 @@ typedef struct {
 } Pipe;
 static u32 pipe_count;
 static void destroy(Pipe* p) {
-  page_free(p->data); page_free(p); pipe_count--;
+  kpage_free(p->data); kpage_free(p); pipe_count--;
 }
 void pipe_release(Object* endpoint) {
   Pipe* p = (Pipe*)endpoint->value;
@@ -36,10 +36,10 @@ void pipe_limits(PipeLimits* out) {
 int pipe_create(Handle* owner, u32 capacity, PipePair* out) {
   if (!capacity || capacity > PIPE_BYTES) return S_INVALID;
   if (pipe_count >= PIPE_COUNT) return S_LIMIT;
-  Pipe* p = page_alloc();
+  Pipe* p = kpage_alloc();
   if (!p) return S_NOMEM;
-  p->data = page_alloc();
-  if (!p->data) { page_free(p); return S_NOMEM; }
+  p->data = kpage_alloc();
+  if (!p->data) { kpage_free(p); return S_NOMEM; }
   pipe_count++; p->capacity = capacity;
   int reader = object_new(OBJ_PIPE_READ, (int)p);
   if (reader < 0) { destroy(p); return reader; }

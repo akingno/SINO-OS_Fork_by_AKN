@@ -26,13 +26,16 @@ void paging_bootstrap(void);
 void paging_kernel_init(u32 identity_bytes, u32 framebuffer);
 void paging_activate_kernel(void);
 
-/* User PDEs are private and created on first use. Other PDEs are shared. */
+/* A page directory is a kernel page named by its kpage pointer; CR3 takes
+ * virt_to_phys of it. User PDEs are private and created on first use, the
+ * supervisor PDEs are shared with the kernel directory. Page tables belong
+ * to the directory; a mapped data page belongs to its mapping. */
 u32* paging_user_create(void);
 void paging_user_destroy(u32* pd);
 
 /* A successful map transfers ownership of page to pd. Unmap returns it. */
-int paging_user_map(u32* pd, u32 va, void* page, int write);
-void* paging_user_unmap(u32* pd, u32 va);
+int paging_user_map(u32* pd, u32 va, phys_t page, int write);
+phys_t paging_user_unmap(u32* pd, u32 va);
 u32 paging_user_flags(const u32* pd, u32 va);
 u32 paging_user_count(const u32* pd);
 /* Search a page-aligned subrange of the dynamic window for unmapped pages. */

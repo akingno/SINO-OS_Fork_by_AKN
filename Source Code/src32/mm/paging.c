@@ -73,11 +73,11 @@ void paging_kernel_init(u32 identity_bytes, u32 framebuffer) {
       (vbe < USER_END_PDE && vbe + VBE_TABLES > USER_FIRST_PDE)))
     panic("Invalid VBE framebuffer range", framebuffer, 0);
 
-  u32* pd = page_alloc();
+  u32* pd = kpage_alloc();
   if (!pd)
     panic("No memory for kernel page directory", identity_bytes, free_pages);
   for (u32 i = 0; i < identity_count; i++) {
-    u32* pt = page_alloc();
+    u32* pt = kpage_alloc();
     if (!pt)
       panic("No memory for kernel page table", i, free_pages);
     identity_table(pd, i, pt, PAGE_PRESENT | PAGE_WRITE);
@@ -87,7 +87,7 @@ void paging_kernel_init(u32 identity_bytes, u32 framebuffer) {
           pt[slot] = 0;
   }
   for (u32 i = 0; framebuffer && i < VBE_TABLES; i++) {
-    u32* pt = page_alloc();
+    u32* pt = kpage_alloc();
     if (!pt)
       panic("No memory for VBE page table", vbe + i, free_pages);
     identity_table(pd, vbe + i, pt, VBE_PAGE_FLAGS);
@@ -114,9 +114,7 @@ static int active(const u32* pd) {
   return page_floor(read_cr3()) == virt_to_phys(pd);
 }
 
-/* 【简化实现：页表访问】从 PDE 取出物理地址后直接转成指针解引用，依赖页表
- * 所在物理页始终恒等映射。替换方向：使用显式物理页映射或专门的页表访问
- * 窗口；同步覆盖页表创建/销毁以及 CR3 所需的物理地址，避免混用两类地址。 */
+/* Page tables are kernel pages, so the direct mapping always reaches them. */
 static u32* user_table(const u32* pd, u32 va) {
   if (va < USER_BASE || va >= USER_V2_END)
     return 0;
@@ -130,21 +128,20 @@ u32* paging_user_create(void) {
   for (u32 i = USER_FIRST_PDE; i < USER_END_PDE; i++)
     if (kernel_pd[i] & PAGE_PRESENT)
       return 0;
-  u32* pd = page_alloc();
+  u32* pd = kpage_alloc();
   if (pd)
     memcpy(pd, kernel_pd, PAGE_SIZE);
   return pd;
 }
 
-int paging_user_map(u32* pd, u32 va, void* page, int write) {
-  if (!page || va < USER_BASE || va >= USER_V2_END ||
-      !page_aligned(va | virt_to_phys(page)))
+int paging_user_map(u32* pd, u32 va, phys_t page, int write) {
+  if (!page || va < USER_BASE || va >= USER_V2_END || !page_aligned(va | page))
     return 0;
   u32* pt = user_table(pd, va);
   if (!pt) {
     if (pd[pde_index(va)] & PAGE_PRESENT)
       return 0;
-    pt = page_alloc();
+    pt = kpage_alloc();
     if (!pt)
       return 0;
     pd[pde_index(va)] = make_entry(virt_to_phys(pt), USER_FLAGS | PAGE_WRITE);
@@ -152,18 +149,18 @@ int paging_user_map(u32* pd, u32 va, void* page, int write) {
              (write && !(pd[pde_index(va)] & PAGE_WRITE))) {
     return 0;
   }
-  pt[pte_index(va)] = make_entry(virt_to_phys(page), USER_FLAGS | (write ? PAGE_WRITE : 0));
+  pt[pte_index(va)] = make_entry(page, USER_FLAGS | (write ? PAGE_WRITE : 0));
   if (active(pd))
     paging_activate(pd);
   return 1;
 }
 
-void* paging_user_unmap(u32* pd, u32 va) {
+phys_t paging_user_unmap(u32* pd, u32 va) {
   if (!page_aligned(va))
-    return 0;
+    return PHYS_NULL;
   u32* pt = user_table(pd, va);
   if (!pt || !(pt[pte_index(va)] & PAGE_PRESENT))
-    return 0;
+    return PHYS_NULL;
   u32 pte = pt[pte_index(va)];
   pt[pte_index(va)] = 0;
   u32 i = 0;
@@ -175,8 +172,8 @@ void* paging_user_unmap(u32* pd, u32 va) {
   if (active(pd))
     paging_activate(pd);
   if (i == TABLE_ENTRIES)
-    page_free(pt);
-  return phys_to_virt(entry_address(pte));
+    kpage_free(pt);
+  return entry_address(pte);
 }
 
 u32 paging_user_flags(const u32* pd, u32 va) {
@@ -228,8 +225,8 @@ void paging_user_destroy(u32* pd) {
     pd[pde] = 0;
     for (u32 i = 0; i < TABLE_ENTRIES; i++)
       if (pt[i] & PAGE_PRESENT)
-        page_free(phys_to_virt(entry_address(pt[i])));
-    page_free(pt);
+        page_free(entry_address(pt[i]));
+    kpage_free(pt);
   }
-  page_free(pd);
+  kpage_free(pd);
 }

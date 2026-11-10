@@ -316,7 +316,7 @@ static int run_program(Context* c, const char* path, const char* args) {
   u32 entry = *(u32*)(work + 4);
   if (entry < 16 || entry >= (u32)bytes)
     return error(c->out, path, "invalid F32 entry");
-  native_base = (u32)page_alloc();
+  native_base = (u32)kpage_alloc();
   if (!native_base)
     return error(c->out, path, "out of memory");
   native_size = (u32)bytes;
@@ -327,7 +327,7 @@ static int run_program(Context* c, const char* path, const char* args) {
   run_native(native_base + entry);
   native_running = 0;
   native_sink = 0;
-  if (!page_free((void*)native_base))
+  if (!kpage_free((void*)native_base))
     panic("Native page release", native_base, 0);
   native_base = native_size = 0;
   pr_debug("NATIVE32 shell program returned\n");
@@ -1119,11 +1119,11 @@ static u32 bridge_received, bridge_needed, bridge_sent, bridge_size,
     bridge_updated;
 
 void shell_bridge_init(void) {
-  bridge_request = page_alloc_run(2);
-  bridge_rx = page_alloc_run(2);
+  bridge_request = kpage_alloc_run(2);
+  bridge_rx = kpage_alloc_run(2);
   if (!bridge_request || !bridge_rx) {
-    if (bridge_request) page_free_run(bridge_request, 2);
-    if (bridge_rx) page_free_run(bridge_rx, 2);
+    if (bridge_request) kpage_free_run(bridge_request, 2);
+    if (bridge_rx) kpage_free_run(bridge_rx, 2);
     bridge_request = bridge_rx = 0;
     pr_debug("SINO SHELL BRIDGE allocation failed\n"); return;
   }
