@@ -68,7 +68,7 @@ typedef struct {
   u32 pending_directory, directory_rights;
   u32 pending_pipe[3]; /* Object index + 1, owned until transferred to child. */
 } RunData;
-_Static_assert(sizeof(RunData) <= 4096, "run metadata fits one page");
+_Static_assert(sizeof(RunData) <= PAGE_SIZE, "run metadata fits one page");
 static u32 run_count;
 static void run_free(RunData* run) {
   if (!run) return;
@@ -164,7 +164,7 @@ static void* alloc_user_page(Process* p, u32 va, int write) {
   return page;
 }
 static void free_user_pages(Process* p, u32 start, u32 end) {
-  for (u32 va = start; va < end; va += 4096) {
+  for (u32 va = start; va < end; va += PAGE_SIZE) {
     void* page = paging_user_unmap(p->pd, va);
     if (page)
       page_free(page);
@@ -175,9 +175,9 @@ static void free_user_pages(Process* p, u32 start, u32 end) {
  * 替换方向：统一管理映像、栈和匿名区的虚拟区间，记录权限与后备类型，
  * 支持查找、合并和拆分；保留地址预留与物理页分配的分离。 */
 static int anon_map(Process* p, u32 bytes) {
-  if (!bytes || bytes > 0xffffffffu - 4095u)
+  if (!bytes || bytes > 0xffffffffu - PAGE_OFFSET_MASK)
     return S_INVALID;
-  bytes = (bytes + 4095u) & ~4095u;
+  bytes = page_ceil(bytes);
   AnonRegion* slot = 0;
   u32 used = 0;
   for (u32 i = 0; i < ANON_MAX_REGIONS; i++) {
@@ -212,7 +212,7 @@ static int anon_map(Process* p, u32 bytes) {
  * 替换方向：在统一虚拟区间管理中拆分/缩短区域，再回收实际存在的页；
  * 同时处理等待中的用户缓冲区失效及页表、TLB 的生命周期。 */
 static int anon_unmap(Process* p, u32 base) {
-  if (base < USER_DYNAMIC_BASE || base >= USER_DYNAMIC_END || (base & 4095u))
+  if (base < USER_DYNAMIC_BASE || base >= USER_DYNAMIC_END || !page_aligned(base))
     return S_INVALID;
   for (u32 i = 0; i < ANON_MAX_REGIONS; i++) {
     AnonRegion* region = &p->anon[i];
@@ -226,7 +226,7 @@ static int anon_unmap(Process* p, u32 base) {
 }
 
 int process_anon_page(u32* pd, u32 page, int populate) {
-  if (!current || current->pd != pd || (page & 4095u) ||
+  if (!current || current->pd != pd || !page_aligned(page) ||
       page < USER_DYNAMIC_BASE || page >= USER_DYNAMIC_END)
     return S_INVALID;
   for (u32 i = 0; i < ANON_MAX_REGIONS; i++) {
@@ -260,7 +260,7 @@ static u32 user_stack_top(const Process* p, int thread) {
 }
 static int alloc_user_stack(Process* p, int thread) {
   u32 top = user_stack_top(p, thread), start = top - USER_STACK_BYTES;
-  for (u32 va = start; va < top; va += 4096)
+  for (u32 va = start; va < top; va += PAGE_SIZE)
     if (!alloc_user_page(p, va, 1)) {
       free_user_pages(p, start, va);
       return 0;
@@ -270,11 +270,11 @@ static int alloc_user_stack(Process* p, int thread) {
 #ifdef SINO_SHELL_BRIDGE
 /* Test-only mappings for the strict paging probe on the read-only boot disk. */
 static int paging_probe_setup(Process* p, int exhaust) {
-  u32 cross = USER_DYNAMIC_BASE + 0x3ff000u;
-  u32 high = USER_DYNAMIC_END - 4096;
-  if (paging_user_find_gap(p->pd, cross, cross + 8192, 8192) != cross ||
-      !alloc_user_page(p, cross, 1) || !alloc_user_page(p, cross + 4096, 1) ||
-      paging_user_find_gap(p->pd, cross, cross + 12288, 4096) != cross + 8192)
+  u32 cross = USER_DYNAMIC_BASE + TABLE_BYTES - PAGE_SIZE;
+  u32 high = USER_DYNAMIC_END - PAGE_SIZE;
+  if (paging_user_find_gap(p->pd, cross, cross + 2 * PAGE_SIZE, 2 * PAGE_SIZE) != cross ||
+      !alloc_user_page(p, cross, 1) || !alloc_user_page(p, cross + PAGE_SIZE, 1) ||
+      paging_user_find_gap(p->pd, cross, cross + 3 * PAGE_SIZE, PAGE_SIZE) != cross + 2 * PAGE_SIZE)
     return S_INVALID;
 
   u32 before = free_pages;
@@ -282,7 +282,7 @@ static int paging_probe_setup(Process* p, int exhaust) {
     return S_INVALID;
   if (!alloc_user_page(p, high, 0))
     return S_NOMEM;
-  free_user_pages(p, high, high + 4096);
+  free_user_pages(p, high, high + PAGE_SIZE);
   if (free_pages != before)
     return S_INVALID;
   if (!exhaust)
@@ -467,15 +467,15 @@ static int launch_policy(const char* path, u32 caps, const char* arguments,
     release(p);
     return S_NOMEM;
   }
-  for (u32 offset = 0; offset < h->memory_bytes; offset += 4096) {
+  for (u32 offset = 0; offset < h->memory_bytes; offset += PAGE_SIZE) {
     void* page = alloc_user_page(p, USER_BASE + offset, offset >= h->data_offset);
     if (!page) {
       release(p);
       return S_NOMEM;
     }
     u32 length = h->image_bytes > offset ? h->image_bytes - offset : 0;
-    if (length > 4096)
-      length = 4096;
+    if (length > PAGE_SIZE)
+      length = PAGE_SIZE;
     if (length)
       memcpy(page, bytes + offset, length);
   }
@@ -1497,9 +1497,8 @@ int process_interrupt(Frame* f) {
     panic("Orphan user frame", f->eip, 0);
   if (f->vector < 32) {
     if (f->vector == 14 && (f->error & ~2u) == 4u) {
-      u32 address;
-      __asm__ volatile("mov %%cr2,%0" : "=r"(address));
-      int status = process_anon_page(current->pd, address & ~4095u, 1);
+      u32 address = read_cr2();
+      int status = process_anon_page(current->pd, page_floor(address), 1);
       if (status == S_OK)
         return 1;
       if (status == S_NOMEM) {
@@ -1581,7 +1580,7 @@ void process_step(void) {
     int ready = !t->wait_op || retry_wait(t);
     if (ready) {
       quantum_end = ticks + 2;
-      tss[1] = (u32)p->kernel_stack + 4096;
+      tss[1] = (u32)p->kernel_stack + PAGE_SIZE;
       process_switches++;
       user_enter(&t->saved);
     }

@@ -1,11 +1,15 @@
 #include "../api.h"
 #include "../klog.h"
+#include "addr.h"
 #include "page.h"
 #include "../lib/kstring.h"
 #include "../panic.h"
 
-enum { PAGE_SIZE = 4096, MAX_RUN = 64, E820_MAX = 32 };
+enum { MAX_RUN = 64, E820_MAX = 32 };
 enum { PAGE_FREE, PAGE_USED, PAGE_RESERVED };
+/* loader.asm leaves the E820 entry count and the entries at these addresses. */
+#define E820_COUNT_ADDRESS ((phys_t)0x4f00u)
+#define E820_TABLE_ADDRESS ((phys_t)0x5000u)
 
 typedef struct PACKED {
   u32 base, base_hi, length, length_hi, type, attributes;
@@ -22,7 +26,7 @@ static u32 range_count;
 static int logged_extended_allocation;
 u32 free_pages, usable_memory;
 
-int page_boot_usable(u32 start) {
+int page_boot_usable(phys_t start) {
   u32 end = start + PAGE_SIZE;
   int usable = 0;
   for (u32 i = 0; i < range_count; i++) {
@@ -37,9 +41,10 @@ int page_boot_usable(u32 start) {
   return usable;
 }
 
-static void publish_pages(u32 start, u32 end) {
-  for (u32 addr = start; addr < end; addr += PAGE_SIZE)
-    if ((addr < (u32)mem_map || addr >= (u32)mem_map + metadata_pages * PAGE_SIZE) &&
+static void publish_pages(phys_t start, phys_t end) {
+  phys_t metadata = virt_to_phys(mem_map);
+  for (phys_t addr = start; addr < end; addr += PAGE_SIZE)
+    if ((addr < metadata || addr >= metadata + metadata_pages * PAGE_SIZE) &&
         page_boot_usable(addr)) {
       mem_map[addr / PAGE_SIZE] = PAGE_FREE;
       free_pages++;
@@ -52,8 +57,8 @@ static void publish_pages(u32 start, u32 end) {
  * 替换方向：按实际内核/启动资源逐段登记保留区，分离物理地址与内核虚拟地址，
  * 再扩展可管理物理范围；不能只放大上限，否则会与用户虚拟地址窗口冲突。 */
 void page_init(void) {
-  u32 count = *(volatile u16*)0x4f00;
-  const E820Entry* map = (const E820Entry*)0x5000;
+  u32 count = *(volatile u16*)phys_to_virt(E820_COUNT_ADDRESS);
+  const E820Entry* map = phys_to_virt(E820_TABLE_ADDRESS);
   if (!count || count > E820_MAX)
     panic("Invalid E820 memory map", count, 0);
 
@@ -76,7 +81,7 @@ void page_init(void) {
   /* Lower memory contains the kernel, boot tables, RAM disk and graphics. */
   u32 run = 0, metadata_base = 0;
   u32 boot_end = usable_memory < BOOT_IDENTITY_BYTES ? usable_memory : BOOT_IDENTITY_BYTES;
-  boot_end &= ~(PAGE_SIZE - 1);
+  boot_end = page_floor(boot_end);
   for (u32 pfn = BOOT_POOL_START / PAGE_SIZE; pfn < boot_end / PAGE_SIZE; pfn++) {
     if (!page_boot_usable(pfn * PAGE_SIZE)) {
       run = 0;
@@ -90,7 +95,7 @@ void page_init(void) {
   if (!metadata_base)
     panic("No boot space for page metadata", usable_memory, metadata_pages);
 
-  mem_map = (u8*)metadata_base;
+  mem_map = phys_to_virt(metadata_base);
   memset(mem_map, PAGE_RESERVED, metadata_pages * PAGE_SIZE);
   publish_pages(BOOT_POOL_START, boot_end);
   if (!free_pages)
@@ -125,12 +130,13 @@ void* page_alloc_run(u32 count) {
     if (j == count) {
       memset(mem_map + i, PAGE_USED, count);
       free_pages -= count;
-      void* p = (void*)(i * PAGE_SIZE);
+      phys_t page = i * PAGE_SIZE;
+      void* p = phys_to_virt(page);
       memset(p, 0, count * PAGE_SIZE);
-      if ((u32)p >= BOOT_IDENTITY_BYTES && !logged_extended_allocation) {
+      if (page >= BOOT_IDENTITY_BYTES && !logged_extended_allocation) {
         logged_extended_allocation = 1;
         pr_debug("PAGE first extended allocation=");
-        pr_debug_hex((u32)p);
+        pr_debug_hex(page);
         pr_debug("\n");
       }
       return p;
@@ -143,7 +149,7 @@ void* page_alloc_run(u32 count) {
 void* page_alloc(void) { return page_alloc_run(1); }
 
 int page_free_run(void* p, u32 count) {
-  u32 addr = (u32)p;
+  phys_t addr = virt_to_phys(p);
   u32 pfn = addr / PAGE_SIZE;
   if (!count || count > MAX_RUN || addr % PAGE_SIZE || addr < BOOT_POOL_START ||
       pfn >= nr_pages || count > nr_pages - pfn)
@@ -161,9 +167,9 @@ int page_free(void* p) { return page_free_run(p, 1); }
 void page_allocator_test(void) {
   u32 before = free_pages;
   for (u32 i = 0; i < metadata_pages; i++)
-    if (mem_map[(u32)mem_map / PAGE_SIZE + i] != PAGE_RESERVED)
-      panic("Page metadata reservation", (u32)mem_map, i);
-  if (page_free(mem_map) || page_free((void*)0x200000) || free_pages != before)
+    if (mem_map[virt_to_phys(mem_map) / PAGE_SIZE + i] != PAGE_RESERVED)
+      panic("Page metadata reservation", virt_to_phys(mem_map), i);
+  if (page_free(mem_map) || page_free(phys_to_virt(0x200000u)) || free_pages != before)
     panic("Reserved page free validation", free_pages, before);
 
   u32* a = page_alloc();

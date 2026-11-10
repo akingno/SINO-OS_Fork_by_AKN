@@ -186,9 +186,7 @@ void irq_dispatch(Frame* f) {
     pr_debug("Fault EIP=");
     pr_debug_hex(f->eip);
     pr_debug(" CR2=");
-    u32 cr2;
-    __asm__ volatile("mov %%cr2,%0" : "=r"(cr2));
-    pr_debug_hex(cr2);
+    pr_debug_hex(read_cr2());
     pr_debug("\n");
     panic("CPU exception", f->vector, f->error);
   }
@@ -341,7 +339,7 @@ void kmain(void) {
   arch_init();
   paging_bootstrap();
   page_init();
-  u32 identity_bytes = (usable_memory + 0x3fffffu) & ~0x3fffffu;
+  u32 identity_bytes = (usable_memory + TABLE_BYTES - 1) & ~(TABLE_BYTES - 1);
   if (identity_bytes < BOOT_IDENTITY_BYTES)
     identity_bytes = BOOT_IDENTITY_BYTES;
   paging_kernel_init(identity_bytes, 0);

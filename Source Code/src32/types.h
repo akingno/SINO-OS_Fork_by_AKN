@@ -5,5 +5,7 @@ typedef unsigned short u16;
 typedef unsigned int u32;
 typedef signed int i32;
 typedef signed char i8;
+/* A physical address. Never dereferenced directly; see mm/addr.h. */
+typedef u32 phys_t;
 #define PACKED __attribute__((packed))
 #endif

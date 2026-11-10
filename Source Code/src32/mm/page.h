@@ -8,7 +8,7 @@
 #define BOOT_POOL_START 0x3400000u
 
 void page_init(void);
-int page_boot_usable(u32 address);
+int page_boot_usable(phys_t address);
 void page_publish_extended(void);
 void page_allocator_test(void);
 void* page_alloc(void);

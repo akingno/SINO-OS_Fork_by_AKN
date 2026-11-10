@@ -6,17 +6,14 @@
 #include "../lib/kstring.h"
 #include "../panic.h"
 
-#define PAGE_BYTES 4096u
-#define PAGE_MASK (~(PAGE_BYTES - 1))
-#define TABLE_ENTRIES 1024u
-#define TABLE_BYTES (PAGE_BYTES * TABLE_ENTRIES)
 #define USER_FLAGS (PAGE_PRESENT | PAGE_USER)
-#define USER_FIRST_PDE (USER_BASE >> 22)
+#define USER_FIRST_PDE (USER_BASE / TABLE_BYTES)
 #define USER_END_PDE ((USER_V2_END + TABLE_BYTES - 1) / TABLE_BYTES)
-#define TEMP_PD ((u32*)0x90000u)
-#define TEMP_PT ((u32*)0x1e0000u)
+/* Fixed low-memory pages holding the boot page directory and its tables. */
+#define TEMP_PD ((phys_t)0x90000u)
+#define TEMP_PT ((phys_t)0x1e0000u)
 #define VBE_TABLES 3u
-#define VBE_PAGE_FLAGS (PAGE_PRESENT | PAGE_WRITE | 0x18u)
+#define VBE_PAGE_FLAGS (PAGE_PRESENT | PAGE_WRITE | PAGE_WRITE_THROUGH | PAGE_CACHE_DISABLE)
 
 _Static_assert(BOOT_POOL_START % TABLE_BYTES == 0 &&
                BOOT_IDENTITY_BYTES % TABLE_BYTES == 0 &&
@@ -27,17 +24,15 @@ _Static_assert(1 + (BOOT_IDENTITY_BYTES - BOOT_POOL_START) / TABLE_BYTES <= 16,
 
 static u32* kernel_pd;
 
-void paging_activate(const u32* pd) {
-  __asm__ volatile("mov %0,%%cr3" :: "r"(pd) : "memory");
-}
+void paging_activate(const u32* pd) { write_cr3(virt_to_phys(pd)); }
 
 static void identity_table(u32* pd, u32 index, u32* pt, u32 flags) {
   u32 base = index * TABLE_BYTES;
   for (u32 i = 0; i < TABLE_ENTRIES; i++)
-    pt[i] = (base + i * PAGE_BYTES) | flags;
+    pt[i] = make_entry(base + i * PAGE_SIZE, flags);
   if (!index)
     pt[0] = 0;
-  pd[index] = (u32)pt | PAGE_PRESENT | PAGE_WRITE;
+  pd[index] = make_entry(virt_to_phys(pt), PAGE_PRESENT | PAGE_WRITE);
 }
 
 /* 【简化实现：启动映射】固定页表暂时恒等映射低端执行区和初始物理页池，
@@ -45,21 +40,19 @@ static void identity_table(u32* pd, u32 index, u32* pt, u32 flags) {
  * 替换方向：完成正式内核映射后撤掉不再需要的启动映射；先迁移启动数据、
  * 页表及裸物理指针的访问，不能直接删除这里的映射。 */
 void paging_bootstrap(void) {
-  memset(TEMP_PD, 0, PAGE_BYTES);
+  u32* pd = phys_to_virt(TEMP_PD);
+  u32* pt = phys_to_virt(TEMP_PT);
+  memset(pd, 0, PAGE_SIZE);
   /* Entry code, kernel BSS, stack and BIOS handoff all fit in the first 4 MiB. */
-  identity_table(TEMP_PD, 0, TEMP_PT, PAGE_PRESENT | PAGE_WRITE);
-  u32* pt = TEMP_PT + TABLE_ENTRIES;
+  identity_table(pd, 0, pt, PAGE_PRESENT | PAGE_WRITE);
   for (u32 i = BOOT_POOL_START / TABLE_BYTES; i < BOOT_IDENTITY_BYTES / TABLE_BYTES; i++) {
-    identity_table(TEMP_PD, i, pt, PAGE_PRESENT | PAGE_WRITE);
     pt += TABLE_ENTRIES;
+    identity_table(pd, i, pt, PAGE_PRESENT | PAGE_WRITE);
   }
-  paging_activate(TEMP_PD);
-  u32 cr0;
-  __asm__ volatile("mov %%cr0,%0" : "=r"(cr0));
-  cr0 = (cr0 & ~0x60000000u) | 0x80010000u;
-  __asm__ volatile("mov %0,%%cr0" :: "r"(cr0) : "memory");
+  write_cr3(TEMP_PD);
+  write_cr0((read_cr0() & ~(CR0_CD | CR0_NW)) | CR0_PG | CR0_WP);
   pr_debug("PAGING bootstrap CR3=");
-  pr_debug_hex((u32)TEMP_PD);
+  pr_debug_hex(TEMP_PD);
   pr_debug("\n");
 }
 
@@ -90,7 +83,7 @@ void paging_kernel_init(u32 identity_bytes, u32 framebuffer) {
     identity_table(pd, i, pt, PAGE_PRESENT | PAGE_WRITE);
     if (i >= BOOT_IDENTITY_BYTES / TABLE_BYTES)
       for (u32 slot = 0; slot < TABLE_ENTRIES; slot++)
-        if (!page_boot_usable(i * TABLE_BYTES + slot * PAGE_BYTES))
+        if (!page_boot_usable(i * TABLE_BYTES + slot * PAGE_SIZE))
           pt[slot] = 0;
   }
   for (u32 i = 0; framebuffer && i < VBE_TABLES; i++) {
@@ -103,26 +96,22 @@ void paging_kernel_init(u32 identity_bytes, u32 framebuffer) {
      directories share the supervisor entries and free only private tables. */
   paging_activate(pd);
   kernel_pd = pd;
-  u32 cr0;
-  __asm__ volatile("mov %%cr0,%0" : "=r"(cr0));
   pr_debug("PAGING enabled: CR0=");
-  pr_debug_hex(cr0);
+  pr_debug_hex(read_cr0());
   pr_debug(" CR3=");
-  pr_debug_hex((u32)pd);
+  pr_debug_hex(virt_to_phys(pd));
   pr_debug(", null page unmapped\n");
   if (framebuffer) {
-  pr_debug("VBE framebuffer mapped: ");
-  pr_debug_hex(framebuffer);
-  pr_debug(" 1024x768x32\n");
+    pr_debug("VBE framebuffer mapped: ");
+    pr_debug_hex(framebuffer);
+    pr_debug(" 1024x768x32\n");
   } else pr_debug("VGA text console: 80x25\n");
 }
 
 void paging_activate_kernel(void) { paging_activate(kernel_pd); }
 
 static int active(const u32* pd) {
-  u32 cr3;
-  __asm__ volatile("mov %%cr3,%0" : "=r"(cr3) :: "memory");
-  return (cr3 & PAGE_MASK) == (u32)pd;
+  return page_floor(read_cr3()) == virt_to_phys(pd);
 }
 
 /* 【简化实现：页表访问】从 PDE 取出物理地址后直接转成指针解引用，依赖页表
@@ -131,13 +120,11 @@ static int active(const u32* pd) {
 static u32* user_table(const u32* pd, u32 va) {
   if (va < USER_BASE || va >= USER_V2_END)
     return 0;
-  u32 pde = pd[va >> 22];
+  u32 pde = pd[pde_index(va)];
   if ((pde & USER_FLAGS) != USER_FLAGS)
     return 0;
-  return (u32*)(pde & PAGE_MASK);
+  return phys_to_virt(entry_address(pde));
 }
-
-static u32 slot(u32 va) { return (va >> 12) & (TABLE_ENTRIES - 1); }
 
 u32* paging_user_create(void) {
   for (u32 i = USER_FIRST_PDE; i < USER_END_PDE; i++)
@@ -145,62 +132,62 @@ u32* paging_user_create(void) {
       return 0;
   u32* pd = page_alloc();
   if (pd)
-    memcpy(pd, kernel_pd, PAGE_BYTES);
+    memcpy(pd, kernel_pd, PAGE_SIZE);
   return pd;
 }
 
 int paging_user_map(u32* pd, u32 va, void* page, int write) {
   if (!page || va < USER_BASE || va >= USER_V2_END ||
-      ((va | (u32)page) & ~PAGE_MASK))
+      !page_aligned(va | virt_to_phys(page)))
     return 0;
   u32* pt = user_table(pd, va);
   if (!pt) {
-    if (pd[va >> 22] & PAGE_PRESENT)
+    if (pd[pde_index(va)] & PAGE_PRESENT)
       return 0;
     pt = page_alloc();
     if (!pt)
       return 0;
-    pd[va >> 22] = (u32)pt | USER_FLAGS | PAGE_WRITE;
-  } else if ((pt[slot(va)] & PAGE_PRESENT) ||
-             (write && !(pd[va >> 22] & PAGE_WRITE))) {
+    pd[pde_index(va)] = make_entry(virt_to_phys(pt), USER_FLAGS | PAGE_WRITE);
+  } else if ((pt[pte_index(va)] & PAGE_PRESENT) ||
+             (write && !(pd[pde_index(va)] & PAGE_WRITE))) {
     return 0;
   }
-  pt[slot(va)] = (u32)page | USER_FLAGS | (write ? PAGE_WRITE : 0);
+  pt[pte_index(va)] = make_entry(virt_to_phys(page), USER_FLAGS | (write ? PAGE_WRITE : 0));
   if (active(pd))
     paging_activate(pd);
   return 1;
 }
 
 void* paging_user_unmap(u32* pd, u32 va) {
-  if (va & ~PAGE_MASK)
+  if (!page_aligned(va))
     return 0;
   u32* pt = user_table(pd, va);
-  if (!pt || !(pt[slot(va)] & PAGE_PRESENT))
+  if (!pt || !(pt[pte_index(va)] & PAGE_PRESENT))
     return 0;
-  u32 pte = pt[slot(va)];
-  pt[slot(va)] = 0;
+  u32 pte = pt[pte_index(va)];
+  pt[pte_index(va)] = 0;
   u32 i = 0;
   while (i < TABLE_ENTRIES && !(pt[i] & PAGE_PRESENT))
     i++;
   if (i == TABLE_ENTRIES)
-    pd[va >> 22] = 0;
+    pd[pde_index(va)] = 0;
   /* Invalidate before either the table or data page can be reused. */
   if (active(pd))
     paging_activate(pd);
   if (i == TABLE_ENTRIES)
     page_free(pt);
-  return (void*)(pte & PAGE_MASK);
+  return phys_to_virt(entry_address(pte));
 }
 
 u32 paging_user_flags(const u32* pd, u32 va) {
   const u32* pt = user_table(pd, va);
-  return pt ? pt[slot(va)] & pd[va >> 22] & (USER_FLAGS | PAGE_WRITE) : 0;
+  return pt ? pt[pte_index(va)] & pd[pde_index(va)] & (USER_FLAGS | PAGE_WRITE) : 0;
 }
 
 u32 paging_user_count(const u32* pd) {
   u32 count = 0;
   for (u32 pde = USER_FIRST_PDE; pde < USER_END_PDE; pde++) {
-    const u32* pt = user_table(pd, pde << 22);
+    const u32* pt = user_table(pd, pde * TABLE_BYTES);
     if (!pt)
       continue;
     for (u32 i = 0; i < TABLE_ENTRIES; i++)
@@ -212,17 +199,17 @@ u32 paging_user_count(const u32* pd) {
 
 u32 paging_user_find_gap(const u32* pd, u32 start, u32 end, u32 bytes) {
   if (start < USER_DYNAMIC_BASE || end > USER_DYNAMIC_END || start >= end ||
-      !bytes || bytes > end - start || ((start | end | bytes) & ~PAGE_MASK))
+      !bytes || bytes > end - start || !page_aligned(start | end | bytes))
     return 0;
   u32 gap = start;
   for (u32 va = start; va < end;) {
     const u32* pt = user_table(pd, va);
     if (pt) {
-      if (pt[slot(va)] & PAGE_PRESENT)
-        gap = va + PAGE_BYTES;
-      va += PAGE_BYTES;
+      if (pt[pte_index(va)] & PAGE_PRESENT)
+        gap = va + PAGE_SIZE;
+      va += PAGE_SIZE;
     } else {
-      u32 next = ((va >> 22) + 1) << 22;
+      u32 next = (pde_index(va) + 1) * TABLE_BYTES;
       va = next < end ? next : end;
     }
     if (va - gap >= bytes)
@@ -233,15 +220,15 @@ u32 paging_user_find_gap(const u32* pd, u32 start, u32 end, u32 bytes) {
 
 void paging_user_destroy(u32* pd) {
   if (active(pd))
-    panic("Destroying active user page directory", (u32)pd, 0);
+    panic("Destroying active user page directory", virt_to_phys(pd), 0);
   for (u32 pde = USER_FIRST_PDE; pde < USER_END_PDE; pde++) {
-    u32* pt = user_table(pd, pde << 22);
+    u32* pt = user_table(pd, pde * TABLE_BYTES);
     if (!pt)
       continue;
     pd[pde] = 0;
     for (u32 i = 0; i < TABLE_ENTRIES; i++)
       if (pt[i] & PAGE_PRESENT)
-        page_free((void*)(pt[i] & PAGE_MASK));
+        page_free(phys_to_virt(entry_address(pt[i])));
     page_free(pt);
   }
   page_free(pd);
