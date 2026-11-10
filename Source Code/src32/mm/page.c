@@ -15,46 +15,44 @@ typedef struct PACKED {
 } E820Entry;
 
 typedef struct {
-  u32 start, end, type;
+  u32 start_pfn, end_pfn, type;
 } Range;
 
 static u8* mem_map;
-static u32 nr_pages, metadata_pages;
+static u32 metadata_pages;
 static Range ranges[E820_MAX];
 static u32 range_count;
-static int logged_extended_allocation;
-u32 free_pages, usable_memory;
+static int logged_extended_allocation, logged_high_allocation;
+u32 free_pages, nr_pages;
+
+#define LOW_START_PFN (BOOT_POOL_START / PAGE_SIZE)
+static u32 low_hint = LOW_START_PFN;
+static u32 high_hint;
 
 int page_boot_usable(phys_t start) {
-  u32 end = start + PAGE_SIZE;
+  u32 pfn = start / PAGE_SIZE;
   int usable = 0;
   for (u32 i = 0; i < range_count; i++) {
     const Range* r = &ranges[i];
-    if (r->start >= end || r->end <= start)
+    if (r->start_pfn > pfn || r->end_pfn <= pfn)
       continue;
     if (r->type != 1)
       return 0;
-    if (r->start <= start && r->end >= end)
-      usable = 1;
+    usable = 1;
   }
   return usable;
 }
 
-static void publish_pages(phys_t start, phys_t end) {
-  phys_t metadata = virt_to_phys(mem_map);
-  for (phys_t addr = start; addr < end; addr += PAGE_SIZE)
-    if ((addr < metadata || addr >= metadata + metadata_pages * PAGE_SIZE) &&
-        page_boot_usable(addr)) {
-      mem_map[addr / PAGE_SIZE] = PAGE_FREE;
+static void publish_pages(u32 start_pfn, u32 end_pfn) {
+  u32 metadata_pfn = virt_to_phys(mem_map) / PAGE_SIZE;
+  for (u32 pfn = start_pfn; pfn < end_pfn; pfn++)
+    if ((pfn < metadata_pfn || pfn >= metadata_pfn + metadata_pages) &&
+        page_boot_usable(pfn * PAGE_SIZE)) {
+      mem_map[pfn] = PAGE_FREE;
       free_pages++;
     }
 }
 
-/* 【简化实现：物理内存布局】按 E820 建立逐页状态表，但将地址截在 USER_BASE
- * （1 GiB），并把 52 MiB 以下整体留给启动资源；usable_memory 记录最高可用
- * 区域的结束地址，不是可分配字节总和。此限制来自当前恒等映射布局。
- * 替换方向：按实际内核/启动资源逐段登记保留区，分离物理地址与内核虚拟地址，
- * 再扩展可管理物理范围；不能只放大上限，否则会与用户虚拟地址窗口冲突。 */
 void page_init(void) {
   u32 count = *(volatile u16*)phys_to_virt(E820_COUNT_ADDRESS);
   const E820Entry* map = phys_to_virt(E820_TABLE_ADDRESS);
@@ -63,25 +61,28 @@ void page_init(void) {
 
   for (u32 i = 0; i < count; i++) {
     const E820Entry* e = &map[i];
-    if (!(e->attributes & 1) || e->base_hi || e->base >= USER_BASE ||
+    if (!(e->attributes & 1) || e->base_hi ||
         (!e->length_hi && !e->length))
       continue;
-    /* The supervisor identity window ends at the SNX link base. Clamp
-       before adding the E820 length, which may exceed 32 bits. */
-    u32 end = e->length_hi || e->length > USER_BASE - e->base
-                  ? USER_BASE : e->base + e->length;
-    ranges[range_count++] = (Range){e->base, end, e->type};
-    if (e->type == 1 && end > usable_memory)
-      usable_memory = end;
+    u32 base_pfn = e->base / PAGE_SIZE;
+    unsigned long long end64 =
+        (unsigned long long)e->base +
+        ((unsigned long long)e->length_hi << 32 | e->length);
+    if (end64 > (unsigned long long)PHYS_LIMIT_PAGES << PAGE_SHIFT)
+      end64 = (unsigned long long)PHYS_LIMIT_PAGES << PAGE_SHIFT;
+    u32 end_pfn = (u32)(end64 >> PAGE_SHIFT);
+    if (base_pfn >= end_pfn)
+      continue;
+    ranges[range_count++] = (Range){base_pfn, end_pfn, e->type};
+    if (e->type == 1 && end_pfn > nr_pages)
+      nr_pages = end_pfn;
   }
 
-  nr_pages = usable_memory / PAGE_SIZE;
   metadata_pages = (nr_pages + PAGE_SIZE - 1) / PAGE_SIZE;
-  /* Lower memory contains the kernel, boot tables, RAM disk and graphics. */
+  u32 boot_end_pfn = nr_pages < BOOT_IDENTITY_BYTES / PAGE_SIZE
+                       ? nr_pages : BOOT_IDENTITY_BYTES / PAGE_SIZE;
   u32 run = 0, metadata_base = 0;
-  u32 boot_end = usable_memory < BOOT_IDENTITY_BYTES ? usable_memory : BOOT_IDENTITY_BYTES;
-  boot_end = page_floor(boot_end);
-  for (u32 pfn = BOOT_POOL_START / PAGE_SIZE; pfn < boot_end / PAGE_SIZE; pfn++) {
+  for (u32 pfn = LOW_START_PFN; pfn < boot_end_pfn; pfn++) {
     if (!page_boot_usable(pfn * PAGE_SIZE)) {
       run = 0;
       continue;
@@ -92,61 +93,63 @@ void page_init(void) {
     }
   }
   if (!metadata_base)
-    panic("No boot space for page metadata", usable_memory, metadata_pages);
+    panic("No boot space for page metadata", nr_pages, metadata_pages);
 
   mem_map = phys_to_virt(metadata_base);
   memset(mem_map, PAGE_RESERVED, metadata_pages * PAGE_SIZE);
-  publish_pages(BOOT_POOL_START, boot_end);
+  publish_pages(LOW_START_PFN, boot_end_pfn);
   if (!free_pages)
-    panic("No allocatable physical pages", usable_memory, metadata_pages);
+    panic("No allocatable physical pages", nr_pages, metadata_pages);
   pr_debug("PAGE metadata base=");
   pr_debug_hex(metadata_base);
   pr_debug(" pages=");
   pr_debug_hex(metadata_pages);
+  pr_debug(" nr_pages=");
+  pr_debug_hex(nr_pages);
   pr_debug("\n");
 }
 
 void page_publish_extended(void) {
   u32 before = free_pages;
-  publish_pages(BOOT_IDENTITY_BYTES, nr_pages * PAGE_SIZE);
+  publish_pages(BOOT_IDENTITY_BYTES / PAGE_SIZE, nr_pages);
   pr_debug("PAGE extended pages=");
   pr_debug_hex(free_pages - before);
   pr_debug("\n");
 }
 
-/* 【简化实现：单一页池】kpage 和用户页仍从同一个池按线性扫描分配，最多 64 页
- * 连续；两类页目前只在类型和契约上分开。替换方向：按直接映射边界划分低/高区，
- * kpage 只取低区，用户页优先高区并经 kmap 清零；再按需要引入空闲链表或
- * 伙伴分配器。 */
-static phys_t alloc_run(u32 count) {
-  if (!count || count > MAX_RUN || count > free_pages)
-    return PHYS_NULL;
-  for (u32 i = BOOT_POOL_START / PAGE_SIZE; i + count <= nr_pages; i++) {
-    u32 j = 0;
-    while (j < count && mem_map[i + j] == PAGE_FREE)
-      j++;
-    if (j == count) {
-      memset(mem_map + i, PAGE_USED, count);
-      free_pages -= count;
-      phys_t page = i * PAGE_SIZE;
-      if (!direct_map_end || page + count * PAGE_SIZE <= direct_map_end) {
-        memset(phys_to_virt(page), 0, count * PAGE_SIZE);
-      } else {
-        for (u32 k = 0; k < count; k++) {
-          void* mapped = kmap(page + k * PAGE_SIZE);
-          memset(mapped, 0, PAGE_SIZE);
-          kunmap(mapped);
-        }
-      }
-      if (page >= BOOT_IDENTITY_BYTES && !logged_extended_allocation) {
-        logged_extended_allocation = 1;
-        pr_debug("PAGE first extended allocation=");
-        pr_debug_hex(page);
-        pr_debug("\n");
-      }
-      return page;
+static void zero_run(phys_t page, u32 count) {
+  u32 dm_end_pfn = direct_map_end / PAGE_SIZE;
+  if (!dm_end_pfn || page / PAGE_SIZE + count <= dm_end_pfn) {
+    memset(phys_to_virt(page), 0, count * PAGE_SIZE);
+  } else {
+    for (u32 k = 0; k < count; k++) {
+      void* mapped = kmap(page + k * PAGE_SIZE);
+      memset(mapped, 0, PAGE_SIZE);
+      kunmap(mapped);
     }
-    i += j;
+  }
+}
+
+static phys_t alloc_from(u32 start_pfn, u32 end_pfn, u32 count, u32* hint) {
+  if (start_pfn >= end_pfn || !count || count > MAX_RUN || count > free_pages)
+    return PHYS_NULL;
+  u32 h = *hint;
+  if (h < start_pfn || h >= end_pfn) h = start_pfn;
+  for (int pass = 0; pass < 2; pass++) {
+    u32 from = pass ? start_pfn : h;
+    u32 to   = pass ? h : end_pfn;
+    for (u32 i = from; i + count <= to; i++) {
+      u32 j = 0;
+      while (j < count && mem_map[i + j] == PAGE_FREE)
+        j++;
+      if (j == count) {
+        memset(mem_map + i, PAGE_USED, count);
+        free_pages -= count;
+        *hint = i + count;
+        return (phys_t)(i * PAGE_SIZE);
+      }
+      i += j;
+    }
   }
   return PHYS_NULL;
 }
@@ -165,8 +168,17 @@ static int free_run(phys_t page, u32 count) {
 }
 
 void* kpage_alloc_run(u32 count) {
-  phys_t page = alloc_run(count);
-  return page ? phys_to_virt(page) : 0;
+  u32 low_end = direct_map_end ? direct_map_end / PAGE_SIZE : nr_pages;
+  phys_t page = alloc_from(LOW_START_PFN, low_end, count, &low_hint);
+  if (!page) return 0;
+  zero_run(page, count);
+  if (page >= BOOT_IDENTITY_BYTES && !logged_extended_allocation) {
+    logged_extended_allocation = 1;
+    pr_debug("PAGE first extended allocation=");
+    pr_debug_hex(page);
+    pr_debug("\n");
+  }
+  return phys_to_virt(page);
 }
 
 void* kpage_alloc(void) { return kpage_alloc_run(1); }
@@ -175,7 +187,23 @@ int kpage_free_run(void* page, u32 count) { return free_run(virt_to_phys(page), 
 
 int kpage_free(void* page) { return kpage_free_run(page, 1); }
 
-phys_t page_alloc(void) { return alloc_run(1); }
+phys_t page_alloc(void) {
+  u32 low_end = direct_map_end ? direct_map_end / PAGE_SIZE : nr_pages;
+  phys_t page = PHYS_NULL;
+  if (low_end < nr_pages)
+    page = alloc_from(low_end, nr_pages, 1, &high_hint);
+  if (!page)
+    page = alloc_from(LOW_START_PFN, low_end, 1, &low_hint);
+  if (!page) return PHYS_NULL;
+  zero_run(page, 1);
+  if (direct_map_end && page >= direct_map_end && !logged_high_allocation) {
+    logged_high_allocation = 1;
+    pr_debug("PAGE first high allocation=");
+    pr_debug_hex(page);
+    pr_debug("\n");
+  }
+  return page;
+}
 
 int page_free(phys_t page) { return free_run(page, 1); }
 

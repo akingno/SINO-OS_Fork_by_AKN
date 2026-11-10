@@ -20,6 +20,6 @@ int kpage_free_run(void* page, u32 count);
 phys_t page_alloc(void);
 int page_free(phys_t page);
 
-extern u32 free_pages, usable_memory;
+extern u32 free_pages, nr_pages;
 
 #endif

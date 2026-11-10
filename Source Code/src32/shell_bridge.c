@@ -772,7 +772,7 @@ static int command(Context* c, int argc, char** argv) {
   }
   if (streq(cmd, "mem") || streq(cmd, "free")) {
     put(out, "Mapped usable range: ");
-    num(out, usable_memory / 1024);
+    num(out, nr_pages * 4);
     put(out, " KiB\nFree memory: ");
     num(out, free_pages * 4);
     put(out, " KiB / ");

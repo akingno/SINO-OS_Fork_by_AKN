@@ -60,11 +60,12 @@ void paging_bootstrap(void) {
 }
 
 void paging_kernel_init(void) {
-  u32 dm_end = (usable_memory + TABLE_BYTES - 1) & ~(TABLE_BYTES - 1);
-  if (dm_end < BOOT_IDENTITY_BYTES)
-    dm_end = BOOT_IDENTITY_BYTES;
-  if (dm_end > USER_BASE)
-    panic("Usable memory exceeds user virtual base", usable_memory, USER_BASE);
+  u32 dm_pages = (nr_pages + TABLE_ENTRIES - 1) & ~(TABLE_ENTRIES - 1);
+  if (dm_pages < BOOT_IDENTITY_BYTES / PAGE_SIZE)
+    dm_pages = BOOT_IDENTITY_BYTES / PAGE_SIZE;
+  if (dm_pages > USER_BASE / PAGE_SIZE)
+    dm_pages = USER_BASE / PAGE_SIZE;
+  u32 dm_end = dm_pages * PAGE_SIZE;
   u32 identity_count = dm_end / TABLE_BYTES;
 
   u32* pd = kpage_alloc();

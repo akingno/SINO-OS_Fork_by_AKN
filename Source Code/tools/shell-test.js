@@ -101,7 +101,7 @@ async function run(directory, {execute, seedDisk, memoryMiB = 64} = {}) {
     let child, channel, qmp, server, childError;
     const guestLog = () => fs.existsSync(kernelLog) ? fs.readFileSync(kernelLog, 'utf8') : '';
     try {
-        if (![64, 128, 1024].includes(memoryMiB)) throw Error('Unsupported test VM memory size.');
+        if (![64, 128, 1024, 2048].includes(memoryMiB)) throw Error('Unsupported test VM memory size.');
         if (sources().sha256 !== build.sourceSha256 || hash(build.iso) !== build.isoSha256 ||
             path.resolve(build.iso) !== path.join(directory, 'SINO.iso')) throw Error('Build inputs or ISO identity changed.');
         if (seedDisk) {

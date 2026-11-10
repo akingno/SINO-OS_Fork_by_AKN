@@ -35,6 +35,7 @@
  * 0x00000000 - direct_map_end   Direct mapping (virt == phys)
  * USER_BASE  - USER_V2_END      User space (per-process, defined in api.h)
  * KMAP_BASE  - KMAP_BASE+4MiB   KMAP window (PDE 1022, shared page table) */
+#define PHYS_LIMIT_PAGES    0x100000u   /* 4 GiB in page frames */
 #define KMAP_PDE_INDEX      1022u
 #define KMAP_BASE           0xFF800000u
 #define KMAP_SLOTS          8u

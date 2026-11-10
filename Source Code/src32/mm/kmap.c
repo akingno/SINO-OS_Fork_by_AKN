@@ -55,19 +55,20 @@ u32 kmap_free_slots(void) {
 void kmap_selftest(void) {
   u32 before = free_pages;
   phys_t pages[KMAP_SLOTS];
-  void* mapped[KMAP_SLOTS];
   for (u32 i = 0; i < KMAP_SLOTS; i++) {
     pages[i] = page_alloc();
     if (!pages[i])
       panic("kmap_selftest: alloc", i, free_pages);
-    mapped[i] = kmap(pages[i]);
-    *(volatile u32*)mapped[i] = 0xCAFE0000u | i;
+    void* mapped = kmap(pages[i]);
+    *(volatile u32*)mapped = 0xCAFE0000u | i;
+    kunmap(mapped);
   }
   for (u32 i = 0; i < KMAP_SLOTS; i++) {
-    u32 val = *(volatile u32*)phys_to_virt(pages[i]);
+    void* remapped = kmap(pages[i]);
+    u32 val = *(volatile u32*)remapped;
     if (val != (0xCAFE0000u | i))
       panic("kmap_selftest: verify", val, 0xCAFE0000u | i);
-    kunmap(mapped[i]);
+    kunmap(remapped);
     page_free(pages[i]);
   }
   if (free_pages != before)
