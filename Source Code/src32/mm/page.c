@@ -7,9 +7,6 @@
 
 enum { MAX_RUN = 64, E820_MAX = 32 };
 enum { PAGE_FREE, PAGE_USED, PAGE_RESERVED };
-/* loader.asm leaves the E820 entry count and the entries at these addresses. */
-#define E820_COUNT_ADDRESS ((phys_t)0x4f00u)
-#define E820_TABLE_ADDRESS ((phys_t)0x5000u)
 
 typedef struct PACKED {
   u32 base, base_hi, length, length_hi, type, attributes;

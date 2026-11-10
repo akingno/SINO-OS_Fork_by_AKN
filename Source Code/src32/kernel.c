@@ -339,10 +339,7 @@ void kmain(void) {
   arch_init();
   paging_bootstrap();
   page_init();
-  u32 identity_bytes = (usable_memory + TABLE_BYTES - 1) & ~(TABLE_BYTES - 1);
-  if (identity_bytes < BOOT_IDENTITY_BYTES)
-    identity_bytes = BOOT_IDENTITY_BYTES;
-  paging_kernel_init(identity_bytes, 0);
+  paging_kernel_init();
   con_init();
   page_publish_extended();
   if (!fs_init())

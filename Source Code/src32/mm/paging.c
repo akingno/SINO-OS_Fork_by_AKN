@@ -3,17 +3,13 @@
 #include "../klog.h"
 #include "page.h"
 #include "paging.h"
+#include "layout.h"
 #include "../lib/kstring.h"
 #include "../panic.h"
 
 #define USER_FLAGS (PAGE_PRESENT | PAGE_USER)
 #define USER_FIRST_PDE (USER_BASE / TABLE_BYTES)
 #define USER_END_PDE ((USER_V2_END + TABLE_BYTES - 1) / TABLE_BYTES)
-/* Fixed low-memory pages holding the boot page directory and its tables. */
-#define TEMP_PD ((phys_t)0x90000u)
-#define TEMP_PT ((phys_t)0x1e0000u)
-#define VBE_TABLES 3u
-#define VBE_PAGE_FLAGS (PAGE_PRESENT | PAGE_WRITE | PAGE_WRITE_THROUGH | PAGE_CACHE_DISABLE)
 
 _Static_assert(BOOT_POOL_START % TABLE_BYTES == 0 &&
                BOOT_IDENTITY_BYTES % TABLE_BYTES == 0 &&
@@ -21,8 +17,15 @@ _Static_assert(BOOT_POOL_START % TABLE_BYTES == 0 &&
                "initial pool is aligned to whole page tables");
 _Static_assert(1 + (BOOT_IDENTITY_BYTES - BOOT_POOL_START) / TABLE_BYTES <= 16,
                "temporary page tables fit the low boot reserve");
+_Static_assert(KMAP_PDE_INDEX * TABLE_BYTES == KMAP_BASE,
+               "KMAP_BASE matches its PDE index");
+_Static_assert(KMAP_PDE_INDEX >= USER_END_PDE,
+               "KMAP PDE does not overlap user area");
 
+u32 direct_map_end;
 static u32* kernel_pd;
+static u32 kernel_pde_snapshot[TABLE_ENTRIES];
+static int kernel_pdes_frozen;
 
 void paging_activate(const u32* pd) { write_cr3(virt_to_phys(pd)); }
 
@@ -40,42 +43,32 @@ static void identity_table(u32* pd, u32 index, u32* pt, u32 flags) {
  * 替换方向：完成正式内核映射后撤掉不再需要的启动映射；先迁移启动数据、
  * 页表及裸物理指针的访问，不能直接删除这里的映射。 */
 void paging_bootstrap(void) {
-  u32* pd = phys_to_virt(TEMP_PD);
-  u32* pt = phys_to_virt(TEMP_PT);
+  u32* pd = phys_to_virt(BOOT_PD);
+  u32* pt = phys_to_virt(BOOT_PT);
   memset(pd, 0, PAGE_SIZE);
-  /* Entry code, kernel BSS, stack and BIOS handoff all fit in the first 4 MiB. */
   identity_table(pd, 0, pt, PAGE_PRESENT | PAGE_WRITE);
   for (u32 i = BOOT_POOL_START / TABLE_BYTES; i < BOOT_IDENTITY_BYTES / TABLE_BYTES; i++) {
     pt += TABLE_ENTRIES;
     identity_table(pd, i, pt, PAGE_PRESENT | PAGE_WRITE);
   }
-  write_cr3(TEMP_PD);
+  write_cr3(BOOT_PD);
   write_cr0((read_cr0() & ~(CR0_CD | CR0_NW)) | CR0_PG | CR0_WP);
   pr_debug("PAGING bootstrap CR3=");
-  pr_debug_hex(TEMP_PD);
+  pr_debug_hex(BOOT_PD);
   pr_debug("\n");
 }
 
-/* 【简化实现：长期恒等映射】将 identity_bytes 范围映射为 supervisor 可写，
- * 64 MiB 以上过滤非可用页，低端只排除零页；另按 4 MiB 粒度覆盖帧缓冲。
- * 因此空闲页、用户页的物理后备也有内核别名，并非只映射内核实际占用区；
- * supervisor 权限仍阻止 Ring 3 访问这些别名，但映射范围和权限过于宽泛。
- * 替换方向：按内核段设置权限，显式映射栈、堆、页表、启动资源和设备区域；
- * 用户后备页通过受控临时映射访问，或另行选择有边界的内核直接映射窗口。
- * 必须先解耦 page_alloc、页表遍历和映像装载中的物理地址/指针，才能收紧。 */
-void paging_kernel_init(u32 identity_bytes, u32 framebuffer) {
-  if (identity_bytes < BOOT_IDENTITY_BYTES || identity_bytes > USER_BASE ||
-      identity_bytes % TABLE_BYTES)
-    panic("Invalid kernel identity span", identity_bytes, 0);
-  u32 identity_count = identity_bytes / TABLE_BYTES;
-  u32 vbe = framebuffer / TABLE_BYTES;
-  if (framebuffer && (vbe < identity_count || vbe > TABLE_ENTRIES - VBE_TABLES ||
-      (vbe < USER_END_PDE && vbe + VBE_TABLES > USER_FIRST_PDE)))
-    panic("Invalid VBE framebuffer range", framebuffer, 0);
+void paging_kernel_init(void) {
+  u32 dm_end = (usable_memory + TABLE_BYTES - 1) & ~(TABLE_BYTES - 1);
+  if (dm_end < BOOT_IDENTITY_BYTES)
+    dm_end = BOOT_IDENTITY_BYTES;
+  if (dm_end > USER_BASE)
+    panic("Usable memory exceeds user virtual base", usable_memory, USER_BASE);
+  u32 identity_count = dm_end / TABLE_BYTES;
 
   u32* pd = kpage_alloc();
   if (!pd)
-    panic("No memory for kernel page directory", identity_bytes, free_pages);
+    panic("No memory for kernel page directory", dm_end, free_pages);
   for (u32 i = 0; i < identity_count; i++) {
     u32* pt = kpage_alloc();
     if (!pt)
@@ -86,26 +79,28 @@ void paging_kernel_init(u32 identity_bytes, u32 framebuffer) {
         if (!page_boot_usable(i * TABLE_BYTES + slot * PAGE_SIZE))
           pt[slot] = 0;
   }
-  for (u32 i = 0; framebuffer && i < VBE_TABLES; i++) {
-    u32* pt = kpage_alloc();
-    if (!pt)
-      panic("No memory for VBE page table", vbe + i, free_pages);
-    identity_table(pd, vbe + i, pt, VBE_PAGE_FLAGS);
-  }
-  /* These pages are permanently owned by the kernel directory. User page
-     directories share the supervisor entries and free only private tables. */
+  u32* kmap_pt = kpage_alloc();
+  if (!kmap_pt)
+    panic("No memory for KMAP page table", KMAP_PDE_INDEX, free_pages);
+  pd[KMAP_PDE_INDEX] = make_entry(virt_to_phys(kmap_pt), PAGE_PRESENT | PAGE_WRITE);
+
   paging_activate(pd);
   kernel_pd = pd;
+  direct_map_end = dm_end;
+  memcpy(kernel_pde_snapshot, pd, PAGE_SIZE);
+  kernel_pdes_frozen = 1;
+
   pr_debug("PAGING enabled: CR0=");
   pr_debug_hex(read_cr0());
   pr_debug(" CR3=");
   pr_debug_hex(virt_to_phys(pd));
   pr_debug(", null page unmapped\n");
-  if (framebuffer) {
-    pr_debug("VBE framebuffer mapped: ");
-    pr_debug_hex(framebuffer);
-    pr_debug(" 1024x768x32\n");
-  } else pr_debug("VGA text console: 80x25\n");
+  pr_debug("Direct mapping: [0, ");
+  pr_debug_hex(dm_end);
+  pr_debug("), KMAP at PDE ");
+  pr_debug_hex(KMAP_PDE_INDEX);
+  pr_debug("\n");
+  pr_debug("VGA text console: 80x25\n");
 }
 
 void paging_activate_kernel(void) { paging_activate(kernel_pd); }
@@ -124,7 +119,16 @@ static u32* user_table(const u32* pd, u32 va) {
   return phys_to_virt(entry_address(pde));
 }
 
+/* CPU sets Accessed (0x20) and Dirty (0x40) on live page directory entries;
+ * mask them out so the freeze check compares only software-managed bits. */
+#define PDE_HW_BITS 0x60u
 u32* paging_user_create(void) {
+  if (kernel_pdes_frozen)
+    for (u32 i = 0; i < TABLE_ENTRIES; i++) {
+      if (i >= USER_FIRST_PDE && i < USER_END_PDE) continue;
+      if ((kernel_pd[i] & ~PDE_HW_BITS) != (kernel_pde_snapshot[i] & ~PDE_HW_BITS))
+        panic("Kernel PDE changed after init", i, kernel_pd[i]);
+    }
   for (u32 i = USER_FIRST_PDE; i < USER_END_PDE; i++)
     if (kernel_pd[i] & PAGE_PRESENT)
       return 0;

@@ -3,9 +3,8 @@
 #include "kernel.h"
 #include "lib/kstring.h"
 #include "mm/addr.h"
+#include "mm/layout.h"
 #define SCROLL_LINES CON_ROWS
-/* VGA text mode: 80x25 cells of one character byte and one attribute byte. */
-#define VGA_TEXT_BASE ((phys_t)0xb8000u)
 static u32 cells[SCROLL_LINES][CON_COLS];
 static u32 utf_pending;
 static int utf_need;

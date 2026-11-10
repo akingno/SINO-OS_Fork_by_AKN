@@ -23,13 +23,17 @@ static inline phys_t entry_address(u32 entry) { return entry & PAGE_MASK; }
 static inline u32 make_entry(phys_t page, u32 flags) { return page | flags; }
 
 void paging_bootstrap(void);
-void paging_kernel_init(u32 identity_bytes, u32 framebuffer);
+void paging_kernel_init(void);
 void paging_activate_kernel(void);
+
+extern u32 direct_map_end;
 
 /* A page directory is a kernel page named by its kpage pointer; CR3 takes
  * virt_to_phys of it. User PDEs are private and created on first use, the
  * supervisor PDEs are shared with the kernel directory. Page tables belong
- * to the directory; a mapped data page belongs to its mapping. */
+ * to the directory; a mapped data page belongs to its mapping.
+ * Kernel PDEs are frozen after paging_kernel_init; only PTE-level changes
+ * are visible through all page directories. */
 u32* paging_user_create(void);
 void paging_user_destroy(u32* pd);
 

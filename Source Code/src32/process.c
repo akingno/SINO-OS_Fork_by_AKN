@@ -437,6 +437,7 @@ int process_desktop_run(u32 shell, u32 operation, const DesktopRun* request) {
       }
   return pid;
 }
+static u8 image_scratch[MAX_FILE];
 static int launch_policy(const char* path, u32 caps, const char* arguments,
                          u32 policy, int completion) {
   int n = vfs_lookup(path);
@@ -444,8 +445,8 @@ static int launch_policy(const char* path, u32 caps, const char* arguments,
     return S_NOTFOUND;
   if (nodes[n].dir || nodes[n].size < sizeof(NativeHeader) ||
       nodes[n].size > MAX_FILE)
-    return S_INVALID; /* Scratch is reserved; this call never yields. */
-  u8* bytes = (u8*)0xf00000;
+    return S_INVALID;
+  u8* bytes = image_scratch;
   if (vfs_read(n, bytes, MAX_FILE) < 0)
     return S_IO;
   NativeHeader* h = (NativeHeader*)bytes;
