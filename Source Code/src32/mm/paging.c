@@ -81,6 +81,11 @@ void paging_kernel_init(void) {
         if (!page_boot_usable(i * TABLE_BYTES + slot * PAGE_SIZE))
           pt[slot] = 0;
   }
+  u32* pt0 = phys_to_virt(entry_address(pd[0]));
+  for (u32 pte = 0xA0000 / PAGE_SIZE; pte <= 0xFF000 / PAGE_SIZE; pte++)
+    if (pte != VGA_TEXT_BASE / PAGE_SIZE)
+      pt0[pte] = make_entry(pte * PAGE_SIZE, PAGE_PRESENT);
+
   u32* kmap_pt = kpage_alloc();
   if (!kmap_pt)
     panic("No memory for KMAP page table", KMAP_PDE_INDEX, free_pages);
@@ -107,6 +112,28 @@ void paging_kernel_init(void) {
 }
 
 void paging_activate_kernel(void) { paging_activate(kernel_pd); }
+
+void paging_kernel_protect(u32 va) {
+  if (!page_aligned(va) || va >= direct_map_end)
+    panic("paging_kernel_protect: bad va", va, direct_map_end);
+  u32 pde = kernel_pd[pde_index(va)];
+  if (!(pde & PAGE_PRESENT))
+    panic("paging_kernel_protect: no PDE", va, pde);
+  u32* pt = phys_to_virt(entry_address(pde));
+  pt[pte_index(va)] = 0;
+  invlpg(va);
+}
+
+void paging_kernel_unprotect(u32 va) {
+  if (!page_aligned(va) || va >= direct_map_end)
+    panic("paging_kernel_unprotect: bad va", va, direct_map_end);
+  u32 pde = kernel_pd[pde_index(va)];
+  if (!(pde & PAGE_PRESENT))
+    panic("paging_kernel_unprotect: no PDE", va, pde);
+  u32* pt = phys_to_virt(entry_address(pde));
+  pt[pte_index(va)] = make_entry(virt_to_phys((void*)va), PAGE_PRESENT | PAGE_WRITE);
+  invlpg(va);
+}
 
 static int active(const u32* pd) {
   return page_floor(read_cr3()) == virt_to_phys(pd);

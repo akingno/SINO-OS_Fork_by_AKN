@@ -46,4 +46,10 @@ u32 paging_user_count(const u32* pd);
 u32 paging_user_find_gap(const u32* pd, u32 start, u32 end, u32 bytes);
 void paging_activate(const u32* pd);
 
+/* PTE-level changes inside the frozen kernel direct mapping.
+ * protect clears PAGE_PRESENT; unprotect restores the identity entry.
+ * Both flush the TLB entry. va must be page-aligned and below direct_map_end. */
+void paging_kernel_protect(u32 va);
+void paging_kernel_unprotect(u32 va);
+
 #endif

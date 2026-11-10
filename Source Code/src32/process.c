@@ -139,8 +139,10 @@ static void release(Process* p) {
   if (p->interactive) kpage_free(p->interactive);
   if (p->pd)
     paging_user_destroy(p->pd);
-  if (p->kernel_stack)
-    kpage_free(p->kernel_stack);
+  if (p->kernel_stack) {
+    paging_kernel_unprotect((u32)p->kernel_stack);
+    kpage_free_run(p->kernel_stack, 2);
+  }
   /* Publish only after execution resources and owned handles are gone. */
   if (p->completion_object) {
     int object = (int)p->completion_object - 1;
@@ -464,11 +466,12 @@ static int launch_policy(const char* path, u32 caps, const char* arguments,
   p->abi = h->abi;
   p->code_end = USER_BASE + h->data_offset;
   p->pd = paging_user_create();
-  p->kernel_stack = kpage_alloc();
+  p->kernel_stack = kpage_alloc_run(2);
   if (!p->pd || !p->kernel_stack) {
     release(p);
     return S_NOMEM;
   }
+  paging_kernel_protect((u32)p->kernel_stack);
   for (u32 offset = 0; offset < h->memory_bytes; offset += PAGE_SIZE) {
     phys_t page = alloc_user_page(p, USER_BASE + offset, offset >= h->data_offset);
     if (!page) {
@@ -1587,7 +1590,7 @@ void process_step(void) {
     int ready = !t->wait_op || retry_wait(t);
     if (ready) {
       quantum_end = ticks + 2;
-      tss[1] = (u32)p->kernel_stack + PAGE_SIZE;
+      tss[1] = (u32)p->kernel_stack + 2 * PAGE_SIZE;
       process_switches++;
       user_enter(&t->saved);
     }
