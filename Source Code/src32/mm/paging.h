@@ -17,10 +17,19 @@ enum {
   PAGE_CACHE_DISABLE = 16
 };
 
-static inline u32 pde_index(u32 va) { return va >> TABLE_SHIFT; }
-static inline u32 pte_index(u32 va) { return (va >> PAGE_SHIFT) & (TABLE_ENTRIES - 1); }
-static inline phys_t entry_address(u32 entry) { return entry & PAGE_MASK; }
-static inline u32 make_entry(phys_t page, u32 flags) { return page | flags; }
+static inline u32 pde_index(u32 va) {
+  return va >> TABLE_SHIFT;
+}
+static inline u32 pte_index(u32 va) {
+  return (va >> PAGE_SHIFT) & (TABLE_ENTRIES - 1);
+}
+static inline phys_t entry_address(u32 entry) {
+  return entry & PAGE_MASK;
+}
+// 使用 | 把物理地址和权限位组合
+static inline u32 make_entry(phys_t page, u32 flags) {
+  return page | flags;
+}
 
 void paging_bootstrap(void);
 void paging_kernel_init(void);
@@ -48,7 +57,8 @@ void paging_activate(const u32* pd);
 
 /* PTE-level changes inside the frozen kernel direct mapping.
  * protect clears PAGE_PRESENT; unprotect restores the identity entry.
- * Both flush the TLB entry. va must be page-aligned and below direct_map_end. */
+ * Both flush the TLB entry. va must be page-aligned and below direct_map_end.
+ */
 void paging_kernel_protect(u32 va);
 void paging_kernel_unprotect(u32 va);
 void paging_protect_selftest(void);

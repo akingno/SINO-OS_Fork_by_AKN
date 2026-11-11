@@ -13,88 +13,144 @@
 #define USER_END_PDE ((USER_V2_END + TABLE_BYTES - 1) / TABLE_BYTES)
 
 _Static_assert(BOOT_POOL_START % TABLE_BYTES == 0 &&
-               BOOT_IDENTITY_BYTES % TABLE_BYTES == 0 &&
-               BOOT_POOL_START < BOOT_IDENTITY_BYTES,
+                   BOOT_IDENTITY_BYTES % TABLE_BYTES == 0 &&
+                   BOOT_POOL_START < BOOT_IDENTITY_BYTES,
                "initial pool is aligned to whole page tables");
 _Static_assert(1 + (BOOT_IDENTITY_BYTES - BOOT_POOL_START) / TABLE_BYTES <= 16,
                "temporary page tables fit the low boot reserve");
-_Static_assert(KMAP_PDE_INDEX * TABLE_BYTES == KMAP_BASE,
+_Static_assert(KMAP_PDE_INDEX* TABLE_BYTES == KMAP_BASE,
                "KMAP_BASE matches its PDE index");
 _Static_assert(KMAP_PDE_INDEX >= USER_END_PDE,
                "KMAP PDE does not overlap user area");
 
+// 1GiB以下的恒等映射
 u32 direct_map_end;
+// 内核页目录数组
 static u32* kernel_pd;
+// 用户进程创建自己的页目录时，要复制内核页目录，于是这里防修改
 static u32 kernel_pde_snapshot[TABLE_ENTRIES];
+// bool，完成内核分页初始化后，内核 PDE 不再修改
 static int kernel_pdes_frozen;
 
-void paging_activate(const u32* pd) { write_cr3(virt_to_phys(pd)); }
+void paging_activate(const u32* pd) {
+  write_cr3(virt_to_phys(pd));
+}
 
+/*
+  初始化一张恒等映射页表，并挂到 pd[index]，不分配任何内存
+  pd: 页目录指针
+  index: 要修改的PDE索引
+  pt: 页表指针
+  flags: PTE 使用的权限标志
+  TODO: 改名叫 init_identity_table 之类的比较好
+*/
 static void identity_table(u32* pd, u32 index, u32* pt, u32 flags) {
-  u32 base = index * TABLE_BYTES;
-  for (u32 i = 0; i < TABLE_ENTRIES; i++)
+  u32 base = index * TABLE_BYTES;  // PTE 起始地址
+  // 写 1024 个PTE
+  for (u32 i = 0; i < TABLE_ENTRIES; i++) {
     pt[i] = make_entry(base + i * PAGE_SIZE, flags);
-  if (!index)
-    pt[0] = 0;
+  }
+  if (!index) {
+    pt[0] = 0;  // 第一个4kib不映射
+  }
+  // 把页表加入页目录
   pd[index] = make_entry(virt_to_phys(pt), PAGE_PRESENT | PAGE_WRITE);
 }
 
-/* 【简化实现：启动映射】固定页表暂时恒等映射低端执行区和初始物理页池，
- * 供开启分页及建立正式页表使用。这种启动过渡有必要，但不应决定长期布局。
- * 替换方向：完成正式内核映射后撤掉不再需要的启动映射；先迁移启动数据、
- * 页表及裸物理指针的访问，不能直接删除这里的映射。 */
+/* TODO: 此处位简化实现：启动映射
+  固定页表暂时恒等映射低端执行区和初始物理页池，
+  供开启分页及建立正式页表使用。这种启动过渡有必要，但不应决定长期布局。
+  替换方向：完成正式内核映射后撤掉不再需要的启动映射；先迁移启动数据、
+  页表及裸物理指针的访问，不能直接删除这里的映射。
+*/
+//在正式的物理内存管理器和内核页表建立之前，用预留内存构造临时页表，让 CPU 能够安全开启分页
 void paging_bootstrap(void) {
   u32* pd = phys_to_virt(BOOT_PD);
   u32* pt = phys_to_virt(BOOT_PT);
   memset(pd, 0, PAGE_SIZE);
   identity_table(pd, 0, pt, PAGE_PRESENT | PAGE_WRITE);
-  for (u32 i = BOOT_POOL_START / TABLE_BYTES; i < BOOT_IDENTITY_BYTES / TABLE_BYTES; i++) {
+  for (u32 i = BOOT_POOL_START / TABLE_BYTES;
+       i < BOOT_IDENTITY_BYTES / TABLE_BYTES; i++) { // i from 52/4 = 13; i < 64/4; i++
     pt += TABLE_ENTRIES;
     identity_table(pd, i, pt, PAGE_PRESENT | PAGE_WRITE);
   }
+  // 把页目录给 CPU
   write_cr3(BOOT_PD);
+  // 操作 CR0 控制寄存器，开始映射
   write_cr0((read_cr0() & ~(CR0_CD | CR0_NW)) | CR0_PG | CR0_WP);
   pr_debug("PAGING bootstrap CR3=");
   pr_debug_hex(BOOT_PD);
   pr_debug("\n");
 }
 
+
 void paging_kernel_init(void) {
+  // dm = direct mapping,不等同于identity mapping
+  // dm_pages = ceil(nr_pages / 1024) * 1024
+  // 按 1024 页对齐，这样就不用处理最后一个不完整的 4 MiB 区间
   u32 dm_pages = (nr_pages + TABLE_ENTRIES - 1) & ~(TABLE_ENTRIES - 1);
-  if (dm_pages < BOOT_IDENTITY_BYTES / PAGE_SIZE)
+  // 保证直接映射范围至少覆盖启动阶段所需的地址上界
+  if (dm_pages < BOOT_IDENTITY_BYTES / PAGE_SIZE) {
     dm_pages = BOOT_IDENTITY_BYTES / PAGE_SIZE;
-  if (dm_pages > USER_BASE / PAGE_SIZE)
+  }
+  // 保证内核直接映射区不会进入从 USER_BASE 开始的用户地址空间，比如截断到 1 GiB
+  if (dm_pages > USER_BASE / PAGE_SIZE) {
     dm_pages = USER_BASE / PAGE_SIZE;
+  }
+  // 上面得到了数量，现在得到实际映射终点
   u32 dm_end = dm_pages * PAGE_SIZE;
+  // 页表数量，如 1GiB / 4MiB = 256
   u32 identity_count = dm_end / TABLE_BYTES;
 
+  // page.c 的分配一页
   u32* pd = kpage_alloc();
-  if (!pd)
+  if (!pd) {
     panic("No memory for kernel page directory", dm_end, free_pages);
-  for (u32 i = 0; i < identity_count; i++) {
-    u32* pt = kpage_alloc();
-    if (!pt)
-      panic("No memory for kernel page table", i, free_pages);
-    identity_table(pd, i, pt, PAGE_PRESENT | PAGE_WRITE);
-    if (i >= BOOT_IDENTITY_BYTES / TABLE_BYTES)
-      for (u32 slot = 0; slot < TABLE_ENTRIES; slot++)
-        if (!page_boot_usable(i * TABLE_BYTES + slot * PAGE_SIZE))
-          pt[slot] = 0;
   }
+  for (u32 i = 0; i < identity_count; i++) {
+    // 分配一页
+    u32* pt = kpage_alloc();
+    if (!pt) {
+      panic("No memory for kernel page table", i, free_pages);
+    }
+    // 分配完的一页建立恒等映射
+    identity_table(pd, i, pt, PAGE_PRESENT | PAGE_WRITE);
+    // 在 64 MiB 外，检查是否可用
+    if (i >= BOOT_IDENTITY_BYTES / TABLE_BYTES) {
+      for (u32 slot = 0; slot < TABLE_ENTRIES; slot++) {
+        if (!page_boot_usable(i * TABLE_BYTES + slot * PAGE_SIZE)) { //看是否可用
+          pt[slot] = 0;
+        }
+      }
+    }
+  }
+  // 让 BIOS ROM 等区域只读，同时保留 VGA 文本控制台的写入能力。
   u32* pt0 = phys_to_virt(entry_address(pd[0]));
-  for (u32 pte = 0xA0000 / PAGE_SIZE; pte <= 0xFF000 / PAGE_SIZE; pte++)
-    if (pte != VGA_TEXT_BASE / PAGE_SIZE)
+  for (u32 pte = 0xA0000 / PAGE_SIZE; pte <= 0xFF000 / PAGE_SIZE; pte++) {
+    if (pte != VGA_TEXT_BASE / PAGE_SIZE) {
       pt0[pte] = make_entry(pte * PAGE_SIZE, PAGE_PRESENT);
-
+    }
+  }
+  // 为 KMAP 创建页表，这里没有上面那个循环
+  // KMAP 并不需要在初始化时映射固定的 1024 个物理页。它是为高端物理内存提供临时虚拟映射的区域。
   u32* kmap_pt = kpage_alloc();
-  if (!kmap_pt)
+  if (!kmap_pt) {
     panic("No memory for KMAP page table", KMAP_PDE_INDEX, free_pages);
-  pd[KMAP_PDE_INDEX] = make_entry(virt_to_phys(kmap_pt), PAGE_PRESENT | PAGE_WRITE);
+  }
+  pd[KMAP_PDE_INDEX] =
+      make_entry(virt_to_phys(kmap_pt), PAGE_PRESENT | PAGE_WRITE);
 
+  // 把pd写进CR3，意味着从启动时的临时页目录切换到刚刚建立的正式内核页目录
   paging_activate(pd);
+  //新分配的 KMAP 页表交给 KMAP 模块初始化
   kmap_init(kmap_pt);
+
+  // 将正式页目录的指针和直接映射区域结束位置保存到 static 变量
   kernel_pd = pd;
   direct_map_end = dm_end;
+
+  // 正式冻结内核页目录结构
+  // 并不是禁止所有内核页表修改，而是约束共享内核页目录的结构稳定性
   memcpy(kernel_pde_snapshot, pd, PAGE_SIZE);
   kernel_pdes_frozen = 1;
 
@@ -111,7 +167,9 @@ void paging_kernel_init(void) {
   pr_debug("VGA text console: 80x25\n");
 }
 
-void paging_activate_kernel(void) { paging_activate(kernel_pd); }
+void paging_activate_kernel(void) {
+  paging_activate(kernel_pd);
+}
 
 void paging_kernel_protect(u32 va) {
   if (!page_aligned(va) || va >= direct_map_end)
@@ -131,7 +189,8 @@ void paging_kernel_unprotect(u32 va) {
   if (!(pde & PAGE_PRESENT))
     panic("paging_kernel_unprotect: no PDE", va, pde);
   u32* pt = phys_to_virt(entry_address(pde));
-  pt[pte_index(va)] = make_entry(virt_to_phys((void*)va), PAGE_PRESENT | PAGE_WRITE);
+  pt[pte_index(va)] =
+      make_entry(virt_to_phys((void*)va), PAGE_PRESENT | PAGE_WRITE);
   invlpg(va);
 }
 
@@ -155,8 +214,10 @@ static u32* user_table(const u32* pd, u32 va) {
 u32* paging_user_create(void) {
   if (kernel_pdes_frozen)
     for (u32 i = 0; i < TABLE_ENTRIES; i++) {
-      if (i >= USER_FIRST_PDE && i < USER_END_PDE) continue;
-      if ((kernel_pd[i] & ~PDE_HW_BITS) != (kernel_pde_snapshot[i] & ~PDE_HW_BITS))
+      if (i >= USER_FIRST_PDE && i < USER_END_PDE)
+        continue;
+      if ((kernel_pd[i] & ~PDE_HW_BITS) !=
+          (kernel_pde_snapshot[i] & ~PDE_HW_BITS))
         panic("Kernel PDE changed after init", i, kernel_pd[i]);
     }
   for (u32 i = USER_FIRST_PDE; i < USER_END_PDE; i++)
@@ -220,7 +281,8 @@ phys_t paging_user_unmap(u32* pd, u32 va) {
 
 u32 paging_user_flags(const u32* pd, u32 va) {
   const u32* pt = user_table(pd, va);
-  return pt ? pt[pte_index(va)] & pd[pde_index(va)] & (USER_FLAGS | PAGE_WRITE) : 0;
+  return pt ? pt[pte_index(va)] & pd[pde_index(va)] & (USER_FLAGS | PAGE_WRITE)
+            : 0;
 }
 
 u32 paging_user_count(const u32* pd) {
@@ -282,13 +344,13 @@ void paging_protect_selftest(void) {
 
   u32 fc = fault_count;
   __asm__ volatile(
-    "movl $1f, %[res]\n\t"
-    "movl $14, %[exp]\n\t"
-    "movl $0xDEAD, (%[a])\n\t"
-    "1:"
-    : [res] "=m"(fault_resume), [exp] "=m"(fault_expected)
-    : [a] "r"(run) : "memory"
-  );
+      "movl $1f, %[res]\n\t"
+      "movl $14, %[exp]\n\t"
+      "movl $0xDEAD, (%[a])\n\t"
+      "1:"
+      : [res] "=m"(fault_resume), [exp] "=m"(fault_expected)
+      : [a] "r"(run)
+      : "memory");
   fault_expected = 0;
   fault_resume = 0;
   if (fault_count != fc + 1)
@@ -297,13 +359,13 @@ void paging_protect_selftest(void) {
   paging_kernel_unprotect((u32)run);
   fc = fault_count;
   __asm__ volatile(
-    "movl $1f, %[res]\n\t"
-    "movl $14, %[exp]\n\t"
-    "movl $0xBEEF, (%[a])\n\t"
-    "1:"
-    : [res] "=m"(fault_resume), [exp] "=m"(fault_expected)
-    : [a] "r"(run) : "memory"
-  );
+      "movl $1f, %[res]\n\t"
+      "movl $14, %[exp]\n\t"
+      "movl $0xBEEF, (%[a])\n\t"
+      "1:"
+      : [res] "=m"(fault_resume), [exp] "=m"(fault_expected)
+      : [a] "r"(run)
+      : "memory");
   fault_expected = 0;
   fault_resume = 0;
   if (fault_count != fc)
@@ -314,13 +376,13 @@ void paging_protect_selftest(void) {
 
   fc = fault_count;
   __asm__ volatile(
-    "movl $1f, %[res]\n\t"
-    "movl $14, %[exp]\n\t"
-    "movl $0xDEAD, (%[a])\n\t"
-    "1:"
-    : [res] "=m"(fault_resume), [exp] "=m"(fault_expected)
-    : [a] "r"((void*)0xF0000) : "memory"
-  );
+      "movl $1f, %[res]\n\t"
+      "movl $14, %[exp]\n\t"
+      "movl $0xDEAD, (%[a])\n\t"
+      "1:"
+      : [res] "=m"(fault_resume), [exp] "=m"(fault_expected)
+      : [a] "r"((void*)0xF0000)
+      : "memory");
   fault_expected = 0;
   fault_resume = 0;
   if (fault_count != fc + 1)
@@ -330,13 +392,13 @@ void paging_protect_selftest(void) {
   u32 val = *vga;
   fc = fault_count;
   __asm__ volatile(
-    "movl $1f, %[res]\n\t"
-    "movl $14, %[exp]\n\t"
-    "movl %[v], (%[a])\n\t"
-    "1:"
-    : [res] "=m"(fault_resume), [exp] "=m"(fault_expected)
-    : [a] "r"(vga), [v] "r"(val) : "memory"
-  );
+      "movl $1f, %[res]\n\t"
+      "movl $14, %[exp]\n\t"
+      "movl %[v], (%[a])\n\t"
+      "1:"
+      : [res] "=m"(fault_resume), [exp] "=m"(fault_expected)
+      : [a] "r"(vga), [v] "r"(val)
+      : "memory");
   fault_expected = 0;
   fault_resume = 0;
   if (fault_count != fc)
