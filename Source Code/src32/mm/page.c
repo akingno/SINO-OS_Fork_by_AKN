@@ -155,7 +155,8 @@ void page_init(void) {
   }
   // 初始化 mem_map
   if (!metadata_base) {
-    panic("page.c: No boot space for page metadata", nr_pages, metadata_pages);
+    panic("page_init: No boot space for page metadata", nr_pages,
+          metadata_pages);
   }
   // 先将全部页面视为不可分配 -> 再用 publish_pages
   // 把已经确认可以使用的页面标记为 FREE
@@ -163,7 +164,7 @@ void page_init(void) {
   memset(mem_map, PAGE_RESERVED, metadata_pages * PAGE_SIZE);
   publish_pages(LOW_START_PFN, boot_end_pfn);
   if (!free_pages) {
-    panic("page.c: No allocatable physical pages", nr_pages, metadata_pages);
+    panic("page_init: No allocatable physical pages", nr_pages, metadata_pages);
   }
   pr_debug("PAGE metadata base=");
   pr_debug_hex(metadata_base);
@@ -294,15 +295,15 @@ int kpage_free(void* page) {
 }
 
 // 分配用户进程的物理页
-//page_alloc() 的物理内存选择顺序
-//0–52 MiB: 保留区，不参与分配
-//52 MiB–1 GiB: Low Memory，第二选择：High Memory 分配失败才尝试
-//1–4 GiB: High Memory，第一选择：优先从这里分配
-//（假设 direct_map_end 为 1 GiB）
+// page_alloc() 的物理内存选择顺序
+// 0–52 MiB: 保留区，不参与分配
+// 52 MiB–1 GiB: Low Memory，第二选择：High Memory 分配失败才尝试
+// 1–4 GiB: High Memory，第一选择：优先从这里分配
+// （假设 direct_map_end 为 1 GiB）
 phys_t page_alloc(void) {
   u32 low_end = direct_map_end ? direct_map_end / PAGE_SIZE : nr_pages;
   phys_t page = PHYS_NULL;
-  if (low_end < nr_pages) { // 尝试分配 High Memory
+  if (low_end < nr_pages) {  // 尝试分配 High Memory
     page = alloc_from(low_end, nr_pages, 1, &high_hint);
   }
   if (!page) {
@@ -329,38 +330,50 @@ int page_free(phys_t page) {
 void page_allocator_test(void) {
   u32 before = free_pages;
   for (u32 i = 0; i < metadata_pages; i++)
-    if (mem_map[virt_to_phys(mem_map) / PAGE_SIZE + i] != PAGE_RESERVED)
-      panic("Page metadata reservation", virt_to_phys(mem_map), i);
-  if (kpage_free(mem_map) || page_free(0x200000u) || free_pages != before)
-    panic("Reserved page free validation", free_pages, before);
+    if (mem_map[virt_to_phys(mem_map) / PAGE_SIZE + i] != PAGE_RESERVED) {
+      panic("page_allocator_test: Page metadata reservation", virt_to_phys(mem_map), i);
+    }
+  if (kpage_free(mem_map) || page_free(0x200000u) || free_pages != before) {
+    panic("page_allocator_test: Reserved page free validation", free_pages, before);
+  }
 
   u32* a = kpage_alloc();
   u32* b = kpage_alloc();
-  if (!a || !b || a == b || ((u32)a | (u32)b) % PAGE_SIZE)
-    panic("Page allocation", (u32)a, (u32)b);
+  if (!a || !b || a == b || ((u32)a | (u32)b) % PAGE_SIZE) {
+    panic("page_allocator_test: Page allocation", (u32)a, (u32)b);
+  }
   *a = 0x46454c49;
   *b = 0x58333221;
-  if (*a != 0x46454c49 || *b != 0x58333221)
-    panic("Memory read/write", 0, 0);
-  if (!kpage_free(a) || !kpage_free(b) || kpage_free(a) || free_pages != before)
-    panic("Page free validation", free_pages, before);
+  if (*a != 0x46454c49 || *b != 0x58333221) {
+    panic("page_allocator_test: Memory read/write", 0, 0);
+  }
+  if (!kpage_free(a) || !kpage_free(b) || kpage_free(a) ||
+      free_pages != before) {
+    panic("page_allocator_test: Page free validation", free_pages, before);
+  }
 
   phys_t user = page_alloc();
   if (!user || !page_aligned(user) || user < BOOT_POOL_START ||
-      free_pages + 1 != before)
-    panic("User page allocation", user, free_pages);
-  if (!page_free(user) || page_free(user) || free_pages != before)
-    panic("User page release", user, free_pages);
+      free_pages + 1 != before) {
+    panic("page_allocator_test: User page allocation", user, free_pages);
+  }
+  if (!page_free(user) || page_free(user) || free_pages != before) {
+    panic("page_allocator_test: User page release", user, free_pages);
+  }
 
   u8* block = kpage_alloc_run(2);
-  if (!block || (u32)block % PAGE_SIZE || free_pages + 2 != before)
-    panic("Page run allocation", (u32)block, free_pages);
-  for (u32 i = 0; i < 2 * PAGE_SIZE; i++)
-    if (block[i])
-      panic("Page run zeroing", (u32)block, i);
+  if (!block || (u32)block % PAGE_SIZE || free_pages + 2 != before) {
+    panic("page_allocator_test: Page run allocation", (u32)block, free_pages);
+  }
+  for (u32 i = 0; i < 2 * PAGE_SIZE; i++) {
+    if (block[i]) {
+      panic("page_allocator_test: Page run zeroing", (u32)block, i);
+    }
+  }
   block[PAGE_SIZE] = 1;
   if (!kpage_free_run(block, 2) || kpage_free_run(block, 2) ||
-      free_pages != before)
-    panic("Page run release", (u32)block, free_pages);
+      free_pages != before) {
+    panic("page_allocator_test: Page run release", (u32)block, free_pages);
+  }
   pr_debug("PAGE allocator self-check passed\n");
 }

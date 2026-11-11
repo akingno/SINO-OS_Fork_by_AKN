@@ -3,6 +3,8 @@
 
 #include "../types.h"
 
+// USER_READ 需要 PRESENT + USER
+// USER_WRITE 需要 PRESENT + USER + WRITE
 typedef enum { USER_READ, USER_WRITE } UserAccess;
 
 /* Returns S_OK or an S_* error. A prepared range may be borrowed only
