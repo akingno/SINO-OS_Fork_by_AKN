@@ -184,8 +184,8 @@ int paging_user_map(u32* pd, u32 va, phys_t page, int write) {
     return 0;
   }
   pt[pte_index(va)] = make_entry(page, USER_FLAGS | (write ? PAGE_WRITE : 0));
-  if (active(pd))
-    paging_activate(pd);
+  /* No TLB invalidation: both the new PTE and any new PDE are 0→1
+   * transitions, and x86 never caches non-present entries (SDM 4.10.4.3). */
   return 1;
 }
 
@@ -200,13 +200,21 @@ phys_t paging_user_unmap(u32* pd, u32 va) {
   u32 i = 0;
   while (i < TABLE_ENTRIES && !(pt[i] & PAGE_PRESENT))
     i++;
-  if (i == TABLE_ENTRIES)
+  if (i == TABLE_ENTRIES) {
     pd[pde_index(va)] = 0;
-  /* Invalidate before either the table or data page can be reused. */
-  if (active(pd))
-    paging_activate(pd);
-  if (i == TABLE_ENTRIES)
+    /* Flush the entire TLB: the paging-structure cache may still reference
+     * this page table, so a single invlpg is insufficient.  Must complete
+     * before the table page is freed.  If CR4.PGE is ever enabled, the
+     * no-global-pages invariant that exempts inactive PDs must be revisited. */
+    if (active(pd))
+      paging_activate(pd);
     kpage_free(pt);
+  } else {
+    /* Only the data PTE changed (1→0); invlpg suffices.  Inactive PDs need
+     * no invalidation: every CR3 switch flushes the TLB (no global pages). */
+    if (active(pd))
+      invlpg(va);
+  }
   return entry_address(pte);
 }
 
@@ -263,4 +271,76 @@ void paging_user_destroy(u32* pd) {
     kpage_free(pt);
   }
   kpage_free(pd);
+}
+
+void paging_protect_selftest(void) {
+  u32 saved_free = free_pages;
+  void* run = kpage_alloc_run(2);
+  if (!run)
+    panic("paging_protect_selftest: alloc", 0, free_pages);
+  paging_kernel_protect((u32)run);
+
+  u32 fc = fault_count;
+  __asm__ volatile(
+    "movl $1f, %[res]\n\t"
+    "movl $14, %[exp]\n\t"
+    "movl $0xDEAD, (%[a])\n\t"
+    "1:"
+    : [res] "=m"(fault_resume), [exp] "=m"(fault_expected)
+    : [a] "r"(run) : "memory"
+  );
+  fault_expected = 0;
+  fault_resume = 0;
+  if (fault_count != fc + 1)
+    panic("paging_protect_selftest: guard", fault_count, fc + 1);
+
+  paging_kernel_unprotect((u32)run);
+  fc = fault_count;
+  __asm__ volatile(
+    "movl $1f, %[res]\n\t"
+    "movl $14, %[exp]\n\t"
+    "movl $0xBEEF, (%[a])\n\t"
+    "1:"
+    : [res] "=m"(fault_resume), [exp] "=m"(fault_expected)
+    : [a] "r"(run) : "memory"
+  );
+  fault_expected = 0;
+  fault_resume = 0;
+  if (fault_count != fc)
+    panic("paging_protect_selftest: unprotect", fault_count, fc);
+  kpage_free_run(run, 2);
+  if (free_pages != saved_free)
+    panic("paging_protect_selftest: leak", free_pages, saved_free);
+
+  fc = fault_count;
+  __asm__ volatile(
+    "movl $1f, %[res]\n\t"
+    "movl $14, %[exp]\n\t"
+    "movl $0xDEAD, (%[a])\n\t"
+    "1:"
+    : [res] "=m"(fault_resume), [exp] "=m"(fault_expected)
+    : [a] "r"((void*)0xF0000) : "memory"
+  );
+  fault_expected = 0;
+  fault_resume = 0;
+  if (fault_count != fc + 1)
+    panic("paging_protect_selftest: ROM", fault_count, fc + 1);
+
+  volatile u32* vga = (volatile u32*)VGA_TEXT_BASE;
+  u32 val = *vga;
+  fc = fault_count;
+  __asm__ volatile(
+    "movl $1f, %[res]\n\t"
+    "movl $14, %[exp]\n\t"
+    "movl %[v], (%[a])\n\t"
+    "1:"
+    : [res] "=m"(fault_resume), [exp] "=m"(fault_expected)
+    : [a] "r"(vga), [v] "r"(val) : "memory"
+  );
+  fault_expected = 0;
+  fault_resume = 0;
+  if (fault_count != fc)
+    panic("paging_protect_selftest: VGA", fault_count, fc);
+
+  pr_debug("PAGING protection self-check passed\n");
 }

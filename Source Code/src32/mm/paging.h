@@ -51,5 +51,6 @@ void paging_activate(const u32* pd);
  * Both flush the TLB entry. va must be page-aligned and below direct_map_end. */
 void paging_kernel_protect(u32 va);
 void paging_kernel_unprotect(u32 va);
+void paging_protect_selftest(void);
 
 #endif

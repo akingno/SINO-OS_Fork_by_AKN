@@ -332,6 +332,7 @@ void kernel_tests(void) {
     panic("Exception recovery", fault_count, 2);
   pr_debug("FAULT recovery self-check passed\n");
 #endif
+  paging_protect_selftest();
 }
 void kmain(void) {
   pr_debug("SINO 0.10 native 32-bit kernel entered, CS=0x08\n");
