@@ -17,6 +17,13 @@ publish_boot_pages 发布初始可用页，最后记录诊断信息。find_boot_
 扩展物理页仍由 page_publish_extended 在正式页表建立后单独发布。
 分页表构造辅助函数名为 init_identity_table；活动页目录查询沿用 paging_is_active，供分页和 uaccess 共用。
 
+## 连续物理页搜索
+
+alloc_from 以 next-fit 顺序搜索候选起点：先搜索 [hint, end)，再搜索 [start, hint)。
+hint 只划分候选起点，连续空闲块允许跨 hint；块的终点始终不能超过 end，物理池末端不能与起点拼接。
+无效 hint 归一到 start。失败不修改页状态、空闲计数或调用方 hint；成功后扣减页数，并将 hint 更新到分配块末端。
+next-fit 最坏仍为 O(N) 页状态扫描；是否引入索引应由实际扫描开销决定。
+
 ## 内核保护页
 
 `paging_kernel_guard(page, &owner)` / `paging_kernel_unguard(&owner)` 仅在正式页表建立后使用。
@@ -75,5 +82,6 @@ prepare 先验证整个范围，不因后半段非法而提前落地前半段；
 报告在 Build Output/dev/runs/mm-boundaries-*。该独立专项不自动加入 core。
 
 普通启动自检检查 guard 缺页、恢复、只读 PTE 保留、重复操作、错误 owner、释放拒绝和资源计数；
+分配器自检在隔离的 8 页窗口中检查跨 hint 连续分配、池边界碎片拒绝、过大申请、hint 回绕及释放后计数恢复。
 test-memory.js images 验证映像及栈生命周期，anonymous 验证真实跨页 I/O、OOM 不消费管道数据和进程回收。
 文件和终端等待路径按 TESTING.md 的追加条件选测，不默认全量回归。

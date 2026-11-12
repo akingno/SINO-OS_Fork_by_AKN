@@ -158,20 +158,21 @@ static void zero_run(phys_t page, u32 count) {
 // 在指定范围内寻找 count
 // 个物理地址连续且全部空闲的页面，标记为已使用并返回起始地址
 static phys_t alloc_from(u32 start_pfn, u32 end_pfn, u32 count, u32* hint) {
-  if (start_pfn >= end_pfn || !count || count > MAX_RUN || count > free_pages) {
+  if (start_pfn >= end_pfn || !count || count > MAX_RUN ||
+      count > end_pfn - start_pfn || count > free_pages) {
     return PHYS_NULL;
   }
   u32 h = *hint;  // 上次从哪开始，并更新位下次从哪开始
   if (h < start_pfn || h >= end_pfn) {
     h = start_pfn;
   }
-  // 两轮搜索：1. 从 hint 搜索到范围末尾 2. 如果没找到，就回头搜索前半段
+  // 两轮按候选起点搜索：先 [hint, end)，再 [start, hint)。
+  // 连续块可以跨 hint，但不能跨物理池末端；hint 不限制块的终点。
   // next-fit 使用游标减少重复搜索，最坏仍为 O(N) 页状态扫描。
-  // TODO(MM-08): 检查 hint 分界的连续块完整性，再根据测量决定索引优化。
   for (int pass = 0; pass < 2; pass++) {
     u32 from = pass ? start_pfn : h;
     u32 to = pass ? h : end_pfn;
-    for (u32 i = from; i + count <= to; i++) {
+    for (u32 i = from; i < to && count <= end_pfn - i; i++) {
       u32 j = 0;
       while (j < count && mem_map[i + j] == PAGE_FREE)
         j++;
@@ -299,6 +300,48 @@ int page_free(phys_t page) {
   return free_run(page, 1, PAGE_USED);
 }
 
+/* Isolate the search in an allocator-owned window so other free memory cannot
+ * hide a missed run. No pointer is accessed after its backing page is freed. */
+static void page_run_search_test(void) {
+  u32 before = free_pages;
+  u8* window = (u8*)kpage_alloc_run(8);
+  if (!window)
+    panic("page_run_search_test: Window allocation", free_pages, before);
+  phys_t base = virt_to_phys(window);
+  u32 first = base / PAGE_SIZE, end = first + 8;
+  if (!kpage_free_run(window + 2 * PAGE_SIZE, 4))
+    panic("page_run_search_test: Middle release", base, free_pages);
+
+  // The only four-page run straddles hint; both old half-range scans missed it.
+  u32 hint = first + 4;
+  phys_t run = alloc_from(first, end, 4, &hint);
+  if (run != base + 2 * PAGE_SIZE || hint != first + 6 ||
+      free_pages + 8 != before)
+    panic("page_run_search_test: Run across hint", run, hint);
+
+  // Two free pages at each end are not a physically contiguous four-page run.
+  if (!kpage_free_run(window, 2) ||
+      !kpage_free_run(window + 6 * PAGE_SIZE, 2))
+    panic("page_run_search_test: Edge release", base, free_pages);
+  u32 fragmented = free_pages;
+  if (alloc_from(first, end, 4, &hint) ||
+      alloc_from(first, end, 9, &hint) ||
+      free_pages != fragmented || hint != first + 6)
+    panic("page_run_search_test: Pool boundary", free_pages, hint);
+
+  // A hint at the exclusive end must wrap; the released head is reusable.
+  hint = end;
+  run = alloc_from(first, end, 2, &hint);
+  if (run != base || hint != first + 2 || free_pages + 2 != fragmented)
+    panic("page_run_search_test: Hint wrap", run, hint);
+  for (u32 i = 0; i < 6; i++) {
+    if (!page_free(base + i * PAGE_SIZE))
+      panic("page_run_search_test: Release", base, i);
+  }
+  if (free_pages != before)
+    panic("page_run_search_test: Page count", free_pages, before);
+}
+
 // 物理页分配器自检，每次启动运行
 void page_allocator_test(void) {
   u32 before = free_pages;
@@ -348,5 +391,6 @@ void page_allocator_test(void) {
       free_pages != before) {
     panic("page_allocator_test: Page run release", (u32)block, free_pages);
   }
+  page_run_search_test();
   pr_debug("PAGE allocator self-check passed\n");
 }
