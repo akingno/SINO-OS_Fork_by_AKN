@@ -2,6 +2,9 @@
 #define SINO_MM_UACCESS_H
 
 #include "../types.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 // USER_READ 需要 PRESENT + USER
 // USER_WRITE 需要 PRESENT + USER + WRITE
@@ -22,4 +25,7 @@ int copy_string_from_user(u32* pd, char* out, u32 address, u32 capacity);
     return uaccess_status;               \
 } while (0)
 
+#ifdef __cplusplus
+}
+#endif
 #endif

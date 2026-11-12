@@ -192,7 +192,7 @@ static int read_file(const char *path) {
     if (s < 0)
       return failure(s);
   }
-  FileText decoder = {0};
+  FileText decoder = {};
   u32 cp;
   while ((s = file_text_next(&decoder, get, 0, &cp)) > 0) {
     s = emit(cp);
@@ -282,7 +282,7 @@ static int show_range(u32 start, u32 end) {
   offset = start;
   range_end = end;
   position = available = 0;
-  FileText decoder = {0};
+  FileText decoder = {};
   u32 cp;
   int s;
   while ((s = file_text_next(&decoder, get, 0, &cp)) > 0) {
@@ -372,7 +372,7 @@ static int text_tool(const char *cmd, const char *path) {
     }
     return unchanged() < 0 ? failure(S_CHANGED) : 0;
   }
-  TextCounts counts = {0};
+  TextCounts counts = {};
   TextMatch match;
   int found = 0, hit = !*pattern;
   u32 row = 1, begin = 0, head_end = 0;

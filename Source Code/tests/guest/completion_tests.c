@@ -71,7 +71,7 @@ static void blocking_run_case(int timed) {
   u32 offset = 0;
   RunSpec spec = {sizeof(spec), 1, 0, (u32)"/boot/clitest.snx", 1, strlen(mode) + 1,
                   (u32)mode, (u32)&offset, timed ? 0 : sizeof(payload), (u32)payload,
-                  timed ? 20 : 0, 0};
+                  (u32)(timed ? 20 : 0), 0};
   int handle = StartRun(&spec);
   require(handle > 0, "start bounded run");
   struct { RunResult result; u32 tail; } reply;
@@ -154,7 +154,7 @@ static void blocking_case(const char* mode) {
             blocking_result(SYS_PROCESS_RESULT, handle, (void*)USER_BASE, 1) == S_INVALID &&
             blocking_result(SYS_PROCESS_RESULT, handle, &reply, STREAM_WAIT_MAX + 1) == S_INVALID &&
             api(SYS_PROCESS_RESULT, handle, (u32)&reply, 31) == S_INVALID &&
-            blocking_result(SYS_RUN_RESULT, handle, &(RunResult){0}, 1) == S_INVALID &&
+            blocking_result(SYS_RUN_RESULT, handle, &reply.result, 1) == S_INVALID &&
             reply.result.size == 0xccccccccu && Close(cancel_only) == 0, "blocking query validates its arguments");
   } else {
     require(0, "unknown blocking result case");

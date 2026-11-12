@@ -1,6 +1,9 @@
 #ifndef SINO_LINE_EDIT_H
 #define SINO_LINE_EDIT_H
 #include "../src32/types.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
 typedef struct {
   char text[256];
   u32 length, cursor;
@@ -105,4 +108,7 @@ static int line_key(LineEditor *e, int key) {
   e->length -= removed;
   return 1;
 }
+#ifdef __cplusplus
+}
+#endif
 #endif

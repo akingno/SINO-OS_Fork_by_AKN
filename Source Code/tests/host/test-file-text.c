@@ -14,7 +14,7 @@ static int next(void *context) {
 static void decode(const unsigned char *data, unsigned bytes,
                    const unsigned *expected, unsigned count) {
   Input in = {data, bytes, 0};
-  FileText state = {0};
+  FileText state = {};
   unsigned cp;
   for (unsigned i = 0; i < count; i++) {
     assert(file_text_next(&state, next, &in, &cp) == 1);
@@ -37,7 +37,7 @@ int main(void) {
   split[513] = 0xa0;
   split[514] = 'z';
   Input in = {split, sizeof(split), 0};
-  FileText state = {0};
+  FileText state = {};
   unsigned cp;
   for (unsigned i = 0; i < 511; i++)
     assert(file_text_next(&state, next, &in, &cp) == 1 && cp == 'x');
@@ -46,7 +46,7 @@ int main(void) {
   char utf[4];
   assert(file_text_encode(0x4f60, utf) == 3 && !memcmp(utf, "\xe4\xbd\xa0", 3));
   assert(file_text_encode(0x1f600, utf) == 4);
-  FileLayout layout = {0};
+  FileLayout layout = {};
   assert(!file_text_wrap(&layout, 80, 'x'));
   layout.column = 80;
   assert(file_text_wrap(&layout, 80, 'x'));

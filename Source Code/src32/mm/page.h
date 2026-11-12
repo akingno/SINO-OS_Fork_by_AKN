@@ -2,6 +2,9 @@
 #define SINO_MM_PAGE_H
 #include "../types.h"
 #include "layout.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 void page_init(void);
 int page_boot_usable(phys_t address);
@@ -19,4 +22,7 @@ int page_free(phys_t page);
 
 extern u32 free_pages, nr_pages;
 
+#ifdef __cplusplus
+}
+#endif
 #endif

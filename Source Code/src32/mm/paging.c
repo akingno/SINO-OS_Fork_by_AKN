@@ -12,15 +12,15 @@
 #define USER_FIRST_PDE (USER_BASE / TABLE_BYTES)
 #define USER_END_PDE ((USER_V2_END + TABLE_BYTES - 1) / TABLE_BYTES)
 
-_Static_assert(BOOT_POOL_START % TABLE_BYTES == 0 &&
+static_assert(BOOT_POOL_START % TABLE_BYTES == 0 &&
                    BOOT_IDENTITY_BYTES % TABLE_BYTES == 0 &&
                    BOOT_POOL_START < BOOT_IDENTITY_BYTES,
                "initial pool is aligned to whole page tables");
-_Static_assert(1 + (BOOT_IDENTITY_BYTES - BOOT_POOL_START) / TABLE_BYTES <= 16,
+static_assert(1 + (BOOT_IDENTITY_BYTES - BOOT_POOL_START) / TABLE_BYTES <= 16,
                "temporary page tables fit the low boot reserve");
-_Static_assert(KMAP_PDE_INDEX* TABLE_BYTES == KMAP_BASE,
+static_assert(KMAP_PDE_INDEX* TABLE_BYTES == KMAP_BASE,
                "KMAP_BASE matches its PDE index");
-_Static_assert(KMAP_PDE_INDEX >= USER_END_PDE,
+static_assert(KMAP_PDE_INDEX >= USER_END_PDE,
                "KMAP PDE does not overlap user area");
 
 // 1GiB以下的恒等映射
@@ -63,8 +63,8 @@ static void init_identity_table(u32* pd, u32 index, u32* pt, u32 flags) {
 // 在正式的物理内存管理器和内核页表建立之前，用预留内存构造临时页表，让 CPU
 // 能够安全开启分页
 void paging_bootstrap(void) {
-  u32* pd = phys_to_virt(BOOT_PD);
-  u32* pt = phys_to_virt(BOOT_PT);
+  u32* pd = (u32*)phys_to_virt(BOOT_PD);
+  u32* pt = (u32*)phys_to_virt(BOOT_PT);
   memset(pd, 0, PAGE_SIZE);
   init_identity_table(pd, 0, pt, PAGE_PRESENT | PAGE_WRITE);
   for (u32 i = BOOT_POOL_START / TABLE_BYTES;
@@ -101,13 +101,13 @@ void paging_kernel_init(void) {
   u32 identity_count = dm_end / TABLE_BYTES;
 
   // page.c 的分配一页
-  u32* pd = kpage_alloc();
+  u32* pd = (u32*)kpage_alloc();
   if (!pd) {
     panic("No memory for kernel page directory", dm_end, free_pages);
   }
   for (u32 i = 0; i < identity_count; i++) {
     // 分配一页
-    u32* pt = kpage_alloc();
+    u32* pt = (u32*)kpage_alloc();
     if (!pt) {
       panic("No memory for kernel page table", i, free_pages);
     }
@@ -124,7 +124,7 @@ void paging_kernel_init(void) {
     }
   }
   // 让 BIOS ROM 等区域只读，同时保留 VGA 文本控制台的写入能力。
-  u32* pt0 = phys_to_virt(entry_address(pd[0]));
+  u32* pt0 = (u32*)phys_to_virt(entry_address(pd[0]));
   for (u32 pte = 0xA0000 / PAGE_SIZE; pte <= 0xFF000 / PAGE_SIZE; pte++) {
     if (pte != VGA_TEXT_BASE / PAGE_SIZE) {
       pt0[pte] = make_entry(pte * PAGE_SIZE, PAGE_PRESENT);
@@ -133,7 +133,7 @@ void paging_kernel_init(void) {
   // 为 KMAP 创建页表，这里没有上面那个循环
   // KMAP 并不需要在初始化时映射固定的 1024
   // 个物理页。它是为高端物理内存提供临时虚拟映射的区域。
-  u32* kmap_pt = kpage_alloc();
+  u32* kmap_pt = (u32*)kpage_alloc();
   if (!kmap_pt) {
     panic("No memory for KMAP page table", KMAP_PDE_INDEX, free_pages);
   }
@@ -209,7 +209,7 @@ int paging_kernel_unguard(KernelGuard* owner) {
   for (u32 i = 0; i < KERNEL_GUARDS; i++) {
     GuardRecord* record = &guards[i];
     if (record->owner != owner || record->id != owner->id) continue;
-    u32* pt = phys_to_virt(entry_address(kernel_pd[pde_index(record->va)]));
+    u32* pt = (u32*)phys_to_virt(entry_address(kernel_pd[pde_index(record->va)]));
     if (pt[pte_index(record->va)]) return S_CHANGED;
     pt[pte_index(record->va)] = record->saved;
     invlpg(record->va);
@@ -234,7 +234,7 @@ static u32* user_table(const u32* pd, u32 va) {
   if ((pde & USER_FLAGS) != USER_FLAGS) {
     return 0;
   }
-  return phys_to_virt(entry_address(pde));
+  return (u32*)phys_to_virt(entry_address(pde));
 }
 
 /* 0x20 对应 Accessed 位，CPU 可能在访问分页结构时修改它。
@@ -257,7 +257,7 @@ u32* paging_user_create(void) {
       return 0;
     }
   }
-  u32* pd = kpage_alloc();
+  u32* pd = (u32*)kpage_alloc();
   if (pd) {
     // 每个新建用户进程的页目录，最初都包含与内核页目录相同的 PDE
     // 未来给进程分配用户内存时，再创建它自己的用户页表
@@ -281,7 +281,7 @@ int paging_user_map(u32* pd, u32 va, phys_t page, int write) {
     if (pd[pde_index(va)] & PAGE_PRESENT) {
       return 0;
     }
-    pt = kpage_alloc();
+    pt = (u32*)kpage_alloc();
     if (!pt) {
       return 0;
     }
@@ -407,7 +407,7 @@ void paging_protect_selftest(void) {
   void* run = kpage_alloc_run(2);
   if (!run)
     panic("paging_protect_selftest: alloc", 0, free_pages);
-  KernelGuard guard = {0}, other = {0};
+  KernelGuard guard = {}, other = {};
   if (paging_kernel_guard((void*)VGA_TEXT_BASE, &guard) != S_INVALID ||
       paging_kernel_guard((u8*)run + 1, &guard) != S_INVALID ||
       paging_kernel_guard(run, &guard) != S_OK ||
@@ -450,7 +450,7 @@ void paging_protect_selftest(void) {
   if (fault_count != fc)
     panic("paging_protect_selftest: unprotect", fault_count, fc);
   u32 va = (u32)run;
-  u32* pt = phys_to_virt(entry_address(kernel_pd[pde_index(va)]));
+  u32* pt = (u32*)phys_to_virt(entry_address(kernel_pd[pde_index(va)]));
   pt[pte_index(va)] &= ~PAGE_WRITE;
   invlpg(va);
   u32 original = pt[pte_index(va)];

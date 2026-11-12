@@ -1,6 +1,9 @@
 #ifndef SINO_CONSOLE_VIEW_H
 #define SINO_CONSOLE_VIEW_H
 #include "terminal_edit_model.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
 static void console_view_frame(const TerminalModel *m, const TerminalEditView *v,
                                ConsoleFrame *frame) {
   frame->cursor = CONSOLE_COLUMNS * CONSOLE_ROWS;
@@ -18,4 +21,7 @@ static void console_view_frame(const TerminalModel *m, const TerminalEditView *v
       frame->cursor = y * CONSOLE_COLUMNS + column;
   }
 }
+#ifdef __cplusplus
+}
+#endif
 #endif

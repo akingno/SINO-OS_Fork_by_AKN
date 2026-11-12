@@ -70,7 +70,7 @@ typedef struct {
   u32 pending_directory, directory_rights;
   u32 pending_pipe[3]; /* Object index + 1, owned until transferred to child. */
 } RunData;
-_Static_assert(sizeof(RunData) <= PAGE_SIZE, "run metadata fits one page");
+static_assert(sizeof(RunData) <= PAGE_SIZE, "run metadata fits one page");
 static u32 run_count;
 static void run_free(RunData* run) {
   if (!run) return;
@@ -107,7 +107,7 @@ static struct {
 volatile u32 user_switch_out;
 u32 process_faults, process_switches, process_exits;
 static u32 gdt[12], tss[26];
-extern void user_enter(UserFrame*);
+extern "C" void user_enter(UserFrame*);
 static void descriptor(int i, u32 base, u32 limit, u32 access, u32 flags) {
   gdt[i * 2] = (limit & 65535) | (base << 16);
   gdt[i * 2 + 1] = (base & 0xff000000) | ((base >> 16) & 255) | (access << 8) |
@@ -296,7 +296,7 @@ static int paging_probe_setup(Process* p, int exhaust) {
      new page table cannot. Keep the earlier mappings for launch rollback. */
   void** held = 0;
   while (free_pages > 1) {
-    void** page = kpage_alloc();
+    void** page = (void**)kpage_alloc();
     if (!page)
       break;
     *page = held;
@@ -498,7 +498,7 @@ static int launch_policy(const char* path, u32 caps, const char* arguments,
   }
   char executable[128];
   vfs_path(n, executable);
-  u8* params = kmap(params_page);
+  u8* params = (u8*)kmap(params_page);
   memcpy(params, arguments, strlen(arguments) + 1);
   memcpy(params + 256, executable, strlen(executable) + 1);
   kunmap(params);
@@ -646,7 +646,7 @@ int process_interactive_start(Handle* owner, const InteractiveSpec* spec,
     if (grant < 0)
       return grant;
   }
-  CliInfo* cli = kpage_alloc();
+  CliInfo* cli = (CliInfo*)kpage_alloc();
   if (!cli) {
     if (grant >= 0)
       object_unref(grant);
@@ -726,11 +726,11 @@ int process_run_start_bound(Handle* owner, const RunSpec* spec, u32 directory, u
   if ((!directory && rights) || (directory && !rights)) return S_INVALID;
   if (streams && streams[0] && spec->input_bytes) return S_INVALID;
   if (run_count >= RUN_COUNT) return S_LIMIT;
-  RunData* run = kpage_alloc();
+  RunData* run = (RunData*)kpage_alloc();
   if (!run) return S_NOMEM;
   run_count++;
   for (int i = 0; i < 3; i++) {
-    run->buffer[i] = kpage_alloc();
+    run->buffer[i] = (u8*)kpage_alloc();
     if (!run->buffer[i]) { run_free(run); return S_NOMEM; }
   }
   /* Caller has bounded and validated these kernel/user input ranges. */
@@ -1365,7 +1365,7 @@ static int syscall(Frame* f) {
       if (nodes[n].size > c)
         return S_LIMIT;
       return vfs_read(n, (u8*)b, c) < 0 ? S_IO : (int)nodes[n].size;
-    case SYS_WRITE:
+    case SYS_WRITE: {
       r = homepath(a, path, 1);
       if (r)
         return r;
@@ -1385,6 +1385,7 @@ static int syscall(Frame* f) {
         return S_IO;
       }
       return 0;
+    }
     case SYS_MKDIR:
       r = homepath(a, path, 1);
       if (r)

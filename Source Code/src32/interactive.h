@@ -1,6 +1,9 @@
 #ifndef SINO_INTERACTIVE_ABI_H
 #define SINO_INTERACTIVE_ABI_H
 #include "api.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
 #define TERM_INTERRUPT 7u
 enum { IX_SHELL = 3, IX_COMMAND = 4, IX_READTOOLS = 5, IX_WRITETOOLS = 6 };
 #define IX_BOOTTOOLS 7u
@@ -17,6 +20,9 @@ typedef struct {
   i32 status;
   ProcessCompletion completion;
 } InteractiveResult;
-_Static_assert(sizeof(InteractiveSpec) == 1116, "interactive request ABI");
-_Static_assert(sizeof(InteractiveResult) == 48, "interactive result ABI");
+static_assert(sizeof(InteractiveSpec) == 1116, "interactive request ABI");
+static_assert(sizeof(InteractiveResult) == 48, "interactive result ABI");
+#ifdef __cplusplus
+}
+#endif
 #endif

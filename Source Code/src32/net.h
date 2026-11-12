@@ -1,6 +1,9 @@
 #ifndef SINO_NET_H
 #define SINO_NET_H
 #include "api.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
 #define NET_LOOPBACK 0x7f000001u
 #define NET_MSS 512u
 enum {NET_UDP=1,NET_TCP=2};
@@ -24,4 +27,7 @@ int net_ready(int);
 void net_close(int);
 int net_ping(u32,u32);
 void net_tests(void);
+#ifdef __cplusplus
+}
+#endif
 #endif

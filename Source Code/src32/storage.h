@@ -2,6 +2,9 @@
 #define SINO_STORAGE_H
 #include "types.h"
 #include "locale.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
 extern int storage_ready, storage_dirty;
 extern int storage_disk;
 extern u32 storage_partition;
@@ -15,4 +18,7 @@ int storage_sync(void);
 /* True for existing descendants serialized into the user snapshot.
    /home/user itself is recreated by VFS initialization, not serialized. */
 int storage_tracks_node(int);
+#ifdef __cplusplus
+}
+#endif
 #endif

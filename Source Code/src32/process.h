@@ -4,6 +4,9 @@
 #include "interactive.h"
 #include "kernel.h"
 #include "object.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
 extern volatile u32 user_switch_out;
 extern u32 process_faults, process_switches, process_exits;
 void process_init(void);
@@ -41,4 +44,7 @@ int process_interrupt(Frame *);
 int process_anon_page(u32* pd, u32 page, int populate);
 u32 process_user_limit(const u32* pd, u32 address);
 void process_tests(void);
+#ifdef __cplusplus
+}
+#endif
 #endif

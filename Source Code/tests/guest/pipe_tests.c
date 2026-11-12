@@ -10,7 +10,7 @@
 #define WAIT_TIMEOUT (-13)
 typedef struct { u32 read, write; } Pair;
 typedef struct { RunSpec base; u32 directory, rights, dir_reserved[2], in, out, err, reserved; } Spec3;
-_Static_assert(sizeof(Spec3) == 80, "RunSpec v3 wire size");
+static_assert(sizeof(Spec3) == 80, "RunSpec v3 wire size");
 static u32 checks;
 static u8 data[512], output[512];
 static CliInfo cli;
@@ -22,7 +22,7 @@ static void require(int ok, const char* why) {
 }
 static int make(u32 capacity, Pair* out) { return api(PIPE_CREATE_CALL, capacity, (u32)out, sizeof(*out)); }
 static int ready(u32 h) { return api(STREAM_READY_CALL, h, 0, 0); }
-static int transfer(int read, u32 h, void* p, u32 bytes) {
+static int transfer(int read, u32 h, const void* p, u32 bytes) {
   return api(read ? SYS_STREAM_READ : SYS_STREAM_WRITE, h, (u32)p, bytes);
 }
 static int waiting(int read, u32 h, void* p, u32 bytes) {

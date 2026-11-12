@@ -2,6 +2,9 @@
 #define SINO_API_H
 /* Native ABI 1. Values are shared with separately linked ring-3 programs. */
 #include "types.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
 #define MAX_FILE 65536u
 enum {
   S_OK = 0,
@@ -276,4 +279,7 @@ static inline int native_header_valid(const NativeHeader* h, u32 file_bytes) {
          h->memory_bytes <= (h->abi == 2 ? SNX_V2_IMAGE_BYTES : SNX_V1_IMAGE_BYTES) &&
          !h->reserved[0] && !h->reserved[1];
 }
+#ifdef __cplusplus
+}
+#endif
 #endif

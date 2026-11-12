@@ -1,9 +1,9 @@
 const fs=require('node:fs'),path=require('node:path'),{execFileSync:run}=require('node:child_process');
 const root=path.resolve(__dirname,'..'),out=path.join(root,'build32','user'),tc=path.dirname(require('./host-tools').tool('gcc'));fs.mkdirSync(out,{recursive:true});
-const flags=['-m32','-march=i386','-std=c11','-Os','-ffreestanding','-fno-builtin','-fno-pic','-fno-pie','-fno-stack-protector','-fno-asynchronous-unwind-tables','-mno-stack-arg-probe','-mno-sse','-mno-mmx','-msoft-float','-mpreferred-stack-boundary=2','-mincoming-stack-boundary=2','-Wall','-Wextra','-Werror','-Wno-unused-function','-Wno-unused-variable','-Wno-misleading-indentation'];
+const flags=['-m32','-march=i386','-std=c++17','-Os','-ffreestanding','-fno-builtin','-fno-exceptions','-fno-rtti','-fno-threadsafe-statics','-fno-pic','-fno-pie','-fno-stack-protector','-fno-asynchronous-unwind-tables','-mno-stack-arg-probe','-mno-sse','-mno-mmx','-msoft-float','-mpreferred-stack-boundary=2','-mincoming-stack-boundary=2','-Wall','-Wextra','-Werror','-Wno-unused-function','-Wno-unused-variable','-Wno-misleading-indentation','-Wno-register','-Wno-missing-field-initializers'];
 function command(exe,args){run(exe,args,{cwd:root,stdio:'inherit'});}
 command(path.join(root,'tools/nasm-3.02/nasm.exe'),['-f','win32','user/entry.asm','-o',path.join(out,'entry.o')]);
-command(path.join(tc,'gcc.exe'),[...flags,'-c','user/runtime.c','-o',path.join(out,'runtime.o')]);
+command(path.join(tc,'g++.exe'),[...flags,'-c','user/runtime.c','-o',path.join(out,'runtime.o')]);
 // Each row names the output, source path, MODE and optional SNX ABI.
 const apps = [
  ['conhost', 'user/console_host.c', 0],
@@ -28,9 +28,9 @@ const apps = [
  ['memv2', 'tests/guest/memory_v2_test.c', 0, 2]
 ];
 for(const [name,source,mode,abi=1] of apps){
- command(path.join(tc,'gcc.exe'),[...flags,'-I','user',`-DMODE=${mode}`,`-DSINO_SNX_ABI=${abi}`,'-c',source,'-o',path.join(out,`${name}.o`)]);
+ command(path.join(tc,'g++.exe'),[...flags,'-I','user',`-DMODE=${mode}`,`-DSINO_SNX_ABI=${abi}`,'-c',source,'-o',path.join(out,`${name}.o`)]);
  const extra=[];
- if(name==='nettest'){const obj=path.join(out,`${name}-netlib.o`);command(path.join(tc,'gcc.exe'),[...flags,'-c','user/netlib.c','-o',obj]);extra.push(obj);}
+ if(name==='nettest'){const obj=path.join(out,`${name}-netlib.o`);command(path.join(tc,'g++.exe'),[...flags,'-c','user/netlib.c','-o',obj]);extra.push(obj);}
  const exe=path.join(out,`${name}.exe`),bin=path.join(out,`${name}.snx`);
  command(path.join(tc,'ld.exe'),['-m','i386pe','--image-base','0x3fff0000','--disable-reloc-section','--disable-dynamicbase','--no-insert-timestamp',`--defsym=snx_abi=${abi}`,'-T','user/linker.ld',path.join(out,'entry.o'),path.join(out,'runtime.o'),path.join(out,`${name}.o`),...extra,'-o',exe]);
  command(path.join(tc,'objcopy.exe'),['-O','binary',exe,bin]);

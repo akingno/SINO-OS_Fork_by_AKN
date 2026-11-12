@@ -4,8 +4,8 @@ void* memcpy(void* d, const void* s, u32 n) {
   void* result = d;
   u32 words = n / 4, tail = n & 3;
   __asm__ volatile("rep movsl" : "+D"(d), "+S"(s), "+c"(words)::"memory");
-  u8* p = d;
-  const u8* q = s;
+  u8* p = (u8*)d;
+  const u8* q = (const u8*)s;
   while (tail--)
     *p++ = *q++;
   return result;
@@ -17,7 +17,7 @@ void* memset(void* d, int v, u32 n) {
                    : "+D"(d), "+c"(words)
                    : "a"(pattern)
                    : "memory");
-  u8* p = d;
+  u8* p = (u8*)d;
   while (tail--)
     *p++ = (u8)v;
   return result;

@@ -90,7 +90,7 @@ static int destination(const char *source, const char *dest) {
 }
 static int replace(const char *path, int append, int copying,
                    const char *payload, u32 payload_bytes) {
-  FileStat old = {0};
+  FileStat old = {};
   int s = stat_path(path, &old);
   if (s < 0 && s != S_NOTFOUND)
     return error(s);
@@ -99,7 +99,7 @@ static int replace(const char *path, int append, int copying,
     return error(stage);
   u32 used = 0;
   int source = 0;
-  FileStat version = {0};
+  FileStat version = {};
   if (copying || (append && s != S_NOTFOUND)) {
     source = OpenAt(copying ? copy_root : root, copying ? arg(1) : path,
                     FS_READ, 0);

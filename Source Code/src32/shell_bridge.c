@@ -1,4 +1,5 @@
 #if defined(SINO_SHELL_BRIDGE) || defined(SELFTEST)
+#include "kernel.h"
 #include "klog.h"
 #include "run_bridge.h"
 #include "rtc.h"

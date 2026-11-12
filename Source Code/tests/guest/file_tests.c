@@ -1,9 +1,9 @@
 /* Stage D regression client for the text gate and cold-boot byte checks. */
 #include "sdk.h"
-_Static_assert(SYS_DIR_GRANT == 0x13b && SYS_FILE_COMMIT == 0x146, "Stage D wire IDs");
-_Static_assert(sizeof(RunSpec) == 48 && sizeof(RunSpecV2) == 64, "launch versions");
-_Static_assert(sizeof(FileStat) == 32 && sizeof(CommitInfo) == 32, "file query ABI");
-_Static_assert(sizeof(DirPage) == 24 && sizeof(DirEntry) == 44, "directory ABI");
+static_assert(SYS_DIR_GRANT == 0x13b && SYS_FILE_COMMIT == 0x146, "Stage D wire IDs");
+static_assert(sizeof(RunSpec) == 48 && sizeof(RunSpecV2) == 64, "launch versions");
+static_assert(sizeof(FileStat) == 32 && sizeof(CommitInfo) == 32, "file query ABI");
+static_assert(sizeof(DirPage) == 24 && sizeof(DirEntry) == 44, "directory ABI");
 static u8 bytes[8192], output[8192];
 static int held[24];
 static u32 checks;
@@ -23,7 +23,7 @@ static int entries(int dir) {
 }
 static int child_run(int dir, u32 rights, const char* mode, const char* path) {
   RunSpecV2 spec; memset(&spec, 0, sizeof(spec));
-  u32 offsets[1] = {0};
+  u32 offsets[1] = {};
   spec.run = (RunSpec){sizeof(spec), 2, 0, (u32)path, 1, strlen(mode) + 1,
                        (u32)mode, (u32)offsets, 0, 0, 500, 0};
   spec.directory = (u32)dir; spec.directory_rights = rights;
@@ -81,7 +81,7 @@ static int child(void) {
   return 0;
 }
 static int anon_mapping_test(void) {
-  _Static_assert(SYS_ANON_MAP == 0x14e && SYS_ANON_UNMAP == 0x14f,
+  static_assert(SYS_ANON_MAP == 0x14e && SYS_ANON_UNMAP == 0x14f,
                  "anonymous memory wire IDs");
   SystemInfo system;
   StartInfo start;
@@ -94,7 +94,7 @@ static int anon_mapping_test(void) {
           api(SYS_ANON_MAP, 1, 1, 0) == S_INVALID && !malloc(0),
           "invalid sizes, overflow, quota and reserved map arguments");
 
-  u8* first = malloc(8193);
+  u8* first = (u8*)malloc(8193);
   int second_base = AnonMap(1);
   require(first && !((u32)first & 4095) && (u32)first >= USER_DYNAMIC_BASE &&
           second_base > 0 && (u32)second_base >= (u32)first + 12288,
@@ -116,7 +116,7 @@ static int anon_mapping_test(void) {
   require(api(SYS_LOG, first_base, 0, 1) == S_INVALID &&
           AnonUnmap((void*)first_base) == S_INVALID && *second == 0x91,
           "released address rejects access and double unmap");
-  u8* replacement = malloc(8193);
+  u8* replacement = (u8*)malloc(8193);
   require((u32)replacement == first_base && !replacement[4095] &&
           !replacement[4096] && *second == 0x91, "hole reused with clean pages");
   free(replacement);
@@ -139,8 +139,8 @@ static int anon_mapping_test(void) {
 static int anon_io_test(void) {
   int dir = StartDirectory();
   int file = OpenAt(dir, "phase-d-anon.bin", FS_READ | FS_WRITE, OPEN_CREATE | OPEN_EXCLUSIVE);
-  u8* in = malloc(8192);
-  u8* out = malloc(8192);
+  u8* in = (u8*)malloc(8192);
+  u8* out = (u8*)malloc(8192);
   require(dir > 0 && file > 0 && in && out, "explicit grant and anonymous buffers");
   for (u32 i = 0; i < 32; i++) in[4080 + i] = (u8)(i * 13);
   require(FileWriteAt(file, 0, in + 4080, 32) == 32 &&
@@ -161,8 +161,8 @@ static int anon_io_test(void) {
 }
 static int uaccess_io_test(void) {
   int dir = StartDirectory();
-  u8* buffer = malloc(8192);
-  u8* edge = malloc(4096);
+  u8* buffer = (u8*)malloc(8192);
+  u8* edge = (u8*)malloc(4096);
   require(dir > 0 && buffer && edge, "uaccess workspace and test pages");
 
   StartInfo* cross = (StartInfo*)(buffer + 4092);
@@ -217,8 +217,8 @@ static int anon_lazy_test(void) {
   SystemInfo info;
   require(QuerySystemInfo(&info) == S_OK && (info.features & FEATURE_ANON_LAZY),
           "on-demand mapping is discoverable");
-  volatile u8* first = malloc(8192);
-  volatile u8* second = malloc(8192);
+  volatile u8* first = (u8*)malloc(8192);
+  volatile u8* second = (u8*)malloc(8192);
   require(first && second && (u32)second >= (u32)first + 8192,
           "untouched reservations cannot overlap");
   require(QueryStartInfo((StartInfo*)((u32)second + 8188)) == S_INVALID,
@@ -242,8 +242,8 @@ static int anon_lazy_test(void) {
 }
 
 static int anon_oom_test(int fault) {
-  u8* edge = malloc(3 * 4096);
-  u8* pressure = malloc(ANON_MAX_BYTES - 3 * 4096);
+  u8* edge = (u8*)malloc(3 * 4096);
+  u8* pressure = (u8*)malloc(ANON_MAX_BYTES - 3 * 4096);
   PipePair pipe;
   require(edge && pressure && PipeCreate(16, &pipe) == S_OK &&
           StreamWrite(pipe.write, "queued!!", 8) == 8, "prepare OOM fixtures");

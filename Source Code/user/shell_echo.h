@@ -1,6 +1,9 @@
 #ifndef SINO_SHELL_ECHO_H
 #define SINO_SHELL_ECHO_H
 #include "shell_commands.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /* Format completely before writing to a stream or publishing a file. */
 static int shell_echo(const char* args, const u32* offsets, u32 count,
@@ -40,4 +43,7 @@ static int shell_echo(const char* args, const u32* offsets, u32 count,
     }
     return (int)used;
 }
+#ifdef __cplusplus
+}
+#endif
 #endif

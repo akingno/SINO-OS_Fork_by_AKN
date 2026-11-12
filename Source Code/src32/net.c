@@ -94,7 +94,7 @@ static int loop_tx(const u8* p, u32 size) {
     net_loop.stats.dropped++;
     return S_AGAIN;
   }
-  u8* page = kpage_alloc();
+  u8* page = (u8*)kpage_alloc();
   if (!page)
     return S_NOMEM;
   memcpy(page, p, size);
@@ -119,7 +119,7 @@ int net_socket(int type) {
     return S_INVALID;
   for (int i = 0; i < NS; i++)
     if (!sockets[i]) {
-      Socket* s = kpage_alloc();
+      Socket* s = (Socket*)kpage_alloc();
       if (!s)
         return S_NOMEM;
       s->type = type;
@@ -591,7 +591,7 @@ int net_ping(u32 address, u32 sequence) {
 }
 void net_tests(void) {
 #ifdef SELFTEST
-  u8 malformed[20] = {0};
+  u8 malformed[20] = {};
   u32 before = net_loop.stats.malformed;
   input(malformed, 20);
   if (net_loop.stats.malformed != before + 1)

@@ -2,6 +2,9 @@
 #define SINO_TERMINAL_EDIT_MODEL_H
 #include "terminal_model.h"
 #include "../src32/api.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
 typedef struct {
   u32 active, line, column, used, wrapped, max_rows, caret_line, caret_column;
   u32 saved[TERMINAL_COLUMNS];
@@ -57,4 +60,7 @@ static void terminal_edit_apply(TerminalModel *m, TerminalEditView *v,
     m->scroll = browsing > maximum ? maximum : browsing;
   }
 }
+#ifdef __cplusplus
+}
+#endif
 #endif

@@ -39,7 +39,7 @@ typedef struct PACKED {
   u32 base;
 } TablePointer;
 static Gate idt[256];
-extern void* isr_table[256];
+extern "C" void* isr_table[256];
 static void wait_input(void) {
   for (u32 n = 0; n < 100000; n++)
     if (!(inb(0x64) & 2))
@@ -84,8 +84,9 @@ static void mouse_emit(i32 x, i32 y, u8 buttons, i8 wheel) {
       mouse_tail = (mouse_tail + 1) & 127;
       mouse_overflows++;
     }
-    mouse_events[mouse_head] =
-        (MouseEvent){mouse_x, mouse_y, ticks, buttons, changed, wheel};
+    volatile MouseEvent *slot = &mouse_events[mouse_head];
+    slot->x = mouse_x; slot->y = mouse_y; slot->time = ticks;
+    slot->buttons = buttons; slot->changed = changed; slot->wheel = wheel;
     mouse_head = next;
   }
   mouse_dirty = 1;
@@ -157,7 +158,9 @@ int mouse_read(MouseEvent* event) {
   cli();
   int ready = mouse_head != mouse_tail;
   if (ready) {
-    *event = mouse_events[mouse_tail];
+    const volatile MouseEvent *src = &mouse_events[mouse_tail];
+    event->x = src->x; event->y = src->y; event->time = src->time;
+    event->buttons = src->buttons; event->changed = src->changed; event->wheel = src->wheel;
     mouse_tail = (mouse_tail + 1) & 127;
   }
   mouse_dirty = mouse_head != mouse_tail;
@@ -165,7 +168,7 @@ int mouse_read(MouseEvent* event) {
     sti();
   return ready;
 }
-void irq_dispatch(Frame* f) {
+extern "C" void irq_dispatch(Frame* f) {
   if (f->vector < 32 || f->vector == 0x80)
     if (process_interrupt(f))
       return;
@@ -334,7 +337,7 @@ void kernel_tests(void) {
 #endif
   paging_protect_selftest();
 }
-void kmain(void) {
+extern "C" void kmain(void) {
   pr_debug("SINO 0.10 native 32-bit kernel entered, CS=0x08\n");
 #ifdef SINO_BUILD_ID
   pr_debug("SINO BUILD ID: " SINO_BUILD_ID "\n");

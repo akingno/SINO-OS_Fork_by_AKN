@@ -1,6 +1,6 @@
 #include "stream.h"
 typedef struct {u32 op,handle,buffer,bytes,value,extra;} Request;
-static int call(u32 op,u32 h,void* b,u32 n,u32 v,u32 x){Request r={op,h,(u32)b,n,v,x};return api(0x14a,(u32)&r,24,0);}
+static int call(u32 op,u32 h,const void* b,u32 n,u32 v,u32 x){Request r={op,h,(u32)b,n,v,x};return api(0x14a,(u32)&r,24,0);}
 static void check(int ok,const char* why){if(!ok){Log("TERMINAL SELFTEST FAIL: ");Log(why);Log("\n");Exit(1);}}
 static u8 bytes[256];
 static u32 info[8];
@@ -8,7 +8,7 @@ static int start_program(const char* path,const char* mode){u32 offset=0;RunSpec
 static int start(const char* mode){return start_program("/boot/termtest.snx",mode);}
 static void done(int h,u32 reason){RunResult r;check(RunWaitFor(h,&r,600)==0&&r.completion.reason==reason&&!r.completion.code,"typed child result");check(Close(h)==0,"close observer");}
 static int uaccess_terminal_parent(void) {
-  u8* edge = malloc(4096);
+  u8* edge = (u8*)malloc(4096);
   check(edge != 0, "terminal test page");
   u8* tail = edge + 4092;
   check(api(SYS_TERMINAL, (u32)tail, sizeof(Request), 0) == S_INVALID,
@@ -41,7 +41,7 @@ static int uaccess_terminal_parent(void) {
   return 0;
 }
 static int uaccess_terminal_child(int term) {
-  u8* edge = malloc(4096);
+  u8* edge = (u8*)malloc(4096);
   check(edge != 0, "terminal child test page");
   u8* tail = edge + 4092;
   tail[0] = 0xa7;

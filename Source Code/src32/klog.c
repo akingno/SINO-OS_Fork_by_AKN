@@ -2,7 +2,7 @@
 #include "klog.h"
 #include "lib/kstring.h"
 void klog_write_bytes(const void* data, u32 length) {
-  const u8* p = data;
+  const u8* p = (const u8*)data;
   while (length--)
     outb(0xe9, *p++);
 }

@@ -185,16 +185,17 @@ static int hostname_valid(const char *name) {
 static void desktop_run(const char *command) {
   if (!writable_session())
     return;
-  DesktopRun request = {{0}, {0}};
+  DesktopRun request = {{}, {}};
   u32 operation = DESKTOP_RUN_APP;
+  int pid = 0;
   if (streq(command, "kill")) {
     if (usage(2, 2))
       return;
-    i32 pid;
-    if (shell_integer(argument(1), &pid) || pid <= 0)
+    i32 kill_pid;
+    if (shell_integer(argument(1), &kill_pid) || kill_pid <= 0)
       goto invalid;
     operation = DESKTOP_KILL;
-    memcpy(request.path, &pid, sizeof(pid));
+    memcpy(request.path, &kill_pid, sizeof(kill_pid));
   } else if (streq(command, "nettest")) {
     if (usage(1, 1))
       return;
@@ -224,8 +225,8 @@ static void desktop_run(const char *command) {
     if (strict)
       operation = DESKTOP_RUN_STRICT;
   }
-  int pid = TerminalCall(TERM_DESKTOP_RUN, terminal, &request,
-                         sizeof(request), operation, 0);
+  pid = TerminalCall(TERM_DESKTOP_RUN, terminal, &request,
+                     sizeof(request), operation, 0);
   if (pid < 0) {
     put("start failed ");
     integer(pid);
@@ -243,9 +244,9 @@ invalid:
   put("invalid application path or argument\n");
   status(2, PROCESS_EXITED, 0);
 }
-static void redirect_echo(u32 operator) {
-  int append = line[operator + 1] == '>';
-  u32 start = operator + 1 + (u32)append;
+static void redirect_echo(u32 op_pos) {
+  int append = line[op_pos + 1] == '>';
+  u32 start = op_pos + 1 + (u32)append;
   ShellWords target;
   char path[128];
   if (!words.argc || !streq(argument(0), "echo") || words.argc == 16 ||
@@ -505,7 +506,7 @@ static void execute(void) {
       rights |= FS_REMOVE | FS_CREATE;
     else
       rights |= FS_READ | FS_WRITE | FS_CREATE;
-    external(boot_copy ? IX_BOOTCOPY : IX_WRITETOOLS, rights);
+    external(boot_copy ? (int)IX_BOOTCOPY : (int)IX_WRITETOOLS, rights);
     return;
   } else if (entry && entry->kind == 4) {
     put("unavailable: ");
@@ -571,7 +572,7 @@ static void execute(void) {
     }
     if (words.argc < index + 1)
       words.argc = index + 1;
-    external(boot ? IX_BOOTTOOLS : IX_READTOOLS,
+    external(boot ? (int)IX_BOOTTOOLS : (int)IX_READTOOLS,
              FS_READ | FS_LOOKUP | ((ls || walk) ? FS_ENUM : 0));
     return;
   } else {

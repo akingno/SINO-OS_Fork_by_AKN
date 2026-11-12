@@ -32,7 +32,7 @@ void con_init(void) {
   outb(0x3d5, 15);
 }
 void console_present(const u16* frame, u32 position) {
-  volatile u16* video = phys_to_virt(VGA_TEXT_BASE);
+  volatile u16* video = (volatile u16*)phys_to_virt(VGA_TEXT_BASE);
   for (u32 i = 0; i < CON_COLS * CON_ROWS; i++) video[i] = 0x0700u | (frame[i] & 0xffu);
   cursor(position < CON_COLS * CON_ROWS ? (int)position : -1);
 }
@@ -121,7 +121,7 @@ void con_write(const char* s) {
 }
 void con_flush(void) {
   u32 start = line >= CON_ROWS ? line - CON_ROWS + 1 : 0;
-  volatile u16* v = phys_to_virt(VGA_TEXT_BASE);
+  volatile u16* v = (volatile u16*)phys_to_virt(VGA_TEXT_BASE);
   for (u32 y = 0; y < CON_ROWS; y++)
     for (u32 x = 0; x < CON_COLS; x++) {
       u32 c =

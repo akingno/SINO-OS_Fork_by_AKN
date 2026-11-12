@@ -1,6 +1,9 @@
 #ifndef SINO_TEXT_SCAN_H
 #define SINO_TEXT_SCAN_H
 #include "../src32/types.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
 typedef struct {
   u32 bytes, lines, words, inside;
 } TextCounts;
@@ -58,4 +61,7 @@ static int text_unsigned(const char *s, u32 *out) {
   *out = n;
   return 0;
 }
+#ifdef __cplusplus
+}
+#endif
 #endif

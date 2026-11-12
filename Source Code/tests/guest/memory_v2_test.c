@@ -40,7 +40,7 @@ int main(void) {
   require(worker_done, "v2 worker uses relocated stack");
 
   const u32 size = 13 * 1024 * 1024;
-  volatile u8* heap = malloc(size);
+  volatile u8* heap = (volatile u8*)malloc(size);
   require(heap && (u32)heap >= end && !heap[0] && !heap[size - 1],
           "heap skips the wide image and starts zero-filled");
   for (u32 i = 0; i < size; i++) heap[i] = (u8)(i ^ (i >> 12) ^ 0x3c);

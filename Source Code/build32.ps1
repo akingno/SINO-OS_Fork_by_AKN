@@ -13,7 +13,7 @@ if (-not $toolRoot) {
     elseif (Test-Path -LiteralPath 'Z:\LunaMakerDebug\w64devkit\bin\gcc.exe') { $toolRoot = 'Z:\LunaMakerDebug\w64devkit\bin' }
     else { throw 'Set SINO_TOOLCHAIN to the bin folder of w64devkit / MinGW GCC with 32-bit code generation.' }
 }
-$gcc = Join-Path $toolRoot 'gcc.exe'
+$gcc = Join-Path $toolRoot 'g++.exe'
 $ld = Join-Path $toolRoot 'ld.exe'
 $objcopy = Join-Path $toolRoot 'objcopy.exe'
 $env:SINO_TOOLCHAIN = $toolRoot
@@ -40,7 +40,7 @@ if ($TestImage) { $variants += 'test' }
 $kernelSources = @('kernel','lib/kstring','panic','fs/boot_fat12','mm/page','mm/paging','mm/kmap','mm/uaccess','klog','locale','rtc','keyboard','object','process','filesys','pipe','terminal','run_bridge','net','console','vfs','shell_bridge','storage','disk')
 foreach ($variant in $variants) {
     # The kernel owns its mapped stack; Windows stack-guard probing is inapplicable.
-    $cflags = @('-m32','-march=i386','-std=c11','-Os','-ffreestanding','-fno-builtin','-fno-pic','-fno-pie','-fno-stack-protector','-fno-asynchronous-unwind-tables','-mno-stack-arg-probe','-mno-sse','-mno-mmx','-msoft-float','-mpreferred-stack-boundary=2','-mincoming-stack-boundary=2','-Wall','-Wextra','-Werror','-Wno-misleading-indentation')
+    $cflags = @('-m32','-march=i386','-std=c++17','-Os','-ffreestanding','-fno-builtin','-fno-exceptions','-fno-rtti','-fno-threadsafe-statics','-fno-pic','-fno-pie','-fno-stack-protector','-fno-asynchronous-unwind-tables','-mno-stack-arg-probe','-mno-sse','-mno-mmx','-msoft-float','-mpreferred-stack-boundary=2','-mincoming-stack-boundary=2','-Wall','-Wextra','-Werror','-Wno-misleading-indentation','-Wno-register','-Wno-missing-field-initializers')
     if ($variant -eq 'test') { $cflags += '-DSELFTEST=1' }
     if ($ShellBridge) { $cflags += '-DSINO_SHELL_BRIDGE=1' }
     if ($variant -eq 'test' -and $ShellBridge) { $cflags += '-DSINO_KMAP_FORCE_SLOT=1' }

@@ -3,6 +3,9 @@
 
 #include "../types.h"
 #include "addr.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /* Two-level x86 paging: one page table maps 4 MiB with 1024 entries. */
 #define TABLE_SHIFT 22
@@ -64,4 +67,7 @@ int paging_kernel_unguard(KernelGuard* owner);
 int paging_is_active(const u32* pd);
 void paging_protect_selftest(void);
 
+#ifdef __cplusplus
+}
+#endif
 #endif

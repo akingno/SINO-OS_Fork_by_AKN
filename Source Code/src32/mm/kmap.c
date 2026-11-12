@@ -1,3 +1,4 @@
+#include "kmap.h"
 #include "../x86.h"
 #include "../klog.h"
 #include "../panic.h"

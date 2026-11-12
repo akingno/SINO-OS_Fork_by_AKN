@@ -1,6 +1,9 @@
 #ifndef SINO_FILE_TEXT_H
 #define SINO_FILE_TEXT_H
 #include "../src32/types.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
 typedef struct {
   int saved, has_saved;
 } FileText;
@@ -88,4 +91,7 @@ static u32 file_text_encode(u32 cp, char out[4]) {
 static int file_text_wrap(const FileLayout *s, u32 columns, u32 cp) {
   return cp != '\n' && s->column + (cp >= 128 ? 3u : 1u) > columns;
 }
+#ifdef __cplusplus
+}
+#endif
 #endif

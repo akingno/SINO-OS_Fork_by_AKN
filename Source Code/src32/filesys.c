@@ -14,7 +14,7 @@ typedef struct {
   char name[VFS_NAME];
   u8* pages[VFS_PAGES];
 } FileObject;
-_Static_assert(sizeof(FileObject) <= 4096, "file object fits one page");
+static_assert(sizeof(FileObject) <= 4096, "file object fits one page");
 
 static FileObject* value(Object* o) { return (FileObject*)o->value; }
 static int live(int n, u32 generation) {
@@ -41,7 +41,7 @@ void filesys_release(int pointer) {
 }
 /* Reserve resources before a create/truncate can become visible. */
 static int reserve(Handle* owner, u32 type, u32 rights, FileObject** out) {
-  FileObject* f = kpage_alloc();
+  FileObject* f = (FileObject*)kpage_alloc();
   if (!f) return S_NOMEM;
   f->node = f->parent = -1;
   int object = object_new(type, (int)f);
@@ -370,7 +370,7 @@ int filesys_call(Handle* owner, u32 caps, u32 call, u32 a, u32 b, u32 c,
     case SYS_FILE_COMMIT: {
       if (c < sizeof(CommitInfo)) return S_INVALID;
       UACCESS_TRY(uaccess_prepare(user_pd, b, sizeof(CommitInfo), USER_WRITE));
-      CommitInfo result = {0};
+      CommitInfo result = {};
       int status = finish(owner, a, call == SYS_FILE_COMMIT, &result);
       if (status != S_BADHANDLE) memcpy((void*)b, &result, sizeof(result));
       return status;

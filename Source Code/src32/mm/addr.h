@@ -2,6 +2,9 @@
 #define SINO_MM_ADDR_H
 #include "../types.h"
 #include "../panic.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #define PHYS_NULL ((phys_t)0)
 
@@ -43,4 +46,7 @@ static inline phys_t virt_to_phys(const void* pointer) {
   return (phys_t)pointer;
 }
 
+#ifdef __cplusplus
+}
+#endif
 #endif

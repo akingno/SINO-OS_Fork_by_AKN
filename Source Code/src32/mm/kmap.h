@@ -1,6 +1,9 @@
 #ifndef SINO_MM_KMAP_H
 #define SINO_MM_KMAP_H
 #include "addr.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /* Map a user backing page into kernel virtual address space; the pointer is
  * valid only until the matching kunmap.  Pages inside the direct mapping use
@@ -11,4 +14,7 @@ void kunmap(void* pointer);
 u32 kmap_free_slots(void);
 void kmap_selftest(void);
 
+#ifdef __cplusplus
+}
+#endif
 #endif

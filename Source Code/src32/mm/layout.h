@@ -1,6 +1,9 @@
 #ifndef SINO_MM_LAYOUT_H
 #define SINO_MM_LAYOUT_H
 #include "../types.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /* ── Fixed low-memory physical layout ──
  *
@@ -53,4 +56,7 @@
 #define KMAP_BASE           0xFF800000u
 #define KMAP_SLOTS          8u
 
+#ifdef __cplusplus
+}
+#endif
 #endif

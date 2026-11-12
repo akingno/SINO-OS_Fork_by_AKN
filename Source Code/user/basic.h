@@ -1,6 +1,9 @@
 #ifndef SINO_BASIC_H
 #define SINO_BASIC_H
 #include "sdk.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
 #define BASIC_CODE 8192
 #define BASIC_LINES 256
 #define BASIC_VARS 32
@@ -49,4 +52,7 @@ int BasicStep(Basic *, const BasicHost *);
 int BasicEqual(const char *, const char *);
 void BasicString(BasicValue *, const char *);
 void BasicText(const BasicValue *, char *);
+#ifdef __cplusplus
+}
+#endif
 #endif

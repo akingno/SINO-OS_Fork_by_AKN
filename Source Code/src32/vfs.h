@@ -2,6 +2,9 @@
 #define SINO_VFS_H
 #include "types.h"
 #include "locale.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
 #define VFS_NODES 128
 #define VFS_PATH 128
 #define VFS_NAME 32
@@ -35,4 +38,7 @@ int vfs_write_at(int, u32, const u8*, u32);
 /* Private page buffers use the same bounded, allocate-before-write logic. */
 int vfs_buffer_write(u8**, u32*, u32, const u8*, u32);
 int vfs_publish(int, const char*, u32, u32, u8**, u32, int*);
+#ifdef __cplusplus
+}
+#endif
 #endif

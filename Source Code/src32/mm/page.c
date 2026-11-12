@@ -65,7 +65,7 @@ static void publish_pages(u32 start_pfn, u32 end_pfn) {
  * until the metadata has been placed and the initial pool published. */
 static void read_boot_memory_map(void) {
   u32 count = *(volatile u16*)phys_to_virt(E820_COUNT_ADDRESS);
-  const E820Entry* map = phys_to_virt(E820_TABLE_ADDRESS);
+  const E820Entry* map = (const E820Entry*)phys_to_virt(E820_TABLE_ADDRESS);
   if (!count || count > E820_MAX) {
     panic("Invalid E820 memory map", count, 0);
   }
@@ -96,7 +96,7 @@ static phys_t find_boot_metadata(u32 boot_end_pfn) {
 
 static void init_page_metadata(u32 boot_end_pfn) {
   phys_t base = find_boot_metadata(boot_end_pfn);
-  mem_map = phys_to_virt(base);
+  mem_map = (u8*)phys_to_virt(base);
   /* All pages start reserved, including the metadata itself. */
   memset(mem_map, PAGE_RESERVED, metadata_pages * PAGE_SIZE);
 }
@@ -310,8 +310,8 @@ void page_allocator_test(void) {
     panic("page_allocator_test: Reserved page free validation", free_pages, before);
   }
 
-  u32* a = kpage_alloc();
-  u32* b = kpage_alloc();
+  u32* a = (u32*)kpage_alloc();
+  u32* b = (u32*)kpage_alloc();
   if (!a || !b || a == b || ((u32)a | (u32)b) % PAGE_SIZE) {
     panic("page_allocator_test: Page allocation", (u32)a, (u32)b);
   }
@@ -334,7 +334,7 @@ void page_allocator_test(void) {
     panic("page_allocator_test: User page release", user, free_pages);
   }
 
-  u8* block = kpage_alloc_run(2);
+  u8* block = (u8*)kpage_alloc_run(2);
   if (!block || (u32)block % PAGE_SIZE || free_pages + 2 != before) {
     panic("page_allocator_test: Page run allocation", (u32)block, free_pages);
   }

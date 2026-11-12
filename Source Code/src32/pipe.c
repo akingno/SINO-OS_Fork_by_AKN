@@ -36,9 +36,9 @@ void pipe_limits(PipeLimits* out) {
 int pipe_create(Handle* owner, u32 capacity, PipePair* out) {
   if (!capacity || capacity > PIPE_BYTES) return S_INVALID;
   if (pipe_count >= PIPE_COUNT) return S_LIMIT;
-  Pipe* p = kpage_alloc();
+  Pipe* p = (Pipe*)kpage_alloc();
   if (!p) return S_NOMEM;
-  p->data = kpage_alloc();
+  p->data = (u8*)kpage_alloc();
   if (!p->data) { kpage_free(p); return S_NOMEM; }
   pipe_count++; p->capacity = capacity;
   int reader = object_new(OBJ_PIPE_READ, (int)p);
@@ -87,7 +87,7 @@ int pipe_transfer(Object* o, int reading, void* buffer, u32 size) {
   }
   if (count > size) count = size;
   u32 offset = reading ? p->head : (p->head + p->used) % p->capacity;
-  u8* bytes = buffer;
+  u8* bytes = (u8*)buffer;
   for (u32 i = 0; i < count; i++) {
     if (reading) bytes[i] = p->data[offset]; else p->data[offset] = bytes[i];
     if (++offset == p->capacity) offset = 0;

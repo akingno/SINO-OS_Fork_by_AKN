@@ -2,6 +2,9 @@
 #define SINO_INTERACTIVE_H
 #include "sdk.h"
 #include "../src32/interactive.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
 static inline int InteractiveStart(int t, InteractiveSpec *s, int dir,
                                    int role) {
   return TerminalCall(IX_START, t, s, sizeof(*s), dir, role);
@@ -26,4 +29,7 @@ static inline int InteractiveResultWait(int t, u32 id, InteractiveResult* result
 static inline int InteractiveFinish(int t, int task) {
   return TerminalCall(IX_FINISH, t, 0, 0, task, 0);
 }
+#ifdef __cplusplus
+}
+#endif
 #endif

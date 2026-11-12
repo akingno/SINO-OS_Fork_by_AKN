@@ -1,6 +1,6 @@
 #include "sdk.h"
 /* GCC's MinGW C entry hook: no host CRT or C++ constructors in native ABI 1. */
-void __main(void) {
+extern "C" void __main(void) {
 }
 /* 【简化实现：用户态堆】每次 malloc 都直接预留一个匿名区域，首次访问才分配
  * 物理页；小对象也按页占空间，并受每进程 32 个区域、合计 16 MiB 的限制。
@@ -15,14 +15,14 @@ void free(void *pointer) {
     AnonUnmap(pointer);
 }
 void *memcpy(void *d, const void *s, u32 n) {
-  u8 *a = d;
-  const u8 *b = s;
+  u8 *a = (u8*)d;
+  const u8 *b = (const u8*)s;
   while (n--)
     *a++ = *b++;
   return d;
 }
 void *memset(void *d, int c, u32 n) {
-  u8 *a = d;
+  u8 *a = (u8*)d;
   while (n--)
     *a++ = (u8)c;
   return d;

@@ -2,6 +2,9 @@
 #define SINO_X86_H
 /* Wrappers for the privileged x86 instructions the kernel uses. */
 #include "types.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 static inline void outb(u16 p, u8 v) {
   __asm__ volatile("outb %0,%1" ::"a"(v), "Nd"(p));
@@ -61,4 +64,7 @@ static inline void write_cr3(phys_t directory) {
 static inline void invlpg(u32 address) {
   __asm__ volatile("invlpg (%0)" ::"r"(address) : "memory");
 }
+#ifdef __cplusplus
+}
+#endif
 #endif

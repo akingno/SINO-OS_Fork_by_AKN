@@ -2,6 +2,9 @@
 #define SINO_KERNEL_H
 #include "types.h"
 #include "x86.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
 typedef struct {
   u32 edi, esi, ebp, esp, ebx, edx, ecx, eax, vector, error, eip, cs, eflags;
 } Frame;
@@ -34,4 +37,7 @@ void shell_bridge_poll(void);
 void shell_bridge_irq(void);
 void kernel_tests(void);
 void shell_tests(void);
+#ifdef __cplusplus
+}
+#endif
 #endif

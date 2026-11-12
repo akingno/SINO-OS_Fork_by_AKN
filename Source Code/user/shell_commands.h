@@ -1,6 +1,9 @@
 #ifndef SINO_SHELL_COMMANDS_H
 #define SINO_SHELL_COMMANDS_H
 #include "../src32/types.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
 typedef struct {
   const char *name;
   u32 kind;
@@ -83,4 +86,7 @@ static const ShellCommand *shell_command(const char *s) {
       return shell_commands + i;
   return 0;
 }
+#ifdef __cplusplus
+}
+#endif
 #endif

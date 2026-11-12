@@ -295,7 +295,7 @@ int vfs_write(int index, const u8* data, u32 length, int append) {
   u32 total = offset + length, old = (n->size + 4095) / 4096,
       needed = (total + 4095) / 4096, allocated = old;
   while (allocated < needed) {
-    n->pages[allocated] = kpage_alloc();
+    n->pages[allocated] = (u8*)kpage_alloc();
     if (!n->pages[allocated]) {
       while (allocated > old) {
         allocated--;
@@ -452,7 +452,7 @@ int vfs_buffer_write(u8** pages, u32* size, u32 offset, const u8* data, u32 leng
   if (total < *size) total = *size;
   u32 old = (*size + 4095) / 4096, need = (total + 4095) / 4096, have = old;
   while (have < need) {
-    pages[have] = kpage_alloc();
+    pages[have] = (u8*)kpage_alloc();
     if (!pages[have]) {
       while (have > old) { have--; kpage_free(pages[have]); pages[have] = 0; }
       return S_NOMEM;

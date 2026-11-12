@@ -2,6 +2,9 @@
 #define SINO_STREAM_H
 /* Bounded waits prefer kernel blocking. A zero timeout makes one attempt. */
 #include "sdk.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
 static inline u32 StreamTicks(void) { return (u32)api(SYS_TICKS, 0, 0, 0); }
 static inline int StreamTimeoutExpired(u32 now, u32 begin, u32 timeout) {
   return (u32)(now - begin) >= timeout;
@@ -82,8 +85,8 @@ static inline int ResultWaitFor(u32 call, int handle, void* out, u32 bytes, u32 
   if (ThreadWaitAvailable()) {
     u32 elapsed = StreamTicks() - begin;
     if (elapsed >= timeout) return S_TIMEOUT;
-    return call == SYS_RUN_RESULT ? WaitRun(handle, out, timeout - elapsed)
-                                  : WaitProcess(handle, out, timeout - elapsed);
+    return call == SYS_RUN_RESULT ? WaitRun(handle, (RunResult*)out, timeout - elapsed)
+                                  : WaitProcess(handle, (ProcessCompletion*)out, timeout - elapsed);
   }
   while (result == S_AGAIN) {
     if (StreamTimeoutExpired(StreamTicks(), begin, timeout)) return S_TIMEOUT;
@@ -98,4 +101,7 @@ static inline int RunWaitFor(int handle, RunResult* out, u32 timeout) {
 static inline int ProcessWaitFor(int handle, ProcessCompletion* out, u32 timeout) {
   return ResultWaitFor(SYS_PROCESS_RESULT, handle, out, sizeof(*out), timeout);
 }
+#ifdef __cplusplus
+}
+#endif
 #endif

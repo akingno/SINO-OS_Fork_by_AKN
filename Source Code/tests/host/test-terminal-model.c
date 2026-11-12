@@ -55,7 +55,7 @@ static int terminal_model_selftest(TerminalModel *m) {
     terminal_model_write(m, (const u8 *)"\xe4\xbd\xa0", 3);
   /* Normal layout, anchored history, pinned live input and ring eviction. */
   terminal_model_init(m, 80, 25);
-  TerminalEditView v = {0};
+  TerminalEditView v = {};
   ConsoleFrame frame;
   terminal_model_write(m, (const u8 *)"hello\n$ ", 8);
   console_view_frame(m, &v, &frame);
@@ -64,7 +64,7 @@ static int terminal_model_selftest(TerminalModel *m) {
     terminal_model_codepoint(m, 'A' + i % 26);
     terminal_model_codepoint(m, '\n');
   }
-  TerminalEdit e = {0}; e.bytes = e.cursor = 7;
+  TerminalEdit e = {}; e.bytes = e.cursor = 7;
   const char *prompt = "$ draft";
   for (u32 i = 0; i < e.bytes; i++) e.text[i] = prompt[i];
   terminal_edit_apply(m, &v, &e);

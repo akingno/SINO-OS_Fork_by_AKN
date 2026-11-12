@@ -1,6 +1,9 @@
 #ifndef SINO_BOOT_FAT12_H
 #define SINO_BOOT_FAT12_H
 #include "../types.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 typedef struct {
   char name[13];
@@ -15,4 +18,7 @@ int fs_init(void);
 int fs_read(u32, u8*, u32);
 int fs_read_at(u32, u32, u8*, u32);
 
+#ifdef __cplusplus
+}
+#endif
 #endif

@@ -1,6 +1,9 @@
 #ifndef SINO_TERMINAL_MODEL_H
 #define SINO_TERMINAL_MODEL_H
 #include "../src32/types.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
 #define TERMINAL_COLUMNS 120u
 #define TERMINAL_ROWS 35u
 #define TERMINAL_HISTORY 128u
@@ -159,4 +162,7 @@ static u32 terminal_model_row(const TerminalModel *m, u32 visible) {
   return (m->line + TERMINAL_HISTORY + 1 - shown - m->scroll + visible) %
          TERMINAL_HISTORY;
 }
+#ifdef __cplusplus
+}
+#endif
 #endif

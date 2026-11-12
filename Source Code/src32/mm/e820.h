@@ -2,6 +2,9 @@
 #define SINO_MM_E820_H
 #include "addr.h"
 #include "layout.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
 typedef struct PACKED {
   u32 base, base_hi, length, length_hi, type, attributes;
 } E820Entry;
@@ -37,4 +40,7 @@ static inline int e820_page_usable(const BootRange* ranges, u32 count, u32 pfn) 
   }
   return usable;
 }
+#ifdef __cplusplus
+}
+#endif
 #endif

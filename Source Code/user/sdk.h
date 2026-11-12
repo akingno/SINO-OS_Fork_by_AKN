@@ -1,6 +1,9 @@
 #ifndef SINO_SDK_H
 #define SINO_SDK_H
 #include "../src32/api.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
 void *memcpy(void *, const void *, u32);
 void *memset(void *, int, u32);
 u32 strlen(const char *);
@@ -201,7 +204,7 @@ static inline int CliArguments(CliInfo *info, char **argv, u32 capacity) {
 }
 static inline int CliWriteAll(int handle, const void *data, u32 bytes) {
   if (!bytes) return StreamWrite(handle, data, 0);
-  const u8 *p = data; u32 written = 0;
+  const u8 *p = (const u8*)data; u32 written = 0;
   while (written < bytes) {
     int count = StreamWrite(handle, p + written, bytes - written);
     if (count <= 0) return count ? count : S_IO;
@@ -264,4 +267,7 @@ static inline int Close(int h) {
 static inline int OpenPath(const char *p) { return api(SYS_OPEN_PATH,(u32)p,0,0); }
 void copy(char *, const char *);
 void Log(const char *);
+#ifdef __cplusplus
+}
+#endif
 #endif

@@ -1,6 +1,9 @@
 #ifndef SINO_OBJECT_H
 #define SINO_OBJECT_H
 #include "api.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
 #define OBJECTS 64
 #define HANDLES 24
 enum { OBJ_EVENT = 1, OBJ_WINDOW, OBJ_SOCKET, OBJ_PROCESS, OBJ_STREAM,
@@ -22,4 +25,7 @@ int handle_duplicate(Handle *, u32, u32);
 int handle_close(Handle *, u32);
 void handles_close(Handle *);
 void object_tests(void);
+#ifdef __cplusplus
+}
+#endif
 #endif

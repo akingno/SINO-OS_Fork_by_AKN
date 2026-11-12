@@ -1,6 +1,9 @@
 #ifndef SINO_GSH_PARSE_H
 #define SINO_GSH_PARSE_H
 #include "../src32/types.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
 #define SHELL_LINE 256u
 typedef struct {
   u32 argc, used, offsets[16];
@@ -139,4 +142,7 @@ static int shell_integer(const char *text, i32 *out) {
   *out = (i32)(negative ? 0u - value : value);
   return 0;
 }
+#ifdef __cplusplus
+}
+#endif
 #endif

@@ -22,7 +22,7 @@ typedef struct {
   Terminal* terminal;
   u32 pid;
 } Client;
-_Static_assert(sizeof(Terminal) <= 4096, "terminal metadata fits page");
+static_assert(sizeof(Terminal) <= 4096, "terminal metadata fits page");
 static u32 count;
 static void wake_readers(Terminal* t) {
   if (t->foreground_object)
@@ -88,7 +88,7 @@ static int create(Handle* owner, u32 w, u32 h) {
     return S_INVALID;
   if (count >= 2)
     return S_LIMIT;
-  Terminal* t = kpage_alloc();
+  Terminal* t = (Terminal*)kpage_alloc();
   if (!t)
     return S_NOMEM;
   t->refs = 1;
@@ -132,7 +132,7 @@ static int attach(Terminal* t, Handle* target, u32 pid) {
       break;
     }
   if (!handle) {
-    Client* c = kpage_alloc();
+    Client* c = (Client*)kpage_alloc();
     if (!c)
       return S_NOMEM;
     c->terminal = t;
@@ -229,7 +229,7 @@ static int feed(Terminal* t, const TerminalRequest* r) {
     return S_CLOSED;
   if(t->editing && t->foreground==t->shell && !t->mode){
     if(r->bytes>8-t->events)return S_AGAIN;
-    const u8* text=(void*)r->buffer;for(u32 i=0;i<r->bytes;i++)event(t,TERM_TEXT,text[i],0,0);return 0;
+    const u8* text=(const u8*)r->buffer;for(u32 i=0;i<r->bytes;i++)event(t,TERM_TEXT,text[i],0,0);return 0;
   }
   u8 line[256], committed[512], echo[256];
   u32 echo_size = 0;
@@ -281,10 +281,10 @@ static int feed(Terminal* t, const TerminalRequest* r) {
 }
 int terminal_bind_interactive(void* session, Handle* handles, u32 pid,
                               CliInfo* cli) {
-  Terminal* t = session;
+  Terminal* t = (Terminal*)session;
   if (t->closed)
     return S_CLOSED;
-  Client* c = kpage_alloc();
+  Client* c = (Client*)kpage_alloc();
   if (!c)
     return S_NOMEM;
   c->terminal = t;
@@ -328,7 +328,7 @@ static int interactive_call(Terminal* t, Client* c, Object* control,
       return S_BUSY;
     if (r->value || r->extra || r->bytes != sizeof(InteractiveSpec)) return S_INVALID;
     UACCESS_TRY(uaccess_prepare(user_pd, r->buffer, sizeof(InteractiveSpec), USER_READ));
-    const InteractiveSpec* q = (void*)r->buffer;
+    const InteractiveSpec* q = (const InteractiveSpec*)r->buffer;
     if (q->size != sizeof(*q) || q->version != 1 || !q->id ||
         t->request_id == 0xffffffffu || q->id != t->request_id + 1 ||
         (q->program != 2 && q->program != IX_COMMAND &&
@@ -403,7 +403,7 @@ static int interactive_call(Terminal* t, Client* c, Object* control,
   }
   if (r->op != IX_START || r->extra > 1 || r->bytes != sizeof(InteractiveSpec)) return S_INVALID;
   UACCESS_TRY(uaccess_prepare(user_pd, r->buffer, sizeof(InteractiveSpec), USER_READ));
-  InteractiveSpec* q = kpage_alloc();
+  InteractiveSpec* q = (InteractiveSpec*)kpage_alloc();
   if (!q) {
     if (r->extra == 1 && t->phase == 1) {
       memset(&t->result, 0, sizeof(t->result));
@@ -524,7 +524,7 @@ int terminal_call(Handle* owner, u32 pid, u32 policy, const TerminalRequest* r,
     if (r->value || r->extra || r->bytes!=sizeof(TerminalEdit)) return S_INVALID;
     UACCESS_TRY(uaccess_prepare(user_pd, r->buffer, sizeof(TerminalEdit), USER_READ));
     if(t->edit_pending)return S_AGAIN;
-    const TerminalEdit *e=(void*)r->buffer;
+    const TerminalEdit *e=(const TerminalEdit*)r->buffer;
     if(e->bytes>sizeof(e->text)||e->cursor>e->bytes||e->action>2||e->serial)return S_INVALID;
     for(u32 i=0;i<e->bytes;i++)if((u8)e->text[i]<32||e->text[i]==127)return S_INVALID;
     if(e->cursor<e->bytes&&((u8)e->text[e->cursor]&0xc0)==0x80)return S_INVALID;

@@ -16,7 +16,7 @@ static u8 data[4097],copy_data[4097];
 static u32 offsets[16],limits[10];
 static char args[1024];
 static void require(int ok,const char *why){if(!ok){Log("CLI SELFTEST FAIL: ");Log(why);Log("\n");Exit(1);}}
-static int transfer(u32 call,int handle,void *buffer,u32 bytes){return api(call,handle,(u32)buffer,bytes);}
+static int transfer(u32 call,int handle,const void *buffer,u32 bytes){return api(call,handle,(u32)buffer,bytes);}
 static int start(const char *mode,u32 bytes){
   copy(args,mode);offsets[0]=0;
   Spec spec={48,1,0,(u32)"/boot/clitest.snx",1,strlen(args)+1,(u32)args,(u32)offsets,bytes,(u32)data,0,0};
