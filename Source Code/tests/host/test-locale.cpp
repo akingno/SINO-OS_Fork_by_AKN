@@ -15,33 +15,33 @@ int main(void) {
         complete = 0;
   check("locale.complete-catalog", complete);
   check("locale.language-fallback",
-        !strcmp(locale_text_for(99, VFS_ERROR_UNKNOWN_ERROR), "Unknown error"));
+        !strcmp(locale_text_for(99, TextKey::VFS_ERROR_UNKNOWN_ERROR), "Unknown error"));
   check("locale.invalid-key",
         !strcmp(locale_text((TextKey)-1), "[invalid text key]") &&
-            !strcmp(locale_text(TEXT_KEY_COUNT), "[invalid text key]"));
+            !strcmp(locale_text((TextKey)TEXT_KEY_COUNT), "[invalid text key]"));
   char out[128], expected[128];
   settings_language = 0;
   sprintf(expected, "文件表已满（%d 个项目）。", VFS_NODES);
   check("locale.vfs-node-limit",
-        locale_format(out, sizeof(out), VFS_ERROR_NODE_LIMIT, "", VFS_NODES) >
+        locale_format(out, sizeof(out), TextKey::VFS_ERROR_NODE_LIMIT, "", VFS_NODES) >
                 0 &&
             !strcmp(out, expected));
   settings_language = 1;
   sprintf(expected, "The file table is full (%d entries).", VFS_NODES);
   check("locale.vfs-node-limit-en",
-        locale_format(out, sizeof(out), VFS_ERROR_NODE_LIMIT, "", VFS_NODES) >
+        locale_format(out, sizeof(out), TextKey::VFS_ERROR_NODE_LIMIT, "", VFS_NODES) >
                 0 &&
             !strcmp(out, expected));
   check("locale.format-overflow",
-        locale_format(out, 4, VFS_ERROR_NODE_LIMIT, "未知错误", 42) == -1 &&
+        locale_format(out, 4, TextKey::VFS_ERROR_NODE_LIMIT, "未知错误", 42) == -1 &&
             !out[0]);
   check("locale.format-zero-capacity",
-        locale_format(out, 0, VFS_ERROR_NODE_LIMIT, "", 0) == -1);
+        locale_format(out, 0, TextKey::VFS_ERROR_NODE_LIMIT, "", 0) == -1);
   settings_language = 0;
-  const char* zh = locale_text(VFS_ERROR_UNKNOWN_ERROR);
+  const char* zh = locale_text(TextKey::VFS_ERROR_UNKNOWN_ERROR);
   settings_language = 1;
   check("locale.live-language",
         !strcmp(zh, "未知错误") &&
-            !strcmp(locale_text(VFS_ERROR_UNKNOWN_ERROR), "Unknown error"));
+            !strcmp(locale_text(TextKey::VFS_ERROR_UNKNOWN_ERROR), "Unknown error"));
   return 0;
 }

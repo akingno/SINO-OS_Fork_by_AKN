@@ -5,12 +5,12 @@
 #include "../lib/kstring.h"
 
 int uaccess_prepare(u32* pd, u32 address, u32 bytes, UserAccess access) {
-  if (access != USER_READ && access != USER_WRITE) return S_INVALID;
+  if (access != UserAccess::READ && access != UserAccess::WRITE) return S_INVALID;
   u32 limit = process_user_limit(pd, address);
   if (!limit || address > limit || bytes > limit - address || !paging_is_active(pd))
     return S_INVALID;
   if (!bytes) return S_OK;
-  u32 needed = PAGE_PRESENT | PAGE_USER | (access == USER_WRITE ? PAGE_WRITE : 0);
+  u32 needed = PAGE_PRESENT | PAGE_USER | (access == UserAccess::WRITE ? PAGE_WRITE : 0);
   u32 last_page = page_floor(address + bytes - 1);
   u32 first = page_floor(address);
   int missing = 0;
@@ -38,12 +38,12 @@ int uaccess_prepare(u32* pd, u32 address, u32 bytes, UserAccess access) {
 }
 
 int copy_from_user(u32* pd, void* out, u32 address, u32 bytes) {
-  UACCESS_TRY(uaccess_prepare(pd, address, bytes, USER_READ));
+  UACCESS_TRY(uaccess_prepare(pd, address, bytes, UserAccess::READ));
   if (bytes) memcpy(out, (const void*)address, bytes);
   return S_OK;
 }
 int copy_to_user(u32* pd, u32 address, const void* source, u32 bytes) {
-  UACCESS_TRY(uaccess_prepare(pd, address, bytes, USER_WRITE));
+  UACCESS_TRY(uaccess_prepare(pd, address, bytes, UserAccess::WRITE));
   if (bytes) memcpy((void*)address, source, bytes);
   return S_OK;
 }
@@ -53,7 +53,7 @@ int copy_string_from_user(u32* pd, char* out, u32 address, u32 capacity) {
   while (capacity) {
     u32 span = PAGE_SIZE - page_offset(address);
     if (span > capacity) span = capacity;
-    UACCESS_TRY(uaccess_prepare(pd, address, span, USER_READ));
+    UACCESS_TRY(uaccess_prepare(pd, address, span, UserAccess::READ));
     const char* source = (const char*)address;
     for (u32 i = 0; i < span; i++) {
       if (!(*out++ = source[i])) return S_OK;

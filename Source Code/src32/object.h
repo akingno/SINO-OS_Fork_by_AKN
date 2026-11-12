@@ -6,21 +6,22 @@ extern "C" {
 #endif
 #define OBJECTS 64
 #define HANDLES 24
-enum { OBJ_EVENT = 1, OBJ_WINDOW, OBJ_SOCKET, OBJ_PROCESS, OBJ_STREAM,
-       OBJ_DIRECTORY, OBJ_FILE, OBJ_STAGING, OBJ_PIPE_READ, OBJ_PIPE_WRITE,
-       OBJ_TERM_CONTROL, OBJ_TERM_CLIENT };
+enum class ObjType : u32 { EVENT = 1, WINDOW, SOCKET, PROCESS, STREAM,
+       DIRECTORY, FILE, STAGING, PIPE_READ, PIPE_WRITE,
+       TERM_CONTROL, TERM_CLIENT };
 typedef struct {
   u32 object, generation, rights, cookie;
 } Handle;
 typedef struct {
-  u32 generation, refs, type;
+  u32 generation, refs;
+  ObjType type;
   int value;
 } Object;
 extern Object objects[OBJECTS];
-int object_new(u32, int);
+int object_new(ObjType, int);
 void object_unref(int);
 int handle_open(Handle *, int, u32);
-Object *handle_get(Handle *, u32, u32, u32);
+Object *handle_get(Handle *, u32, ObjType, u32);
 int handle_duplicate(Handle *, u32, u32);
 int handle_close(Handle *, u32);
 void handles_close(Handle *);

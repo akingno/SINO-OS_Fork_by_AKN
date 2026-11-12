@@ -20,7 +20,7 @@ const report = {baseline, runtimeModified: false, checks: [], sourceHashes: {}, 
   started: new Date().toISOString()};
 const generatorPath = 'tools/build-locale.py';
 report.testHashes[generatorPath] = sha256(path.join(root, generatorPath));
-for (const name of ['test-src32-refactor.js', 'test-src32-storage.c', 'test-locale.c', 'test-klog.c']) {
+for (const name of ['test-src32-refactor.js', 'test-src32-storage.cpp', 'test-locale.cpp', 'test-klog.cpp']) {
   report.testHashes[`tests/host/${name}`] = sha256(path.join(__dirname, name));
 }
 function hashSources(folder) {
@@ -40,7 +40,7 @@ function check(id, ok, detail) {
 }
 try {
   // Only replace hardware reads. All storage decisions remain original C.
-  let source = fs.readFileSync(path.join(root, 'src32/storage.c'), 'utf8');
+  let source = fs.readFileSync(path.join(root, 'src32/storage.cpp'), 'utf8');
   const drive = /\*\(\s*volatile\s+u8\s*\*\s*\)\s*0x4f0c\b/g;
   const signature = /\*\(\s*volatile\s+u32\s*\*\s*\)\s*0x4f10\b/g;
   assert(source.match(drive) && source.match(signature), 'Review the BIOS test adapter for this source version');
@@ -48,9 +48,9 @@ try {
     .replace(signature, 'storage_test_boot_signature');
   fs.writeFileSync(path.join(run, 'storage-under-test.inc'), source);
   const exe = path.join(run, 'storage-contract.exe');
-  execFileSync(host.tool('gcc'), [path.join(__dirname, 'test-src32-storage.c'),
-    '-I', run, '-I', path.join(root, 'src32'), '-std=c11', '-O2',
-    '-Wall', '-Wextra', '-Werror', path.join(root, 'src32/locale.c'), '-o', exe], {windowsHide: true, timeout: 30000});
+  execFileSync(host.tool('g++'), [path.join(__dirname, 'test-src32-storage.cpp'),
+    '-I', run, '-I', path.join(root, 'src32'), '-std=c++17', '-O2',
+    '-Wall', '-Wextra', '-Werror', '-Wno-missing-field-initializers', path.join(root, 'src32/locale.cpp'), '-o', exe], {windowsHide: true, timeout: 30000});
   const output = execFileSync(exe, [], {encoding: 'utf8', windowsHide: true, timeout: 30000});
   fs.writeFileSync(path.join(run, 'storage-contract.txt'), output);
   for (const line of output.trim().split(/\r?\n/)) {
@@ -61,7 +61,7 @@ try {
   assert(report.checks.length >= 20, 'Host-test output is incomplete');
 
   const klogExe=path.join(run,'klog-test.exe');
-  execFileSync(host.tool('gcc'),[path.join(__dirname,'test-klog.c'),'-std=c11','-O2','-Wall','-Wextra','-Werror','-o',klogExe],{windowsHide:true,timeout:30000});
+  execFileSync(host.tool('g++'),[path.join(__dirname,'test-klog.cpp'),'-std=c++17','-O2','-Wall','-Wextra','-Werror','-Wno-missing-field-initializers','-o',klogExe],{windowsHide:true,timeout:30000});
   for(const line of execFileSync(klogExe,[],{encoding:'utf8',windowsHide:true,timeout:30000}).trim().split(/\r?\n/)) {
     const match=line.match(/^CHECK\t([\w.-]+)\t([01])$/);assert(match,line);check(match[1],match[2]==='1');
   }
@@ -88,8 +88,8 @@ try {
   const broken = JSON.parse(original); broken.VFS_ERROR_NODE_LIMIT = '{wrong}';
   check('locale.reject-parameters', rejected(JSON.stringify(broken)));
   const localeExe=path.join(run,'locale-test.exe');
-  execFileSync(host.tool('gcc'), [path.join(__dirname,'test-locale.c'),path.join(root,'src32/locale.c'),
-    '-std=c11','-O2','-Wall','-Wextra','-Werror','-o',localeExe], {windowsHide:true,timeout:30000});
+  execFileSync(host.tool('g++'), [path.join(__dirname,'test-locale.cpp'),path.join(root,'src32/locale.cpp'),
+    '-std=c++17','-O2','-Wall','-Wextra','-Werror','-Wno-missing-field-initializers','-o',localeExe], {windowsHide:true,timeout:30000});
   for (const line of execFileSync(localeExe,[],{encoding:'utf8',windowsHide:true,timeout:30000}).trim().split(/\r?\n/)) {
     const match=line.match(/^CHECK\t([\w.-]+)\t([01])$/); assert(match,line); check(match[1],match[2]==='1');
   }

@@ -14,13 +14,13 @@ static void destroy(Pipe* p) {
 }
 void pipe_release(Object* endpoint) {
   Pipe* p = (Pipe*)endpoint->value;
-  if (endpoint->type == OBJ_PIPE_WRITE) p->writers = 0; else p->readers = 0;
+  if (endpoint->type == ObjType::PIPE_WRITE) p->writers = 0; else p->readers = 0;
   process_pipe_wake(endpoint);
   if (!--p->ends) destroy(p);
 }
 /* Both endpoints share the pipe address. S_AGAIN guarantees a live peer. */
 u32 pipe_peer(const Object* endpoint) {
-  u32 type = endpoint->type == OBJ_PIPE_READ ? OBJ_PIPE_WRITE : OBJ_PIPE_READ;
+  ObjType type = endpoint->type == ObjType::PIPE_READ ? ObjType::PIPE_WRITE : ObjType::PIPE_READ;
   for (u32 i = 0; i < OBJECTS; i++)
     if (objects[i].refs && objects[i].type == type && objects[i].value == endpoint->value)
       return i + 1;
@@ -41,10 +41,10 @@ int pipe_create(Handle* owner, u32 capacity, PipePair* out) {
   p->data = (u8*)kpage_alloc();
   if (!p->data) { kpage_free(p); return S_NOMEM; }
   pipe_count++; p->capacity = capacity;
-  int reader = object_new(OBJ_PIPE_READ, (int)p);
+  int reader = object_new(ObjType::PIPE_READ, (int)p);
   if (reader < 0) { destroy(p); return reader; }
   p->ends = 1; p->readers = 1;
-  int writer = object_new(OBJ_PIPE_WRITE, (int)p);
+  int writer = object_new(ObjType::PIPE_WRITE, (int)p);
   if (writer < 0) { object_unref(reader); return writer; }
   p->ends = 2; p->writers = 1;
   int rh = handle_open(owner, reader, 1);
@@ -55,7 +55,7 @@ int pipe_create(Handle* owner, u32 capacity, PipePair* out) {
   return 0;
 }
 int pipe_acquire(Handle* owner, u32 handle, int writing) {
-  Object* o = handle_get(owner, handle, writing ? OBJ_PIPE_WRITE : OBJ_PIPE_READ,
+  Object* o = handle_get(owner, handle, writing ? ObjType::PIPE_WRITE : ObjType::PIPE_READ,
                          writing ? 2 : 1);
   if (!o) return S_BADHANDLE;
   o->refs++;
@@ -63,7 +63,7 @@ int pipe_acquire(Handle* owner, u32 handle, int writing) {
 }
 int pipe_ready(Object* o) {
   Pipe* p = (Pipe*)o->value;
-  if (o->type == OBJ_PIPE_WRITE)
+  if (o->type == ObjType::PIPE_WRITE)
     return !p->readers ? STREAM_HANGUP : p->used < p->capacity ? STREAM_WRITABLE : 0;
   return (p->used || !p->writers ? STREAM_READABLE : 0) |
          (!p->writers ? STREAM_HANGUP | (!p->used ? STREAM_EOF : 0) : 0);

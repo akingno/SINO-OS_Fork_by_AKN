@@ -10,7 +10,7 @@ static void outb(u16 port, u8 byte) {
   if (port == 0xe9 && used < sizeof(output))
     output[used++] = byte;
 }
-#include "../../src32/klog.c"
+#include "../../src32/klog.cpp"
 int main(void) {
   const unsigned char bytes[] = {'a', 0, 'b'};
   klog_write_bytes(bytes, 3);

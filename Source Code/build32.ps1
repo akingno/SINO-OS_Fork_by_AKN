@@ -49,7 +49,7 @@ foreach ($variant in $variants) {
     foreach ($source in $kernelSources) {
         $object = ($source -replace '/', '-')
         $objectPath = Join-Path $buildPath "$object-$variant.o"
-        & $gcc @cflags -c (Join-Path $sourcePath "$source.c") -o $objectPath
+        & $gcc @cflags -c (Join-Path $sourcePath "$source.cpp") -o $objectPath
         if ($LASTEXITCODE -ne 0) { throw "C compilation failed: $source ($variant)" }
         $kernelObjects += $objectPath
     }

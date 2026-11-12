@@ -1,6 +1,6 @@
 /* Compile the actual driver with a register backend; no duplicate decoder. */
 #define SINO_RTC_HOST_TEST 1
-#include "../../src32/rtc.c"
+#include "../../src32/rtc.cpp"
 #include <stdio.h>
 #include <stdlib.h>
 volatile u32 ticks;

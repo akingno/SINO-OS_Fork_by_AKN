@@ -24,12 +24,12 @@ int filesys_is_boot_directory(Object* object) {
   FileObject* dir = value(object);
   return live(dir->node, dir->generation) && dir->node == vfs_lookup("/boot");
 }
-static FileObject* get(Handle* owner, u32 h, u32 type, u32 rights) {
+static FileObject* get(Handle* owner, u32 h, ObjType type, u32 rights) {
   Object* o = handle_get(owner, h, type, rights);
   if (!o) return 0;
   FileObject* f = value(o);
   if (f->node >= 0 && !live(f->node, f->generation)) return 0;
-  if (type == OBJ_STAGING && !live(f->parent, f->parent_generation)) return 0;
+  if (type == ObjType::STAGING && !live(f->parent, f->parent_generation)) return 0;
   return f;
 }
 void filesys_release(int pointer) {
@@ -40,7 +40,7 @@ void filesys_release(int pointer) {
   kpage_free(f);
 }
 /* Reserve resources before a create/truncate can become visible. */
-static int reserve(Handle* owner, u32 type, u32 rights, FileObject** out) {
+static int reserve(Handle* owner, ObjType type, u32 rights, FileObject** out) {
   FileObject* f = (FileObject*)kpage_alloc();
   if (!f) return S_NOMEM;
   f->node = f->parent = -1;
@@ -56,8 +56,8 @@ static void bind(FileObject* f, int n) {
 }
 int filesys_acquire_directory(Handle* owner, u32 h, u32 rights) {
   if (!rights || (rights & ~FS_RIGHTS)) return S_INVALID;
-  if (!get(owner, h, OBJ_DIRECTORY, rights | FS_DELEGATE)) return S_BADHANDLE;
-  Object* o = handle_get(owner, h, OBJ_DIRECTORY, rights | FS_DELEGATE);
+  if (!get(owner, h, ObjType::DIRECTORY, rights | FS_DELEGATE)) return S_BADHANDLE;
+  Object* o = handle_get(owner, h, ObjType::DIRECTORY, rights | FS_DELEGATE);
   o->refs++;
   return (int)(o - objects);
 }
@@ -116,7 +116,7 @@ static int grant(Handle* owner, u32 caps, const char* path, u32 rights) {
         nodes[n].readonly) return S_DENIED;
   }
   FileObject* f;
-  int h = reserve(owner, OBJ_DIRECTORY, rights, &f);
+  int h = reserve(owner, ObjType::DIRECTORY, rights, &f);
   if (h >= 0) bind(f, n);
   return h;
 }
@@ -131,7 +131,7 @@ static int open_at(Handle* owner, u32 h, const char* path, const OpenRequest* r)
       ((r->flags & OPEN_TRUNCATE) && (dir || !(r->rights & FS_WRITE)))) return S_INVALID;
   u32 need = FS_LOOKUP | r->rights;
   if (r->flags & OPEN_CREATE) need |= FS_CREATE;
-  FileObject* root = get(owner, h, OBJ_DIRECTORY, need);
+  FileObject* root = get(owner, h, ObjType::DIRECTORY, need);
   if (!root) return S_BADHANDLE;
   int parent; char name[VFS_NAME], absolute[VFS_PATH];
   int n = resolve(root->node, path, 1, &parent, name);
@@ -145,7 +145,7 @@ static int open_at(Handle* owner, u32 h, const char* path, const OpenRequest* r)
   int status = fullpath(parent, name, absolute);
   if (n < 0 && status) return status;
   FileObject* f;
-  int result = reserve(owner, dir ? OBJ_DIRECTORY : OBJ_FILE, r->rights, &f);
+  int result = reserve(owner, dir ? ObjType::DIRECTORY : ObjType::FILE, r->rights, &f);
   if (result < 0) return result;
   int created = n < 0;
   if (n < 0) {
@@ -159,12 +159,12 @@ static int open_at(Handle* owner, u32 h, const char* path, const OpenRequest* r)
   return result;
 }
 static int stat(Handle* owner, u32 h, FileStat* out) {
-  Object* o = handle_get(owner, h, OBJ_FILE, 0);
-  if (!o) o = handle_get(owner, h, OBJ_DIRECTORY, 0);
-  if (!o) o = handle_get(owner, h, OBJ_STAGING, 0);
+  Object* o = handle_get(owner, h, ObjType::FILE, 0);
+  if (!o) o = handle_get(owner, h, ObjType::DIRECTORY, 0);
+  if (!o) o = handle_get(owner, h, ObjType::STAGING, 0);
   if (!o || !get(owner, h, o->type, 0)) return S_BADHANDLE;
   FileObject* f = value(o);
-  if (o->type == OBJ_STAGING && !f->published) {
+  if (o->type == ObjType::STAGING && !f->published) {
     *out = (FileStat){sizeof(*out), 1, FILE_STAGING, f->size, 0, 0, 0, 0};
   } else {
     Node* n = &nodes[f->node];
@@ -174,7 +174,7 @@ static int stat(Handle* owner, u32 h, FileStat* out) {
   return 0;
 }
 static int dir_read(Handle* owner, u32 h, DirPage* page) {
-  FileObject* f = get(owner, h, OBJ_DIRECTORY, FS_ENUM);
+  FileObject* f = get(owner, h, ObjType::DIRECTORY, FS_ENUM);
   if (!f) return S_BADHANDLE;
   if (!page->capacity || page->capacity > VFS_NODES || page->cursor > VFS_NODES ||
       (!page->version && page->cursor)) return S_INVALID;
@@ -195,7 +195,7 @@ static int dir_read(Handle* owner, u32 h, DirPage* page) {
 }
 static int remove_at(Handle* owner, u32 h, const char* path, u32 directory) {
   if (directory > 1) return S_INVALID;
-  FileObject* root = get(owner, h, OBJ_DIRECTORY, FS_LOOKUP | FS_REMOVE);
+  FileObject* root = get(owner, h, ObjType::DIRECTORY, FS_LOOKUP | FS_REMOVE);
   if (!root) return S_BADHANDLE;
   int parent; char name[VFS_NAME], absolute[VFS_PATH];
   int n = resolve(root->node, path, 1, &parent, name);
@@ -208,8 +208,8 @@ static int remove_at(Handle* owner, u32 h, const char* path, u32 directory) {
   return 0;
 }
 static int rename_at(Handle* owner, u32 sh, const char* source, u32 dh, const char* dest) {
-  FileObject* s = get(owner, sh, OBJ_DIRECTORY, FS_LOOKUP | FS_REMOVE);
-  FileObject* d = get(owner, dh, OBJ_DIRECTORY, FS_LOOKUP | FS_CREATE);
+  FileObject* s = get(owner, sh, ObjType::DIRECTORY, FS_LOOKUP | FS_REMOVE);
+  FileObject* d = get(owner, dh, ObjType::DIRECTORY, FS_LOOKUP | FS_CREATE);
   if (!s || !d) return S_BADHANDLE;
   int sp, dp; char sn[VFS_NAME], dn[VFS_NAME], from[VFS_PATH], to[VFS_PATH];
   int n = resolve(s->node, source, 1, &sp, sn);
@@ -228,7 +228,7 @@ static int rename_at(Handle* owner, u32 sh, const char* source, u32 dh, const ch
 }
 static int stage(Handle* owner, u32 h, const char* path, u32 revision) {
   u32 need = FS_LOOKUP | FS_CREATE | FS_WRITE;
-  FileObject* root = get(owner, h, OBJ_DIRECTORY, need);
+  FileObject* root = get(owner, h, ObjType::DIRECTORY, need);
   if (!root) return S_BADHANDLE;
   int parent; char name[VFS_NAME], absolute[VFS_PATH];
   int n = resolve(root->node, path, 1, &parent, name);
@@ -240,9 +240,9 @@ static int stage(Handle* owner, u32 h, const char* path, u32 revision) {
   int status = fullpath(parent, name, absolute);
   if (status || !name[0]) return status ? status : S_INVALID;
   u32 rights = FS_READ | FS_WRITE;
-  if (handle_get(owner, h, OBJ_DIRECTORY, FS_COMMIT)) rights |= FS_COMMIT;
+  if (handle_get(owner, h, ObjType::DIRECTORY, FS_COMMIT)) rights |= FS_COMMIT;
   FileObject* f;
-  int result = reserve(owner, OBJ_STAGING, rights, &f);
+  int result = reserve(owner, ObjType::STAGING, rights, &f);
   if (result < 0) return result;
   f->parent = parent; f->parent_generation = vfs_generation[parent]; vfs_refs[parent]++;
   f->expected_generation = n >= 0 ? vfs_generation[n] : 0;
@@ -251,7 +251,7 @@ static int stage(Handle* owner, u32 h, const char* path, u32 revision) {
   return result;
 }
 static int finish(Handle* owner, u32 h, int commit, CommitInfo* out) {
-  FileObject* f = get(owner, h, OBJ_STAGING, commit ? FS_COMMIT : FS_WRITE);
+  FileObject* f = get(owner, h, ObjType::STAGING, commit ? FS_COMMIT : FS_WRITE);
   if (!f) return S_BADHANDLE;
   int status = 0;
   if (!commit && !f->published) {
@@ -283,8 +283,8 @@ int filesys_call(Handle* owner, u32 caps, u32 call, u32 a, u32 b, u32 c,
   switch (call) {
     case SYS_DIRECTORY_COMMIT: {
       if (c < sizeof(CommitInfo)) return S_INVALID;
-      UACCESS_TRY(uaccess_prepare(user_pd, b, sizeof(CommitInfo), USER_WRITE));
-      FileObject* f=get(owner,a,OBJ_DIRECTORY,FS_COMMIT);
+      UACCESS_TRY(uaccess_prepare(user_pd, b, sizeof(CommitInfo), UserAccess::WRITE));
+      FileObject* f=get(owner,a,ObjType::DIRECTORY,FS_COMMIT);
       if(!f)return S_BADHANDLE;
       int home=vfs_lookup("/home/user");
       if(f->node!=home && !storage_tracks_node(f->node))return S_DENIED;
@@ -310,14 +310,14 @@ int filesys_call(Handle* owner, u32 caps, u32 call, u32 a, u32 b, u32 c,
       UACCESS_TRY(copy_from_user(user_pd, &io, b, sizeof(io)));
       int read = call == SYS_FILE_READ_AT;
       if (io.offset > MAX_FILE || io.bytes > MAX_FILE - io.offset) return S_INVALID;
-      if (io.bytes) UACCESS_TRY(uaccess_prepare(user_pd, io.buffer, io.bytes, (read) ? USER_WRITE : USER_READ));
-      FileObject* f = get(owner, a, OBJ_FILE, read ? FS_READ : FS_WRITE);
+      if (io.bytes) UACCESS_TRY(uaccess_prepare(user_pd, io.buffer, io.bytes, (read) ? UserAccess::WRITE : UserAccess::READ));
+      FileObject* f = get(owner, a, ObjType::FILE, read ? FS_READ : FS_WRITE);
       if (f) {
         int result = read ? vfs_read_at(f->node, io.offset, (u8*)io.buffer, io.bytes)
                           : vfs_write_at(f->node, io.offset, (const u8*)io.buffer, io.bytes);
         return result;
       }
-      f = get(owner, a, OBJ_STAGING, read ? FS_READ : FS_WRITE);
+      f = get(owner, a, ObjType::STAGING, read ? FS_READ : FS_WRITE);
       if (!f) return S_BADHANDLE;
       if (f->published) return S_BUSY;
       if (!read) return vfs_buffer_write(f->pages, &f->size, io.offset, (const u8*)io.buffer, io.bytes);
@@ -329,17 +329,17 @@ int filesys_call(Handle* owner, u32 caps, u32 call, u32 a, u32 b, u32 c,
     }
     case SYS_FILE_STAT: {
       if (c < sizeof(FileStat)) return S_INVALID;
-      UACCESS_TRY(uaccess_prepare(user_pd, b, sizeof(FileStat), USER_WRITE));
+      UACCESS_TRY(uaccess_prepare(user_pd, b, sizeof(FileStat), UserAccess::WRITE));
       FileStat result; int status = stat(owner, a, &result);
       if (!status) memcpy((void*)b, &result, sizeof(result));
       return status;
     }
     case SYS_DIR_READ: {
       if (c != sizeof(DirPage)) return S_INVALID;
-      UACCESS_TRY(uaccess_prepare(user_pd, b, sizeof(DirPage), USER_WRITE));
+      UACCESS_TRY(uaccess_prepare(user_pd, b, sizeof(DirPage), UserAccess::WRITE));
       DirPage page; memcpy(&page, (void*)b, sizeof(page));
       if (!page.capacity || page.capacity > VFS_NODES) return S_INVALID;
-      UACCESS_TRY(uaccess_prepare(user_pd, page.buffer, page.capacity * sizeof(DirEntry), USER_WRITE));
+      UACCESS_TRY(uaccess_prepare(user_pd, page.buffer, page.capacity * sizeof(DirEntry), UserAccess::WRITE));
       /* Keep response header separate from the entry buffer. */
       if (page.buffer < b + sizeof(DirPage) && b < page.buffer + page.capacity * sizeof(DirEntry))
         return S_INVALID;
@@ -369,7 +369,7 @@ int filesys_call(Handle* owner, u32 caps, u32 call, u32 a, u32 b, u32 c,
     case SYS_FILE_PUBLISH:
     case SYS_FILE_COMMIT: {
       if (c < sizeof(CommitInfo)) return S_INVALID;
-      UACCESS_TRY(uaccess_prepare(user_pd, b, sizeof(CommitInfo), USER_WRITE));
+      UACCESS_TRY(uaccess_prepare(user_pd, b, sizeof(CommitInfo), UserAccess::WRITE));
       CommitInfo result = {};
       int status = finish(owner, a, call == SYS_FILE_COMMIT, &result);
       if (status != S_BADHANDLE) memcpy((void*)b, &result, sizeof(result));

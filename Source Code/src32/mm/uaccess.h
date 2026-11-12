@@ -8,7 +8,7 @@ extern "C" {
 
 // USER_READ 需要 PRESENT + USER
 // USER_WRITE 需要 PRESENT + USER + WRITE
-typedef enum { USER_READ, USER_WRITE } UserAccess;
+enum class UserAccess { READ, WRITE };
 
 /* Returns S_OK or an S_* error. A prepared range may be borrowed only
  * during the current syscall, while its address space stays active. */

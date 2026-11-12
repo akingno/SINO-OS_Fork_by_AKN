@@ -31,7 +31,7 @@ int vfs_busy(int index) {
   return 0;
 }
 const char* vfs_error = "unknown error";
-TextKey vfs_error_key = VFS_ERROR_UNKNOWN_ERROR;
+TextKey vfs_error_key = TextKey::VFS_ERROR_UNKNOWN_ERROR;
 static int vfs_fail(const char* s, TextKey key) {
   vfs_error = s;
   vfs_error_key = key;
@@ -95,7 +95,7 @@ int vfs_canonical(const char* path, char* out) {
   }
   for (; *path; path++) {
     if (length >= sizeof(input) - 1)
-      return vfs_fail("path too long", VFS_ERROR_PATH_TOO_LONG);
+      return vfs_fail("path too long", TextKey::VFS_ERROR_PATH_TOO_LONG);
     input[length++] = *path == '\\' ? '/' : *path;
   }
   input[length] = 0;
@@ -109,7 +109,7 @@ int vfs_canonical(const char* path, char* out) {
     while (input[i] && input[i] != '/') {
       if (n >= VFS_NAME - 1)
         return vfs_fail("file name too long (31 characters max)",
-                        VFS_ERROR_NAME_TOO_LONG_31_UTF_8_BYTES_MAXIMUM);
+                        TextKey::VFS_ERROR_NAME_TOO_LONG_31_UTF_8_BYTES_MAXIMUM);
       part[n++] = input[i++];
     }
     part[n] = 0;
@@ -128,11 +128,11 @@ int vfs_canonical(const char* path, char* out) {
     }
     if (pos > 1) {
       if (pos >= VFS_PATH - 1)
-        return vfs_fail("path too long", VFS_ERROR_PATH_TOO_LONG);
+        return vfs_fail("path too long", TextKey::VFS_ERROR_PATH_TOO_LONG);
       out[pos++] = '/';
     }
     if (pos + n >= VFS_PATH)
-      return vfs_fail("path too long", VFS_ERROR_PATH_TOO_LONG);
+      return vfs_fail("path too long", TextKey::VFS_ERROR_PATH_TOO_LONG);
     for (u32 j = 0; j < n; j++)
       out[pos++] = part[j];
   }
@@ -158,11 +158,11 @@ static int absolute(const char* path) {
     if (path[i] == '/')
       i++;
     if (!nodes[index].dir)
-      return vfs_fail("not a directory", VFS_ERROR_NOT_A_FOLDER);
+      return vfs_fail("not a directory", TextKey::VFS_ERROR_NOT_A_FOLDER);
     index = vfs_child(index, part);
     if (index < 0)
       return vfs_fail("no such file or directory",
-                      VFS_ERROR_FILE_OR_FOLDER_NOT_FOUND);
+                      TextKey::VFS_ERROR_FILE_OR_FOLDER_NOT_FOUND);
   }
   return index;
 }
@@ -181,7 +181,7 @@ static int parent_name(const char* path, int* parent, char* name) {
     last--;
   if (last == n)
     return vfs_fail("cannot change the root directory",
-                    VFS_ERROR_THE_ROOT_FOLDER_CANNOT_BE_CHANGED);
+                    TextKey::VFS_ERROR_THE_ROOT_FOLDER_CANNOT_BE_CHANGED);
   copy(name, p + last);
   if (last > 1)
     p[last - 1] = 0;
@@ -191,15 +191,15 @@ static int parent_name(const char* path, int* parent, char* name) {
   if (*parent < 0)
     return -1;
   if (!nodes[*parent].dir)
-    return vfs_fail("not a directory", VFS_ERROR_NOT_A_FOLDER);
+    return vfs_fail("not a directory", TextKey::VFS_ERROR_NOT_A_FOLDER);
   if (nodes[*parent].readonly)
     return vfs_fail("read-only file system (/boot)",
-                    VFS_ERROR_READ_ONLY_LOCATION_CHOOSE_HOME_OR_DESKTOP);
+                    TextKey::VFS_ERROR_READ_ONLY_LOCATION_CHOOSE_HOME_OR_DESKTOP);
   return 0;
 }
 static int allocate(int parent, const char* name, int dir) {
   if (next_generation == ~0u || !revision_room(2))
-    return vfs_fail("version limit", VFS_ERROR_NODE_LIMIT);
+    return vfs_fail("version limit", TextKey::VFS_ERROR_NODE_LIMIT);
   for (int i = 1; i < VFS_NODES; i++)
     if (!nodes[i].used) {
       memset(&nodes[i], 0, sizeof(Node));
@@ -212,7 +212,7 @@ static int allocate(int parent, const char* name, int dir) {
       changed(i);
       return i;
     }
-  return vfs_fail("File table is full (128 nodes)", VFS_ERROR_NODE_LIMIT);
+  return vfs_fail("File table is full (128 nodes)", TextKey::VFS_ERROR_NODE_LIMIT);
 }
 int vfs_create(const char* path, int dir, int parents) {
   if (parents && dir) {
@@ -232,13 +232,13 @@ int vfs_create(const char* path, int dir, int parents) {
       if (next < 0) {
         if (nodes[parent].readonly)
           return vfs_fail("read-only file system (/boot)",
-                          VFS_ERROR_READ_ONLY_LOCATION_CHOOSE_HOME_OR_DESKTOP);
+                          TextKey::VFS_ERROR_READ_ONLY_LOCATION_CHOOSE_HOME_OR_DESKTOP);
         next = allocate(parent, name, 1);
       }
       if (next < 0)
         return -1;
       if (!nodes[next].dir)
-        return vfs_fail("not a directory", VFS_ERROR_NOT_A_FOLDER);
+        return vfs_fail("not a directory", TextKey::VFS_ERROR_NOT_A_FOLDER);
       parent = next;
     }
     return parent;
@@ -252,22 +252,22 @@ int vfs_create(const char* path, int dir, int parents) {
     if (!dir && !nodes[old].dir)
       return old;
     return vfs_fail("file already exists",
-                    VFS_ERROR_AN_ITEM_WITH_THAT_NAME_ALREADY_EXISTS);
+                    TextKey::VFS_ERROR_AN_ITEM_WITH_THAT_NAME_ALREADY_EXISTS);
   }
   return allocate(parent, name, dir);
 }
 int vfs_read(int index, u8* dest, u32 cap) {
   if (index < 0 || index >= VFS_NODES || !nodes[index].used)
-    return vfs_fail("no such file", VFS_ERROR_FILE_NOT_FOUND);
+    return vfs_fail("no such file", TextKey::VFS_ERROR_FILE_NOT_FOUND);
   Node* n = &nodes[index];
   if (n->dir)
-    return vfs_fail("is a directory", VFS_ERROR_THIS_ITEM_IS_A_FOLDER);
+    return vfs_fail("is a directory", TextKey::VFS_ERROR_THIS_ITEM_IS_A_FOLDER);
   if (n->size > cap)
-    return vfs_fail("file exceeds read buffer", VFS_ERROR_FILE_IS_TOO_LARGE);
+    return vfs_fail("file exceeds read buffer", TextKey::VFS_ERROR_FILE_IS_TOO_LARGE);
   if (n->boot >= 0)
     return fs_read((u32)n->boot, dest, cap)
                ? (int)n->size
-               : vfs_fail("FAT12 read failed", VFS_ERROR_FAT12_READ_FAILED);
+               : vfs_fail("FAT12 read failed", TextKey::VFS_ERROR_FAT12_READ_FAILED);
   for (u32 off = 0; off < n->size;) {
     u32 part = n->size - off;
     if (part > 4096)
@@ -279,19 +279,19 @@ int vfs_read(int index, u8* dest, u32 cap) {
 }
 int vfs_write(int index, const u8* data, u32 length, int append) {
   if (index < 0 || index >= VFS_NODES || !nodes[index].used)
-    return vfs_fail("no such file", VFS_ERROR_FILE_NOT_FOUND);
+    return vfs_fail("no such file", TextKey::VFS_ERROR_FILE_NOT_FOUND);
   Node* n = &nodes[index];
   if (n->dir)
-    return vfs_fail("is a directory", VFS_ERROR_THIS_ITEM_IS_A_FOLDER);
+    return vfs_fail("is a directory", TextKey::VFS_ERROR_THIS_ITEM_IS_A_FOLDER);
   if (n->readonly)
     return vfs_fail("read-only file system (/boot)",
-                    VFS_ERROR_READ_ONLY_LOCATION_CHOOSE_HOME_OR_DESKTOP);
+                    TextKey::VFS_ERROR_READ_ONLY_LOCATION_CHOOSE_HOME_OR_DESKTOP);
   u32 offset = append ? n->size : 0;
   if (length > MAX_FILE - offset)
     return vfs_fail("RAM file limit is 64 KB",
-                    VFS_ERROR_A_FILE_CAN_CONTAIN_AT_MOST_64_KB);
+                    TextKey::VFS_ERROR_A_FILE_CAN_CONTAIN_AT_MOST_64_KB);
   if (!revision_room(2))
-    return vfs_fail("version limit", VFS_ERROR_NODE_LIMIT);
+    return vfs_fail("version limit", TextKey::VFS_ERROR_NODE_LIMIT);
   u32 total = offset + length, old = (n->size + 4095) / 4096,
       needed = (total + 4095) / 4096, allocated = old;
   while (allocated < needed) {
@@ -302,7 +302,7 @@ int vfs_write(int index, const u8* data, u32 length, int append) {
         kpage_free(n->pages[allocated]);
         n->pages[allocated] = 0;
       }
-      return vfs_fail("out of memory", VFS_ERROR_NOT_ENOUGH_MEMORY);
+      return vfs_fail("out of memory", TextKey::VFS_ERROR_NOT_ENOUGH_MEMORY);
     }
     allocated++;
   }
@@ -323,25 +323,25 @@ int vfs_remove(const char* path, int dir) {
     return -1;
   Node* n = &nodes[index];
   if (vfs_busy(index)) {
-    vfs_fail("open object is busy", VFS_ERROR_THIS_ITEM_IS_PROTECTED_OR_READ_ONLY);
+    vfs_fail("open object is busy", TextKey::VFS_ERROR_THIS_ITEM_IS_PROTECTED_OR_READ_ONLY);
     return S_BUSY;
   }
   if (n->pinned || n->readonly)
     return vfs_fail("protected or read-only path",
-                    VFS_ERROR_THIS_ITEM_IS_PROTECTED_OR_READ_ONLY);
+                    TextKey::VFS_ERROR_THIS_ITEM_IS_PROTECTED_OR_READ_ONLY);
   if (n->dir != dir)
     return vfs_fail(
         dir ? "not a directory" : "is a directory; use rmdir",
-        dir ? VFS_ERROR_NOT_A_FOLDER : VFS_ERROR_IS_A_DIRECTORY_USE_RMDIR);
+        dir ? TextKey::VFS_ERROR_NOT_A_FOLDER : TextKey::VFS_ERROR_IS_A_DIRECTORY_USE_RMDIR);
   if (index == cwd)
     return vfs_fail("cannot remove current directory",
-                    VFS_ERROR_THE_CURRENT_FOLDER_CANNOT_BE_REMOVED);
+                    TextKey::VFS_ERROR_THE_CURRENT_FOLDER_CANNOT_BE_REMOVED);
   for (int i = 1; i < VFS_NODES; i++)
     if (nodes[i].used && nodes[i].parent == index)
       return vfs_fail("directory is not empty",
-                      VFS_ERROR_THIS_FOLDER_IS_NOT_EMPTY_MOVE_ITS_FILES_FIRST);
+                      TextKey::VFS_ERROR_THIS_FOLDER_IS_NOT_EMPTY_MOVE_ITS_FILES_FIRST);
   if (!revision_room(2))
-    return vfs_fail("version limit", VFS_ERROR_NODE_LIMIT);
+    return vfs_fail("version limit", TextKey::VFS_ERROR_NODE_LIMIT);
   changed(index);
   for (u32 i = 0; i < VFS_PAGES; i++)
     if (n->pages[i])
@@ -356,11 +356,11 @@ static int destination(const char* path, const char* name, int* parent,
   if (index >= 0 && nodes[index].dir) {
     if (nodes[index].readonly)
       return vfs_fail("read-only file system (/boot)",
-                      VFS_ERROR_READ_ONLY_LOCATION_CHOOSE_HOME_OR_DESKTOP);
+                      TextKey::VFS_ERROR_READ_ONLY_LOCATION_CHOOSE_HOME_OR_DESKTOP);
     char prefix[VFS_PATH];
     vfs_path(index, prefix);
     if (strlen(prefix) + (strlen(prefix) > 1) + strlen(name) >= VFS_PATH)
-      return vfs_fail("path too long", VFS_ERROR_PATH_TOO_LONG);
+      return vfs_fail("path too long", TextKey::VFS_ERROR_PATH_TOO_LONG);
     *parent = index;
     copy(out, name);
     return 0;
@@ -373,12 +373,12 @@ int vfs_move(const char* source, const char* dest) {
     return -1;
   Node* n = &nodes[index];
   if (vfs_busy(index)) {
-    vfs_fail("open object is busy", VFS_ERROR_THIS_ITEM_IS_PROTECTED_OR_READ_ONLY);
+    vfs_fail("open object is busy", TextKey::VFS_ERROR_THIS_ITEM_IS_PROTECTED_OR_READ_ONLY);
     return S_BUSY;
   }
   if (n->readonly || n->pinned)
     return vfs_fail("protected or read-only path",
-                    VFS_ERROR_THIS_ITEM_IS_PROTECTED_OR_READ_ONLY);
+                    TextKey::VFS_ERROR_THIS_ITEM_IS_PROTECTED_OR_READ_ONLY);
   int parent;
   char name[VFS_NAME];
   if (destination(dest, n->name, &parent, name) < 0)
@@ -387,11 +387,11 @@ int vfs_move(const char* source, const char* dest) {
     if (p == index)
       return vfs_fail(
           "cannot move a directory into itself",
-          VFS_ERROR_A_FOLDER_CANNOT_BE_MOVED_INTO_ITSELF_OR_ITS_DESCENDANTS);
+          TextKey::VFS_ERROR_A_FOLDER_CANNOT_BE_MOVED_INTO_ITSELF_OR_ITS_DESCENDANTS);
   int existing = vfs_child(parent, name);
   if (existing >= 0 && existing != index)
     return vfs_fail("destination exists",
-                    VFS_ERROR_THE_DESTINATION_ALREADY_CONTAINS_THAT_NAME);
+                    TextKey::VFS_ERROR_THE_DESTINATION_ALREADY_CONTAINS_THAT_NAME);
   char prefix[VFS_PATH];
   vfs_path(parent, prefix);
   u32 base = strlen(prefix) + (strlen(prefix) > 1) + strlen(name);
@@ -404,10 +404,10 @@ int vfs_move(const char* source, const char* dest) {
         ancestor = nodes[ancestor].parent;
       }
       if (ancestor == index && base + relative >= VFS_PATH)
-        return vfs_fail("path too long", VFS_ERROR_PATH_TOO_LONG);
+        return vfs_fail("path too long", TextKey::VFS_ERROR_PATH_TOO_LONG);
     }
   if (!revision_room(3))
-    return vfs_fail("version limit", VFS_ERROR_NODE_LIMIT);
+    return vfs_fail("version limit", TextKey::VFS_ERROR_NODE_LIMIT);
   vfs_revision[n->parent] = ++next_revision;
   n->parent = parent;
   copy(n->name, name);

@@ -15,8 +15,8 @@ if (process.argv.length === 3 && process.argv[2] === '--list') {
   const exe = path.join(directory, 'mm-boundaries.exe');
   const report = {result:'FAIL', cases:[]};
   try {
-    const compile = execFileSync(tool('gcc'), ['-fno-builtin','-Wno-int-to-pointer-cast','-Wno-pointer-to-int-cast','-std=c11','-O2','-Wall','-Wextra','-Werror',
-      path.join(__dirname,'test-mm-boundaries.c'),path.join(root,'src32/mm/uaccess.c'),'-o',exe], {encoding:'utf8',windowsHide:true,timeout:30000,stdio:['ignore','pipe','pipe']});
+    const compile = execFileSync(tool('g++'), ['-fno-builtin','-Wno-int-to-pointer-cast','-std=c++17','-O2','-Wall','-Wextra','-Werror','-Wno-missing-field-initializers',
+      path.join(__dirname,'test-mm-boundaries.cpp'),path.join(root,'src32/mm/uaccess.cpp'),'-o',exe], {encoding:'utf8',windowsHide:true,timeout:30000,stdio:['ignore','pipe','pipe']});
     fs.writeFileSync(path.join(directory,'build.log'),compile);
     const output = execFileSync(exe, [], {encoding:'utf8',windowsHide:true,timeout:10000});
     fs.writeFileSync(path.join(directory,'output.log'),output);

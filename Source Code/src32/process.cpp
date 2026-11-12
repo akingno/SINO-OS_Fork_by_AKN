@@ -27,13 +27,13 @@ typedef struct {
   Frame frame;
   u32 useresp, ss;
 } UserFrame;
-enum { THREAD_UNUSED, THREAD_ACTIVE, THREAD_BLOCKED };
-enum { WAIT_PIPE_READ = 1, WAIT_PIPE_WRITE, WAIT_COMPLETION, WAIT_TERM_READ, WAIT_IX_RESULT };
+enum class ThreadState : int { UNUSED, ACTIVE, BLOCKED };
+enum class WaitReason : u32 { NONE = 0, PIPE_READ = 1, PIPE_WRITE, COMPLETION, TERM_READ, IX_RESULT };
 typedef struct {
-  int state;
+  ThreadState state;
   u32 wake;
   u32 wait_object; /* Object index + 1; zero when not waiting. */
-  u32 wait_op;
+  WaitReason wait_op;
   u32 wait_deadline;
   int wait_timed; /* A finite deadline can wrap to zero. */
   TerminalRequest wait_terminal;
@@ -131,7 +131,7 @@ void process_init(void) {
   object_tests();
   pr_debug("USER GDT/TSS ready, CPL3 selectors 1B/23, I/O denied\n");
 }
-static void thread_unblock(u32 object, u32 op);
+static void thread_unblock(u32 object, WaitReason op);
 static void release(Process* p) {
   for (int i = 0; i < 8; i++)
     if (leases[i].pid == p->pid)
@@ -155,7 +155,7 @@ static void release(Process* p) {
     completions[slot].complete = 1;
     if (completions[slot].run && p->reason != PROCESS_EXITED)
       completions[slot].run->incomplete = 1;
-    thread_unblock(p->completion_object, WAIT_COMPLETION);
+    thread_unblock(p->completion_object, WaitReason::COMPLETION);
     object_unref(object);
   }
   memset(p, 0, sizeof(*p));
@@ -317,7 +317,7 @@ static int paging_probe_setup(Process* p, int exhaust) {
 #endif
 static void initial(Thread* t, u32 entry, u32 stack) {
   memset(t, 0, sizeof(*t));
-  t->state = THREAD_ACTIVE;
+  t->state = ThreadState::ACTIVE;
   t->wake = ticks;
   t->saved.frame.eip = entry;
   t->saved.frame.cs = 0x1b;
@@ -326,23 +326,23 @@ static void initial(Thread* t, u32 entry, u32 stack) {
   t->saved.ss = 0x23;
 }
 /* A zero timeout waits indefinitely. Finite waits use signed tick comparisons. */
-static inline void thread_block(Thread* t, u32 object, u32 op, u32 timeout) {
+static inline void thread_block(Thread* t, u32 object, WaitReason op, u32 timeout) {
   if (timeout > 0x7fffffffu)
     timeout = 0x7fffffffu;
   t->wait_object = object;
   t->wait_op = op;
   t->wait_deadline = timeout ? ticks + timeout : 0;
   t->wait_timed = timeout != 0;
-  t->state = THREAD_BLOCKED;
+  t->state = ThreadState::BLOCKED;
 }
 static void thread_finish_wait(Thread* t, int result, u32 now) {
   t->saved.frame.eax = (u32)result;
   t->wait_object = 0;
-  t->wait_op = 0;
+  t->wait_op = WaitReason::NONE;
   t->wait_deadline = 0;
   t->wait_timed = 0;
   t->wake = now;
-  t->state = THREAD_ACTIVE;
+  t->state = ThreadState::ACTIVE;
 }
 static int thread_wait_expired(const Thread* t, u32 now) {
   return t->wait_timed && (i32)(now - t->wait_deadline) >= 0;
@@ -352,7 +352,7 @@ static int thread_wait_expired(const Thread* t, u32 now) {
  * 置为可重试；retry_wait 再确认条件，因此唤醒不代表已获得数据或空间。
  * 替换方向：对象等待队列配合统一登记/撤销机制，保留重检和原始截止时间；
  * 进入可抢占内核后，还需保证检查条件与登记等待之间不会丢失唤醒。 */
-static void thread_unblock(u32 object, u32 op) {
+static void thread_unblock(u32 object, WaitReason op) {
   u32 now = ticks;
   for (int i = 0; i < NP; i++) {
     Process* p = &processes[i];
@@ -360,22 +360,22 @@ static void thread_unblock(u32 object, u32 op) {
       continue;
     for (int j = 0; j < NT; j++) {
       Thread* t = &p->thread[j];
-      if (t->state == THREAD_BLOCKED && t->wait_object == object && t->wait_op == op) {
+      if (t->state == ThreadState::BLOCKED && t->wait_object == object && t->wait_op == op) {
         t->wake = now;
-        t->state = THREAD_ACTIVE;
+        t->state = ThreadState::ACTIVE;
       }
     }
   }
 }
 void process_pipe_wake(const Object* endpoint) {
   thread_unblock((u32)(endpoint - objects) + 1,
-                 endpoint->type == OBJ_PIPE_WRITE ? WAIT_PIPE_READ : WAIT_PIPE_WRITE);
+                 endpoint->type == ObjType::PIPE_WRITE ? WaitReason::PIPE_READ : WaitReason::PIPE_WRITE);
 }
 void process_terminal_wake(u32 object) {
-  thread_unblock(object, WAIT_TERM_READ);
+  thread_unblock(object, WaitReason::TERM_READ);
 }
 void process_interactive_wake(u32 object) {
-  thread_unblock(object, WAIT_IX_RESULT);
+  thread_unblock(object, WaitReason::IX_RESULT);
 }
 int process_launch(const char* path, u32 caps) {
   return process_launch_args(path, caps, "");
@@ -529,7 +529,7 @@ static int launch_policy(const char* path, u32 caps, const char* arguments,
     for (int i = 0; i < 3; i++) {
       int bound = run->pending_pipe[i] != 0;
       int stream = bound ? (int)run->pending_pipe[i] - 1
-                          : object_new(OBJ_STREAM, completion * 3 + i);
+                          : object_new(ObjType::STREAM, completion * 3 + i);
       if (stream < 0) { release(p); return stream; }
       if (!bound) objects[completion].refs++; /* Finite streams pin the run. */
       int handle = handle_open(p->handles, stream, i == 0 ? 1 : 2);
@@ -582,7 +582,7 @@ static int tracked_launch(Handle* owner, const char* path, const char* args, Run
   if (slot == PROCESS_COMPLETIONS) { run_free(run); return S_LIMIT; }
   completions[slot].used = 1;
   completions[slot].run = run;
-  int object = object_new(OBJ_PROCESS, slot);
+  int object = object_new(ObjType::PROCESS, slot);
   if (object < 0) { process_completion_release(slot); return object; }
   int handle = handle_open(owner, object, PROCESS_WAIT | PROCESS_CANCEL);
   if (handle < 0) { object_unref(object); return handle; }
@@ -597,7 +597,7 @@ static int tracked_launch(Handle* owner, const char* path, const char* args, Run
 }
 int process_interactive_result(Handle* owner, u32 handle,
                                ProcessCompletion* out) {
-  Object* o = handle_get(owner, handle, OBJ_PROCESS, PROCESS_WAIT);
+  Object* o = handle_get(owner, handle, ObjType::PROCESS, PROCESS_WAIT);
   if (!o)
     return S_BADHANDLE;
   if (!completions[o->value].complete)
@@ -778,7 +778,7 @@ static int run_result(const Object* object, RunResult* out) {
   return 0;
 }
 int process_run_result(Handle* owner, u32 handle, RunResult* out) {
-  Object* object = handle_get(owner, handle, OBJ_PROCESS, PROCESS_WAIT);
+  Object* object = handle_get(owner, handle, ObjType::PROCESS, PROCESS_WAIT);
   return object ? run_result(object, out) : S_BADHANDLE;
 }
 int process_run_read(Handle* owner, u32 handle, u32 role, u32 offset, void* out, u32 cap) {
@@ -786,7 +786,7 @@ int process_run_read(Handle* owner, u32 handle, u32 role, u32 offset, void* out,
   int status = process_run_result(owner, handle, &result);
   if (status) return status;
   if (role < 1 || role > 2 || cap > RUN_IO_MAX) return S_INVALID;
-  Object* object = handle_get(owner, handle, OBJ_PROCESS, PROCESS_WAIT);
+  Object* object = handle_get(owner, handle, ObjType::PROCESS, PROCESS_WAIT);
   RunData* run = completions[object->value].run;
   if (offset > run->length[role - 1]) return S_INVALID;
   u32 bytes = run->length[role - 1] - offset;
@@ -795,7 +795,7 @@ int process_run_read(Handle* owner, u32 handle, u32 role, u32 offset, void* out,
   return (int)bytes;
 }
 int process_cancel_owned(Handle* owner, u32 handle) {
-  Object* object = handle_get(owner, handle, OBJ_PROCESS, PROCESS_CANCEL);
+  Object* object = handle_get(owner, handle, ObjType::PROCESS, PROCESS_CANCEL);
   if (!object) return S_BADHANDLE;
   if (completions[object->value].complete) return 0;
   for (int i = 0; i < NP; i++) {
@@ -809,7 +809,7 @@ int process_cancel_owned(Handle* owner, u32 handle) {
   return S_NOTFOUND;
 }
 Handle* process_terminal_target(Handle* owner,u32 h,u32* pid) {
-  Object* o=handle_get(owner,h,OBJ_PROCESS,PROCESS_WAIT|PROCESS_CANCEL);
+  Object* o=handle_get(owner,h,ObjType::PROCESS,PROCESS_WAIT|PROCESS_CANCEL);
   if(!o||completions[o->value].complete)return 0;
   for(int i=0;i<NP;i++)if(processes[i].state==1 && processes[i].policy==PROCESS_STRICT &&
       processes[i].completion_object==(u32)(o-objects)+1){*pid=processes[i].pid;return processes[i].handles;}
@@ -860,12 +860,12 @@ static void leave(Frame* f) {
   paging_activate_kernel();
 }
 static Object* pipe_handle(u32 handle, int reading) {
-  return handle_get(current->handles, handle, reading ? OBJ_PIPE_READ : OBJ_PIPE_WRITE,
+  return handle_get(current->handles, handle, reading ? ObjType::PIPE_READ : ObjType::PIPE_WRITE,
                     reading ? 1 : 2);
 }
 static int transfer_pipe(Object* endpoint, int reading, u32 buffer, u32 bytes) {
   if (bytes > RUN_IO_MAX) return S_INVALID;
-  if (bytes) UACCESS_TRY(uaccess_prepare(current->pd, buffer, bytes, reading ? USER_WRITE : USER_READ));
+  if (bytes) UACCESS_TRY(uaccess_prepare(current->pd, buffer, bytes, reading ? UserAccess::WRITE : UserAccess::READ));
   int result = pipe_transfer(endpoint, reading, (void*)buffer, bytes);
   if (result > 0)
     process_pipe_wake(endpoint);
@@ -877,7 +877,7 @@ static int user_completion_result(Frame* f, const Object* object) {
   u32 bytes = run_query ? sizeof(RunResult) : sizeof(ProcessCompletion);
   if (f->edx == RESULT_BLOCK_FLAG ? f->esi > STREAM_WAIT_MAX : f->edx < bytes)
     return S_INVALID;
-  UACCESS_TRY(uaccess_prepare(current->pd, f->ecx, bytes, USER_WRITE));
+  UACCESS_TRY(uaccess_prepare(current->pd, f->ecx, bytes, UserAccess::WRITE));
   if (!object) return S_BADHANDLE;
   if (run_query) {
     RunResult result;
@@ -894,14 +894,14 @@ static int retry_wait(Thread* t) {
   int result = S_TIMEOUT;
   if (!thread_wait_expired(t, now)) {
     Frame* f = &t->saved.frame;
-    if (t->wait_op == WAIT_COMPLETION) {
-      Object* object = handle_get(current->handles, f->ebx, OBJ_PROCESS, PROCESS_WAIT);
+    if (t->wait_op == WaitReason::COMPLETION) {
+      Object* object = handle_get(current->handles, f->ebx, ObjType::PROCESS, PROCESS_WAIT);
       result = user_completion_result(f, object);
-    } else if (t->wait_op == WAIT_TERM_READ || t->wait_op == WAIT_IX_RESULT) {
+    } else if (t->wait_op == WaitReason::TERM_READ || t->wait_op == WaitReason::IX_RESULT) {
       result = terminal_call(current->handles, current->pid, current->policy,
                              &t->wait_terminal, current->pd);
     } else {
-      int reading = t->wait_op == WAIT_PIPE_READ;
+      int reading = t->wait_op == WaitReason::PIPE_READ;
       Object* endpoint = pipe_handle(f->ebx, reading);
       result = endpoint ? transfer_pipe(endpoint, reading, f->ecx, f->edx & ~STREAM_BLOCK_FLAG)
                         : S_BADHANDLE;
@@ -909,7 +909,7 @@ static int retry_wait(Thread* t) {
   }
   if (result == S_AGAIN) {
     /* Another waiter may have transferred first. Keep the original deadline. */
-    t->state = THREAD_BLOCKED;
+    t->state = ThreadState::BLOCKED;
     return 0;
   }
   thread_finish_wait(t, result, now);
@@ -957,7 +957,7 @@ static int syscall(Frame* f) {
       if (!current->input_frontend) return S_DENIED;
       if (!a) return b || c ? S_INVALID : key_read();
       if (a != 1 || c != sizeof(ConsoleFrame)) return S_INVALID;
-      UACCESS_TRY(uaccess_prepare(user_pd, b, c, USER_READ));
+      UACCESS_TRY(uaccess_prepare(user_pd, b, c, UserAccess::READ));
       const ConsoleFrame* frame = (const ConsoleFrame*)b;
       if (frame->cursor > CONSOLE_COLUMNS * CONSOLE_ROWS) return S_INVALID;
       console_present(frame->cells, frame->cursor);
@@ -974,21 +974,21 @@ static int syscall(Frame* f) {
       if (b!=sizeof(TerminalRequest) || c) return S_INVALID;
       TerminalRequest request;
       UACCESS_TRY(copy_from_user(user_pd, &request, a, sizeof(request)));
-      u32 wait_op = 0, timeout = request.extra;
+      WaitReason wait_op = WaitReason::NONE; u32 timeout = request.extra;
       if (request.op == TERM_READ && request.value == TERM_READ_BLOCK) {
-        wait_op = WAIT_TERM_READ;
+        wait_op = WaitReason::TERM_READ;
         request.value = 0;
       } else if (request.op == IX_RESULT && (request.extra & IX_RESULT_BLOCK)) {
-        wait_op = WAIT_IX_RESULT;
+        wait_op = WaitReason::IX_RESULT;
         timeout &= ~IX_RESULT_BLOCK;
       }
-      if (wait_op) {
+      if (wait_op != WaitReason::NONE) {
         if (timeout > STREAM_WAIT_MAX) return S_INVALID;
         request.extra = 0;
       }
       r = terminal_call(current->handles, current->pid, current->policy, &request, user_pd);
-      if (wait_op && r == S_AGAIN) {
-        o = handle_get(current->handles, request.handle, OBJ_TERM_CLIENT, 0);
+      if (wait_op != WaitReason::NONE && r == S_AGAIN) {
+        o = handle_get(current->handles, request.handle, ObjType::TERM_CLIENT, 0);
         Thread* t = &current->thread[current_thread];
         t->wait_terminal = request;
         thread_block(t, (u32)(o - objects) + 1, wait_op, timeout);
@@ -998,29 +998,29 @@ static int syscall(Frame* f) {
     }
     case SYS_PIPE_CREATE: {
       if (c < sizeof(PipePair)) return S_INVALID;
-      UACCESS_TRY(uaccess_prepare(user_pd, b, sizeof(PipePair), USER_WRITE));
+      UACCESS_TRY(uaccess_prepare(user_pd, b, sizeof(PipePair), UserAccess::WRITE));
       PipePair pair; r = pipe_create(current->handles, a, &pair);
       if (!r) memcpy((void*)b, &pair, sizeof(pair));
       return r;
     }
     case SYS_PIPE_LIMITS: {
       if (c || b < sizeof(PipeLimits)) return S_INVALID;
-      UACCESS_TRY(uaccess_prepare(user_pd, a, sizeof(PipeLimits), USER_WRITE));
+      UACCESS_TRY(uaccess_prepare(user_pd, a, sizeof(PipeLimits), UserAccess::WRITE));
       PipeLimits limits; pipe_limits(&limits); memcpy((void*)a, &limits, sizeof(limits)); return 0;
     }
     case SYS_STREAM_READY: {
       if (b || c) return S_INVALID;
-      if(handle_get(current->handles,a,OBJ_TERM_CLIENT,0)){
+      if(handle_get(current->handles,a,ObjType::TERM_CLIENT,0)){
         TerminalRequest q={TERM_READY,a,0,0,0,0};
         return terminal_call(current->handles,current->pid,current->policy,&q,user_pd);
       }
-      o = handle_get(current->handles, a, OBJ_PIPE_READ, 1);
-      if (!o) o = handle_get(current->handles, a, OBJ_PIPE_WRITE, 2);
+      o = handle_get(current->handles, a, ObjType::PIPE_READ, 1);
+      if (!o) o = handle_get(current->handles, a, ObjType::PIPE_WRITE, 2);
       if (o) return pipe_ready(o);
-      o = handle_get(current->handles, a, OBJ_STREAM, 0);
+      o = handle_get(current->handles, a, ObjType::STREAM, 0);
       if (!o || current->completion_object != (u32)(o->value / 3) + 1) return S_BADHANDLE;
       u32 role = (u32)o->value % 3;
-      if (!handle_get(current->handles, a, OBJ_STREAM, role ? 2 : 1)) return S_BADHANDLE;
+      if (!handle_get(current->handles, a, ObjType::STREAM, role ? 2 : 1)) return S_BADHANDLE;
       RunData* run = completions[objects[o->value / 3].value].run;
       if (!role) return STREAM_READABLE | (run->input_position == run->input_bytes ? STREAM_EOF : 0);
       return run->length[role - 1] < RUN_BYTES ? STREAM_WRITABLE : STREAM_LIMIT;
@@ -1029,12 +1029,12 @@ static int syscall(Frame* f) {
       if (a > 1 || b || c) return S_INVALID;
       u32 directory = a ? current->boot_directory : current->directory;
       if (!directory) return S_NOTFOUND;
-      return handle_get(current->handles, directory, OBJ_DIRECTORY, 0)
+      return handle_get(current->handles, directory, ObjType::DIRECTORY, 0)
                  ? (int)directory : S_BADHANDLE;
     }
     case SYS_RUN_START: {
       if (c || (b != sizeof(RunSpec) && b != sizeof(RunSpecV2) && b != sizeof(RunSpecV3))) return S_INVALID;
-      UACCESS_TRY(uaccess_prepare(user_pd, a, b, USER_READ));
+      UACCESS_TRY(uaccess_prepare(user_pd, a, b, UserAccess::READ));
       RunSpec spec; memcpy(&spec, (void*)a, sizeof(spec));
       u32 directory = 0, rights = 0, streams[3] = {0, 0, 0};
       if (b >= sizeof(RunSpecV2)) {
@@ -1051,20 +1051,20 @@ static int syscall(Frame* f) {
       }
       if (spec.argc > RUN_ARGC || spec.argv_bytes > RUN_ARGS || spec.input_bytes > RUN_BYTES) return S_INVALID;
       UACCESS_TRY(copy_string_from_user(user_pd, path, spec.path, sizeof(path)));
-      if (spec.argc) UACCESS_TRY(uaccess_prepare(user_pd, spec.offsets, spec.argc * 4, USER_READ));
-      if (spec.argv_bytes) UACCESS_TRY(uaccess_prepare(user_pd, spec.argv, spec.argv_bytes, USER_READ));
-      if (spec.input_bytes) UACCESS_TRY(uaccess_prepare(user_pd, spec.input, spec.input_bytes, USER_READ));
+      if (spec.argc) UACCESS_TRY(uaccess_prepare(user_pd, spec.offsets, spec.argc * 4, UserAccess::READ));
+      if (spec.argv_bytes) UACCESS_TRY(uaccess_prepare(user_pd, spec.argv, spec.argv_bytes, UserAccess::READ));
+      if (spec.input_bytes) UACCESS_TRY(uaccess_prepare(user_pd, spec.input, spec.input_bytes, UserAccess::READ));
       spec.path = (u32)path;
       return process_run_start_bound(current->handles, &spec, directory, rights, streams);
     }
     case SYS_RUN_LIMITS: {
       if (c || b < sizeof(RunLimits)) return S_INVALID;
-      UACCESS_TRY(uaccess_prepare(user_pd, a, sizeof(RunLimits), USER_WRITE));
+      UACCESS_TRY(uaccess_prepare(user_pd, a, sizeof(RunLimits), UserAccess::WRITE));
       RunLimits limits; process_run_limits(&limits); memcpy((void*)a, &limits, sizeof(limits)); return 0;
     }
     case SYS_CLI_INFO: {
       if (c || b < sizeof(CliInfo)) return S_INVALID;
-      UACCESS_TRY(uaccess_prepare(user_pd, a, sizeof(CliInfo), USER_WRITE));
+      UACCESS_TRY(uaccess_prepare(user_pd, a, sizeof(CliInfo), UserAccess::WRITE));
       if (current->interactive) { memcpy((void*)a,current->interactive,sizeof(CliInfo)); return 0; }
       if (!current->completion_object) return S_NOTFOUND;
       RunData* run = completions[objects[current->completion_object - 1].value].run;
@@ -1075,7 +1075,7 @@ static int syscall(Frame* f) {
     case SYS_STREAM_WRITE: {
       int reading = f->eax == SYS_STREAM_READ;
       int blocking = (c & STREAM_BLOCK_FLAG) != 0;
-      if (!blocking && handle_get(current->handles, a, OBJ_TERM_CLIENT, 0)) {
+      if (!blocking && handle_get(current->handles, a, ObjType::TERM_CLIENT, 0)) {
         TerminalRequest q={reading?TERM_READ:TERM_WRITE,a,b,c,0,0};
         return terminal_call(current->handles,current->pid,current->policy,&q,user_pd);
       }
@@ -1085,19 +1085,19 @@ static int syscall(Frame* f) {
         r = transfer_pipe(o, reading, b, c & ~STREAM_BLOCK_FLAG);
         if (blocking && r == S_AGAIN) {
           thread_block(&current->thread[current_thread], pipe_peer(o),
-                       reading ? WAIT_PIPE_READ : WAIT_PIPE_WRITE, f->esi);
+                       reading ? WaitReason::PIPE_READ : WaitReason::PIPE_WRITE, f->esi);
           leave(f);
         }
         return r;
       }
       if (blocking) return S_BADHANDLE;
-      o = handle_get(current->handles, a, OBJ_STREAM, reading ? 1 : 2);
+      o = handle_get(current->handles, a, ObjType::STREAM, reading ? 1 : 2);
       if (!o || current->completion_object != (u32)(o->value / 3) + 1) return S_BADHANDLE;
       u32 role = (u32)o->value % 3;
       if ((reading && role != 0) || (!reading && role == 0)) return S_BADHANDLE;
       if (!c) return 0;
       if (c > RUN_IO_MAX) return S_INVALID;
-      UACCESS_TRY(uaccess_prepare(user_pd, b, c, (reading) ? USER_WRITE : USER_READ));
+      UACCESS_TRY(uaccess_prepare(user_pd, b, c, (reading) ? UserAccess::WRITE : UserAccess::READ));
       RunData* run = completions[objects[o->value / 3].value].run;
       u32 bytes;
       if (reading) {
@@ -1120,11 +1120,11 @@ static int syscall(Frame* f) {
     }
     case SYS_RUN_RESULT:
     case SYS_PROCESS_RESULT: {
-      o = handle_get(current->handles, a, OBJ_PROCESS, PROCESS_WAIT);
+      o = handle_get(current->handles, a, ObjType::PROCESS, PROCESS_WAIT);
       r = user_completion_result(f, o);
       if (c == RESULT_BLOCK_FLAG && r == S_AGAIN) {
         thread_block(&current->thread[current_thread], (u32)(o - objects) + 1,
-                     WAIT_COMPLETION, f->esi);
+                     WaitReason::COMPLETION, f->esi);
         leave(f);
       }
       return r;
@@ -1134,7 +1134,7 @@ static int syscall(Frame* f) {
       RunRead read;
       UACCESS_TRY(copy_from_user(user_pd, &read, b, sizeof(read)));
       if (read.capacity > RUN_IO_MAX) return S_INVALID;
-      if (read.capacity) UACCESS_TRY(uaccess_prepare(user_pd, read.buffer, read.capacity, USER_WRITE));
+      if (read.capacity) UACCESS_TRY(uaccess_prepare(user_pd, read.buffer, read.capacity, UserAccess::WRITE));
       return process_run_read(current->handles, a, read.role, read.offset, (void*)read.buffer, read.capacity);
     }
     case SYS_SPAWN_TRACKED: {
@@ -1148,7 +1148,7 @@ static int syscall(Frame* f) {
       return tracked_launch(current->handles, path, args, 0);
     }
     case SYS_PROCESS_CANCEL:
-      o = handle_get(current->handles, a, OBJ_PROCESS, PROCESS_CANCEL);
+      o = handle_get(current->handles, a, ObjType::PROCESS, PROCESS_CANCEL);
       if (!o) return S_BADHANDLE;
       if (b || c) return S_INVALID;
       return process_cancel_owned(current->handles, a);
@@ -1190,15 +1190,15 @@ static int syscall(Frame* f) {
     }
     case SYS_SENDTO:
     case SYS_RECVFROM:
-      UACCESS_TRY(uaccess_prepare(user_pd, b, sizeof(SockMessage), (f->eax == SYS_RECVFROM) ? USER_WRITE : USER_READ));
-      o = handle_get(current->handles, a, OBJ_SOCKET,
+      UACCESS_TRY(uaccess_prepare(user_pd, b, sizeof(SockMessage), (f->eax == SYS_RECVFROM) ? UserAccess::WRITE : UserAccess::READ));
+      o = handle_get(current->handles, a, ObjType::SOCKET,
                      f->eax == SYS_SENDTO ? 2 : 1);
       if (!o)
         return S_BADHANDLE;
       {
         SockMessage* m = (SockMessage*)b;
         if (m->size > 1024) return S_INVALID;
-        UACCESS_TRY(uaccess_prepare(user_pd, m->buffer, m->size, (f->eax == SYS_RECVFROM) ? USER_WRITE : USER_READ));
+        UACCESS_TRY(uaccess_prepare(user_pd, m->buffer, m->size, (f->eax == SYS_RECVFROM) ? UserAccess::WRITE : UserAccess::READ));
         return f->eax == SYS_SENDTO ? net_sendto(o->value, (const u8*)m->buffer,
                                                  m->size, &m->address)
                                     : net_recvfrom(o->value, (u8*)m->buffer,
@@ -1208,7 +1208,7 @@ static int syscall(Frame* f) {
       n = net_socket((int)a);
       if (n < 0)
         return n;
-      r = object_new(OBJ_SOCKET, n);
+      r = object_new(ObjType::SOCKET, n);
       if (r < 0) {
         net_close(n);
         return r;
@@ -1221,23 +1221,23 @@ static int syscall(Frame* f) {
       return n;
     case SYS_BIND:
     case SYS_CONNECT:
-      o = handle_get(current->handles, a, OBJ_SOCKET, 2);
+      o = handle_get(current->handles, a, ObjType::SOCKET, 2);
       if (!o)
         return S_BADHANDLE;
-      UACCESS_TRY(uaccess_prepare(user_pd, b, sizeof(SockAddress), USER_READ));
+      UACCESS_TRY(uaccess_prepare(user_pd, b, sizeof(SockAddress), UserAccess::READ));
       return f->eax == SYS_BIND ? net_bind(o->value, (const SockAddress*)b)
                                 : net_connect(o->value, (const SockAddress*)b);
     case SYS_LISTEN:
-      o = handle_get(current->handles, a, OBJ_SOCKET, 2);
+      o = handle_get(current->handles, a, ObjType::SOCKET, 2);
       return o ? net_listen(o->value) : S_BADHANDLE;
     case SYS_ACCEPT:
-      o = handle_get(current->handles, a, OBJ_SOCKET, 1);
+      o = handle_get(current->handles, a, ObjType::SOCKET, 1);
       if (!o)
         return S_BADHANDLE;
       n = net_accept(o->value);
       if (n < 0)
         return n;
-      r = object_new(OBJ_SOCKET, n);
+      r = object_new(ObjType::SOCKET, n);
       if (r < 0) {
         net_close(n);
         return r;
@@ -1250,33 +1250,33 @@ static int syscall(Frame* f) {
       return n;
     case SYS_SEND:
     case SYS_RECV:
-      o = handle_get(current->handles, a, OBJ_SOCKET,
+      o = handle_get(current->handles, a, ObjType::SOCKET,
                      f->eax == SYS_SEND ? 2 : 1);
       if (!o)
         return S_BADHANDLE;
       if (c > 1024) return S_INVALID;
-      UACCESS_TRY(uaccess_prepare(user_pd, b, c, (f->eax == SYS_RECV) ? USER_WRITE : USER_READ));
+      UACCESS_TRY(uaccess_prepare(user_pd, b, c, (f->eax == SYS_RECV) ? UserAccess::WRITE : UserAccess::READ));
       return f->eax == SYS_SEND ? net_send(o->value, (const u8*)b, c)
                                 : net_recv(o->value, (u8*)b, c);
     case SYS_NET_READY:
-      o = handle_get(current->handles, a, OBJ_SOCKET, 1);
+      o = handle_get(current->handles, a, ObjType::SOCKET, 1);
       return o ? net_ready(o->value) : S_BADHANDLE;
     case SYS_NET_INFO:
-      UACCESS_TRY(uaccess_prepare(user_pd, a, sizeof(NetStats), USER_WRITE));
+      UACCESS_TRY(uaccess_prepare(user_pd, a, sizeof(NetStats), UserAccess::WRITE));
       *(NetStats*)a = net_loop.stats;
       return 0;
     case SYS_PING:
       return net_ping(a, b);
     case SYS_CALENDAR: {
       if (c || b < sizeof(CalendarTime)) return S_INVALID;
-      UACCESS_TRY(uaccess_prepare(user_pd, a, sizeof(CalendarTime), USER_WRITE));
+      UACCESS_TRY(uaccess_prepare(user_pd, a, sizeof(CalendarTime), UserAccess::WRITE));
       RtcDateTime date; int result=rtc_read(&date);
       if(!result){CalendarTime out={sizeof(out),1,date.year,date.month,date.day,date.hour,date.minute,date.second};memcpy((void*)a,&out,sizeof(out));}
       return result;
     }
     case SYS_TIME:
       if (b < sizeof(TimeOfDay)) return S_INVALID;
-      UACCESS_TRY(uaccess_prepare(user_pd, a, sizeof(TimeOfDay), USER_WRITE));
+      UACCESS_TRY(uaccess_prepare(user_pd, a, sizeof(TimeOfDay), UserAccess::WRITE));
       {
         TimeOfDay value;
         int result = rtc_time(&value);
@@ -1333,7 +1333,7 @@ static int syscall(Frame* f) {
       return (int)ticks;
     case SYS_LOG:
       if (c > 1024) return S_INVALID;
-      UACCESS_TRY(uaccess_prepare(user_pd, a, c, USER_READ));
+      UACCESS_TRY(uaccess_prepare(user_pd, a, c, UserAccess::READ));
       klog_write_bytes((const void*)a, c);
       return (int)c;
     case SYS_WINDOW:
@@ -1347,9 +1347,9 @@ static int syscall(Frame* f) {
       if (r == S_OK)
         for (int i = 0; i < NT; i++) {
           Thread* t = &current->thread[i];
-          u32 handle = (t->wait_op == WAIT_TERM_READ || t->wait_op == WAIT_IX_RESULT)
+          u32 handle = (t->wait_op == WaitReason::TERM_READ || t->wait_op == WaitReason::IX_RESULT)
                            ? t->wait_terminal.handle : t->saved.frame.ebx;
-          if (t->wait_op && handle == a)
+          if (t->wait_op != WaitReason::NONE && handle == a)
             thread_finish_wait(t, S_BADHANDLE, ticks);
         }
       return r;
@@ -1361,7 +1361,7 @@ static int syscall(Frame* f) {
       if (n < 0)
         return S_NOTFOUND;
       if (c > MAX_FILE) return S_INVALID;
-      UACCESS_TRY(uaccess_prepare(user_pd, b, c, USER_WRITE));
+      UACCESS_TRY(uaccess_prepare(user_pd, b, c, UserAccess::WRITE));
       if (nodes[n].size > c)
         return S_LIMIT;
       return vfs_read(n, (u8*)b, c) < 0 ? S_IO : (int)nodes[n].size;
@@ -1370,7 +1370,7 @@ static int syscall(Frame* f) {
       if (r)
         return r;
       if (c > MAX_FILE) return S_INVALID;
-      UACCESS_TRY(uaccess_prepare(user_pd, b, c, USER_READ));
+      UACCESS_TRY(uaccess_prepare(user_pd, b, c, UserAccess::READ));
       n = vfs_lookup(path);
       if (n >= 0 && nodes[n].dir)
         return S_INVALID;
@@ -1405,7 +1405,7 @@ static int syscall(Frame* f) {
       if (n < 0 || !nodes[n].dir)
         return S_NOTFOUND;
       if (c > VFS_NODES) return S_INVALID;
-      UACCESS_TRY(uaccess_prepare(user_pd, b, c * sizeof(FileInfo), USER_WRITE));
+      UACCESS_TRY(uaccess_prepare(user_pd, b, c * sizeof(FileInfo), UserAccess::WRITE));
       {
         u32 count = 0;
         FileInfo* out = (FileInfo*)b;
@@ -1434,7 +1434,7 @@ static int syscall(Frame* f) {
       return process_kill(a, (int)b);
     case SYS_PROCESSES:
       if (c > NP) return S_INVALID;
-      UACCESS_TRY(uaccess_prepare(user_pd, b, c * sizeof(ProcessInfo), USER_WRITE));
+      UACCESS_TRY(uaccess_prepare(user_pd, b, c * sizeof(ProcessInfo), UserAccess::WRITE));
       return process_list((ProcessInfo*)b, c);
     case SYS_SYNC:
       if (storage_sync())
@@ -1448,7 +1448,7 @@ static int syscall(Frame* f) {
           paging_user_flags(current->pd, a) != (PAGE_PRESENT | PAGE_USER))
         return S_INVALID;
       for (int i = 1; i < NT; i++)
-        if (current->thread[i].state == THREAD_UNUSED) {
+        if (current->thread[i].state == ThreadState::UNUSED) {
           if (!alloc_user_stack(current, i))
             return S_NOMEM;
           initial(&current->thread[i], a, user_stack_top(current, i));
@@ -1456,10 +1456,10 @@ static int syscall(Frame* f) {
         }
       return S_LIMIT;
     case SYS_THREAD_EXIT: {
-      current->thread[current_thread].state = THREAD_UNUSED;
+      current->thread[current_thread].state = ThreadState::UNUSED;
       int live = 0;
       for (int i = 0; i < NT; i++)
-        if (current->thread[i].state != THREAD_UNUSED)
+        if (current->thread[i].state != ThreadState::UNUSED)
           live = 1;
       if (!live) {
         current->state = 2;
@@ -1472,7 +1472,7 @@ static int syscall(Frame* f) {
       return 0;
     }
     case SYS_EVENT_CREATE:
-      n = object_new(OBJ_EVENT, 0);
+      n = object_new(ObjType::EVENT, 0);
       if (n < 0)
         return n;
       r = handle_open(current->handles, n, 3);
@@ -1480,7 +1480,7 @@ static int syscall(Frame* f) {
         objects[n].refs = 0;
       return r;
     case SYS_EVENT_SET:
-      o = handle_get(current->handles, a, OBJ_EVENT, 2);
+      o = handle_get(current->handles, a, ObjType::EVENT, 2);
       if (!o)
         return S_BADHANDLE;
       o->value = !!b;
@@ -1489,7 +1489,7 @@ static int syscall(Frame* f) {
      * 替换方向：接入公共线程等待机制，由 Set/关闭/超时唤醒，明确手动或自动
      * 复位语义；不能仅将这里改成循环，否则会阻塞整个不可抢占内核。 */
     case SYS_EVENT_WAIT:
-      o = handle_get(current->handles, a, OBJ_EVENT, 1);
+      o = handle_get(current->handles, a, ObjType::EVENT, 1);
       if (!o)
         return S_BADHANDLE;
       return o->value ? 0 : S_AGAIN;
@@ -1539,7 +1539,7 @@ int process_interrupt(Frame* f) {
     if (user_switch_out) {
       Thread* t = &current->thread[current_thread];
       /* A parked syscall keeps its number for the retry. */
-      if (t->state != THREAD_BLOCKED)
+      if (t->state != ThreadState::BLOCKED)
         t->saved.frame.eax = (u32)r;
     }
     return 1;
@@ -1581,14 +1581,14 @@ void process_step(void) {
     int which = cursor++ % (NP * NT);
     Process* p = &processes[which / NT];
     Thread* t = &p->thread[which % NT];
-    if (p->state != 1 || t->state != THREAD_ACTIVE || (i32)(ticks - t->wake) < 0)
+    if (p->state != 1 || t->state != ThreadState::ACTIVE || (i32)(ticks - t->wake) < 0)
       continue;
     current = p;
     current_thread = which % NT;
     user_switch_out = 0;
     cli();
     paging_activate(p->pd);
-    int ready = !t->wait_op || retry_wait(t);
+    int ready = t->wait_op == WaitReason::NONE || retry_wait(t);
     if (ready) {
       quantum_end = ticks + 2;
       tss[1] = (u32)p->kernel_stack + 2 * PAGE_SIZE;
@@ -1618,7 +1618,7 @@ int process_list(ProcessInfo* out, u32 cap) {
       v->exit_code = p->code;
       memcpy(v->name, p->name, 32);
       for (int j = 0; j < NT; j++)
-        if (p->thread[j].state != THREAD_UNUSED)
+        if (p->thread[j].state != ThreadState::UNUSED)
           v->threads++;
       v->pages = paging_user_count(p->pd);
     }

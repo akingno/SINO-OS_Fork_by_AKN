@@ -10,9 +10,15 @@
 volatile u32 ticks;
 static u8 storage_test_boot_drive;
 static u32 storage_test_boot_signature;
+#ifdef __cplusplus
+extern "C" {
+#endif
 int streq(const char*, const char*);
 void number(u32, char*);
 void pr_debug(const char*);
+#ifdef __cplusplus
+}
+#endif
 #include "storage-under-test.inc"
 
 #define TEST_SECTORS 16400u
@@ -28,7 +34,11 @@ Disk disks[4];
 int streq(const char* a, const char* b) {
   return strcmp(a, b) == 0;
 }
-int page_free(void* p) {
+int page_free(phys_t p) {
+  (void)p;
+  return 1;
+}
+int kpage_free(void* p) {
   (void)p;
   return 1;
 }
@@ -111,8 +121,8 @@ static void reset(void) {
   storage_partition = volume_base = sectors = changed_at = ticks = 0;
   loading = 0;
   storage_error = "No data disk attached";
-  storage_error_key = STORAGE_ERROR_NO_DATA_DISK_ATTACHED;
-  reported_error = TEXT_NONE;
+  storage_error_key = TextKey::STORAGE_ERROR_NO_DATA_DISK_ATTACHED;
+  reported_error = TextKey::NONE;
   log_size = 0;
   diagnostic[0] = 0;
 }

@@ -43,7 +43,7 @@ static inline void* phys_to_virt(phys_t address) {
   return (void*)address;
 }
 static inline phys_t virt_to_phys(const void* pointer) {
-  return (phys_t)pointer;
+  return (phys_t)(__UINTPTR_TYPE__)pointer;
 }
 
 #ifdef __cplusplus

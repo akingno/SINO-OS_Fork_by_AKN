@@ -14,12 +14,12 @@
 int storage_ready, storage_dirty;
 u32 storage_generation;
 const char* storage_error = "No data disk attached";
-TextKey storage_error_key = STORAGE_ERROR_NO_DATA_DISK_ATTACHED;
+TextKey storage_error_key = TextKey::STORAGE_ERROR_NO_DATA_DISK_ATTACHED;
 static TextKey reported_error;
 static void storage_set_error(TextKey key) {
   storage_error_key = key;
   storage_error = locale_text_for(1, key);
-  if (key != TEXT_NONE && key != reported_error) {
+  if (key != TextKey::NONE && key != reported_error) {
     pr_debug("STORAGE failed: ");
     pr_debug(storage_error);
     pr_debug("\n");
@@ -253,12 +253,12 @@ int storage_sync(void) {
       total += 160 + (nodes[i].dir ? 0 : nodes[i].size);
     }
   if (total > (BANK_SECTORS - 1) * 512) {
-    storage_set_error(STORAGE_ERROR_DATA_VOLUME_IS_FULL);
+    storage_set_error(TextKey::STORAGE_ERROR_DATA_VOLUME_IS_FULL);
     return 0;
   }
   memset(io_sector, 0, 512);
   if (!ata_write(BANK_START(bank), io_sector)) {
-    storage_set_error(STORAGE_ERROR_DATA_DISK_WRITE_FAILED);
+    storage_set_error(TextKey::STORAGE_ERROR_DATA_DISK_WRITE_FAILED);
     return 0;
   }
   Writer w = {BANK_START(bank) + 1, 0, 0, 0xffffffff, 1, {0}};
@@ -284,7 +284,7 @@ int storage_sync(void) {
     w.ok = ata_write(w.lba, w.data);
   }
   if (!w.ok || !ata_flush()) {
-    storage_set_error(STORAGE_ERROR_DATA_DISK_PAYLOAD_FAILED);
+    storage_set_error(TextKey::STORAGE_ERROR_DATA_DISK_PAYLOAD_FAILED);
     return 0;
   }
   memset(io_sector, 0, 512);
@@ -297,13 +297,13 @@ int storage_sync(void) {
   header[5] = w.crc ^ 0xffffffff;
   header[6] = 0x434f4d54;
   if (!ata_write(BANK_START(bank), io_sector) || !ata_flush()) {
-    storage_set_error(STORAGE_ERROR_DATA_DISK_COMMIT_FAILED);
+    storage_set_error(TextKey::STORAGE_ERROR_DATA_DISK_COMMIT_FAILED);
     return 0;
   }
   storage_generation++;
   current_bank = bank;
   storage_dirty = 0;
-  storage_set_error(TEXT_NONE);
+  storage_set_error(TextKey::NONE);
   pr_debug("STORAGE committed generation ");
   char b[11];
   number(storage_generation, b);
@@ -329,7 +329,7 @@ void storage_init(void) {
     return;
   }
   if (!ata_read(volume_base, io_sector)) {
-    storage_set_error(STORAGE_ERROR_DATA_VOLUME_HEADER_READ_FAILED);
+    storage_set_error(TextKey::STORAGE_ERROR_DATA_VOLUME_HEADER_READ_FAILED);
     return;
   }
   const char magic[8] = {'S', 'I', 'N', 'O', 'D', 'S', 'K', '1'};
@@ -341,7 +341,7 @@ void storage_init(void) {
     if (io_sector[i])
       blank = 0;
   if (!known && !blank) {
-    storage_set_error(STORAGE_ERROR_UNRECOGNIZED_DATA_DISK_WRITES_DISABLED);
+    storage_set_error(TextKey::STORAGE_ERROR_UNRECOGNIZED_DATA_DISK_WRITES_DISABLED);
     return;
   }
   Snapshot a = inspect(0), b = inspect(1);
@@ -357,14 +357,14 @@ void storage_init(void) {
     }
     loading = 0;
     if (!ok) {
-      storage_set_error(STORAGE_ERROR_DATA_SNAPSHOT_RESTORE_FAILED);
+      storage_set_error(TextKey::STORAGE_ERROR_DATA_SNAPSHOT_RESTORE_FAILED);
       return;
     }
     storage_generation = first.generation;
     current_bank = first.bank;
     storage_ready = 1;
     storage_dirty = 0;
-    storage_set_error(TEXT_NONE);
+    storage_set_error(TextKey::NONE);
     pr_debug("STORAGE restored generation ");
     char number_text[11];
     number(storage_generation, number_text);
@@ -374,21 +374,21 @@ void storage_init(void) {
     memset(io_sector, 0, 512);
     memcpy(io_sector, magic, 8);
     if (!ata_write(volume_base, io_sector)) {
-      storage_set_error(STORAGE_ERROR_DATA_VOLUME_HEADER_WRITE_FAILED);
+      storage_set_error(TextKey::STORAGE_ERROR_DATA_VOLUME_HEADER_WRITE_FAILED);
       return;
     }
     if (!ata_flush()) {
-      storage_set_error(STORAGE_ERROR_DATA_VOLUME_HEADER_FLUSH_FAILED);
+      storage_set_error(TextKey::STORAGE_ERROR_DATA_VOLUME_HEADER_FLUSH_FAILED);
       return;
     }
     storage_ready = 1;
-    storage_set_error(TEXT_NONE);
+    storage_set_error(TextKey::NONE);
     storage_dirty = 1;
     if (!storage_sync())
       return;
     pr_debug("STORAGE initialized SINO data volume\n");
   } else {
-    storage_set_error(STORAGE_ERROR_NO_VALID_DATA_SNAPSHOT_WRITES_DISABLED);
+    storage_set_error(TextKey::STORAGE_ERROR_NO_VALID_DATA_SNAPSHOT_WRITES_DISABLED);
     pr_debug("STORAGE recovery required\n");
   }
 }

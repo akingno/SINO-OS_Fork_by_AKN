@@ -32,7 +32,7 @@ static void wake_shell(Terminal* t) {
   if (!t->shell)
     return;
   for (u32 i = 0; i < OBJECTS; i++) {
-    if (!objects[i].refs || objects[i].type != OBJ_TERM_CLIENT)
+    if (!objects[i].refs || objects[i].type != ObjType::TERM_CLIENT)
       continue;
     const Client* client = (const Client*)objects[i].value;
     if (client->terminal == t && client->pid == t->shell) {
@@ -96,7 +96,7 @@ static int create(Handle* owner, u32 w, u32 h) {
   t->height = h;
   reset(t);
   count++;
-  int o = object_new(OBJ_TERM_CONTROL, (int)t);
+  int o = object_new(ObjType::TERM_CONTROL, (int)t);
   if (o < 0) {
     unref(t);
     return o;
@@ -107,9 +107,9 @@ static int create(Handle* owner, u32 w, u32 h) {
   return handle;
 }
 static Client* client(Handle* owner, u32 h, u32 pid) {
-  Object* o = handle_get(owner, h, OBJ_TERM_CLIENT, 0);
-  if (!o || (!handle_get(owner, h, OBJ_TERM_CLIENT, 1) &&
-             !handle_get(owner, h, OBJ_TERM_CLIENT, 8)))
+  Object* o = handle_get(owner, h, ObjType::TERM_CLIENT, 0);
+  if (!o || (!handle_get(owner, h, ObjType::TERM_CLIENT, 1) &&
+             !handle_get(owner, h, ObjType::TERM_CLIENT, 8)))
     return 0;
   Client* c = (Client*)o->value;
   return c->pid == pid ? c : 0;
@@ -122,7 +122,7 @@ static int attach(Terminal* t, Handle* target, u32 pid) {
   for (u32 i = 0; i < HANDLES; i++)
     if (target[i].generation) {
       Object* o = &objects[target[i].object];
-      if (o->type != OBJ_TERM_CLIENT)
+      if (o->type != ObjType::TERM_CLIENT)
         continue;
       Client* c = (Client*)o->value;
       if (c->terminal != t)
@@ -137,7 +137,7 @@ static int attach(Terminal* t, Handle* target, u32 pid) {
       return S_NOMEM;
     c->terminal = t;
     c->pid = pid;
-    int o = object_new(OBJ_TERM_CLIENT, (int)c);
+    int o = object_new(ObjType::TERM_CLIENT, (int)c);
     if (o < 0) {
       kpage_free(c);
       return o;
@@ -289,7 +289,7 @@ int terminal_bind_interactive(void* session, Handle* handles, u32 pid,
     return S_NOMEM;
   c->terminal = t;
   c->pid = pid;
-  int object = object_new(OBJ_TERM_CLIENT, (int)c);
+  int object = object_new(ObjType::TERM_CLIENT, (int)c);
   if (object < 0) {
     kpage_free(c);
     return object;
@@ -327,7 +327,7 @@ static int interactive_call(Terminal* t, Client* c, Object* control,
     if (t->phase)
       return S_BUSY;
     if (r->value || r->extra || r->bytes != sizeof(InteractiveSpec)) return S_INVALID;
-    UACCESS_TRY(uaccess_prepare(user_pd, r->buffer, sizeof(InteractiveSpec), USER_READ));
+    UACCESS_TRY(uaccess_prepare(user_pd, r->buffer, sizeof(InteractiveSpec), UserAccess::READ));
     const InteractiveSpec* q = (const InteractiveSpec*)r->buffer;
     if (q->size != sizeof(*q) || q->version != 1 || !q->id ||
         t->request_id == 0xffffffffu || q->id != t->request_id + 1 ||
@@ -358,7 +358,7 @@ static int interactive_call(Terminal* t, Client* c, Object* control,
     if (!c || pid != t->shell)
       return S_DENIED;
     if (r->extra || r->bytes < sizeof(InteractiveResult)) return S_INVALID;
-    UACCESS_TRY(uaccess_prepare(user_pd, r->buffer, sizeof(InteractiveResult), USER_WRITE));
+    UACCESS_TRY(uaccess_prepare(user_pd, r->buffer, sizeof(InteractiveResult), UserAccess::WRITE));
     if (r->value != t->request_id || !t->phase)
       return S_NOTFOUND;
     if (t->phase != 3)
@@ -371,7 +371,7 @@ static int interactive_call(Terminal* t, Client* c, Object* control,
     return S_DENIED;
   if (r->op == IX_REQUEST) {
     if (r->value || r->extra || r->bytes < sizeof(InteractiveSpec)) return S_INVALID;
-    UACCESS_TRY(uaccess_prepare(user_pd, r->buffer, sizeof(InteractiveSpec), USER_WRITE));
+    UACCESS_TRY(uaccess_prepare(user_pd, r->buffer, sizeof(InteractiveSpec), UserAccess::WRITE));
     if (t->phase != 1)
       return S_AGAIN;
     memcpy((void*)r->buffer, &t->request, sizeof(t->request));
@@ -402,7 +402,7 @@ static int interactive_call(Terminal* t, Client* c, Object* control,
     return 0;
   }
   if (r->op != IX_START || r->extra > 1 || r->bytes != sizeof(InteractiveSpec)) return S_INVALID;
-  UACCESS_TRY(uaccess_prepare(user_pd, r->buffer, sizeof(InteractiveSpec), USER_READ));
+  UACCESS_TRY(uaccess_prepare(user_pd, r->buffer, sizeof(InteractiveSpec), UserAccess::READ));
   InteractiveSpec* q = (InteractiveSpec*)kpage_alloc();
   if (!q) {
     if (r->extra == 1 && t->phase == 1) {
@@ -433,7 +433,7 @@ static int interactive_call(Terminal* t, Client* c, Object* control,
         return S_INVALID;
       }
   }
-  Object* directory = q->rights ? handle_get(owner, r->value, OBJ_DIRECTORY,
+  Object* directory = q->rights ? handle_get(owner, r->value, ObjType::DIRECTORY,
                                              q->rights | FS_DELEGATE)
                                 : 0;
   int boot = q->program == IX_BOOTTOOLS;
@@ -486,17 +486,17 @@ int terminal_call(Handle* owner, u32 pid, u32 policy, const TerminalRequest* r,
     for (u32 i = 0; i < HANDLES; i++)
       if (owner[i].generation) {
         u32 h = (owner[i].cookie << 8) | (i + 1);
-        if (handle_get(owner, h, OBJ_TERM_CLIENT, 1) && client(owner, h, pid))
+        if (handle_get(owner, h, ObjType::TERM_CLIENT, 1) && client(owner, h, pid))
           return (int)h;
       }
     return S_NOTFOUND;
   }
-  Object* control = handle_get(owner, r->handle, OBJ_TERM_CONTROL, 1);
+  Object* control = handle_get(owner, r->handle, ObjType::TERM_CONTROL, 1);
   Client* c = client(owner, r->handle, pid);
   Terminal* t = control ? (Terminal*)control->value : c ? c->terminal : 0;
   if (!t)
     return S_BADHANDLE;
-  if (c && handle_get(owner, r->handle, OBJ_TERM_CLIENT, 8) &&
+  if (c && handle_get(owner, r->handle, ObjType::TERM_CLIENT, 8) &&
       r->op != TERM_INFO && r->op != TERM_READ && r->op != TERM_WRITE &&
       r->op != TERM_READY)
     return S_DENIED;
@@ -505,14 +505,14 @@ int terminal_call(Handle* owner, u32 pid, u32 policy, const TerminalRequest* r,
         pid != t->shell || pid != t->foreground || t->closed)
       return S_DENIED;
     if (r->extra || r->bytes != sizeof(DesktopRun)) return S_INVALID;
-    UACCESS_TRY(uaccess_prepare(user_pd, r->buffer, sizeof(DesktopRun), USER_READ));
+    UACCESS_TRY(uaccess_prepare(user_pd, r->buffer, sizeof(DesktopRun), UserAccess::READ));
     return process_desktop_run(pid, r->value, (const DesktopRun*)r->buffer);
   }
   if(r->op>=TERM_EDIT && r->op<=TERM_EDIT_ACK){
     if(r->op==TERM_EDIT_VIEW){
       if(!control)return S_DENIED;
       if (r->value || r->extra || r->bytes!=sizeof(TerminalEdit)) return S_INVALID;
-      UACCESS_TRY(uaccess_prepare(user_pd, r->buffer, sizeof(TerminalEdit), USER_WRITE));
+      UACCESS_TRY(uaccess_prepare(user_pd, r->buffer, sizeof(TerminalEdit), UserAccess::WRITE));
       if(!t->edit_pending||t->output_size)return S_AGAIN;memcpy((void*)r->buffer,&t->edit,sizeof(t->edit));return 0;
     }
     if(r->op==TERM_EDIT_ACK){
@@ -522,7 +522,7 @@ int terminal_call(Handle* owner, u32 pid, u32 policy, const TerminalRequest* r,
     if(!c||pid!=t->shell||pid!=t->foreground)return S_DENIED;
     if(r->op==TERM_EDIT_STATUS){if(r->buffer||r->bytes||r->value||r->extra)return S_INVALID;return t->edit_pending?S_AGAIN:0;}
     if (r->value || r->extra || r->bytes!=sizeof(TerminalEdit)) return S_INVALID;
-    UACCESS_TRY(uaccess_prepare(user_pd, r->buffer, sizeof(TerminalEdit), USER_READ));
+    UACCESS_TRY(uaccess_prepare(user_pd, r->buffer, sizeof(TerminalEdit), UserAccess::READ));
     if(t->edit_pending)return S_AGAIN;
     const TerminalEdit *e=(const TerminalEdit*)r->buffer;
     if(e->bytes>sizeof(e->text)||e->cursor>e->bytes||e->action>2||e->serial)return S_INVALID;
@@ -549,7 +549,7 @@ int terminal_call(Handle* owner, u32 pid, u32 policy, const TerminalRequest* r,
     if (r->bytes > 256 || (r->bytes && r->value != TERM_TEXT))
       return S_INVALID;
     if (r->bytes)
-      UACCESS_TRY(uaccess_prepare(user_pd, r->buffer, r->bytes, USER_READ));
+      UACCESS_TRY(uaccess_prepare(user_pd, r->buffer, r->bytes, UserAccess::READ));
     if (r->value != TERM_TEXT && r->buffer)
       return S_INVALID;
     if (r->value != TERM_KEY && r->value != TERM_RESIZE && r->extra)
@@ -558,7 +558,7 @@ int terminal_call(Handle* owner, u32 pid, u32 policy, const TerminalRequest* r,
   }
   if (r->op == TERM_INFO) {
     if (r->value || r->extra || r->bytes < sizeof(TerminalInfo)) return S_INVALID;
-    UACCESS_TRY(uaccess_prepare(user_pd, r->buffer, sizeof(TerminalInfo), USER_WRITE));
+    UACCESS_TRY(uaccess_prepare(user_pd, r->buffer, sizeof(TerminalInfo), UserAccess::WRITE));
     TerminalInfo info = {sizeof(info),  1,         t->width, t->height, t->mode,
                          t->foreground, t->closed, 0};
     memcpy((void*)r->buffer, &info, sizeof(info));
@@ -585,11 +585,11 @@ int terminal_call(Handle* owner, u32 pid, u32 policy, const TerminalRequest* r,
   }
   if (r->value || r->extra)
     return S_INVALID;
-  int role = handle_get(owner, r->handle, OBJ_TERM_CLIENT, 8) != 0;
+  int role = handle_get(owner, r->handle, ObjType::TERM_CLIENT, 8) != 0;
   if (role && ((r->op == TERM_READ &&
-                !handle_get(owner, r->handle, OBJ_TERM_CLIENT, 2)) ||
+                !handle_get(owner, r->handle, ObjType::TERM_CLIENT, 2)) ||
                (r->op == TERM_WRITE &&
-                !handle_get(owner, r->handle, OBJ_TERM_CLIENT, 4))))
+                !handle_get(owner, r->handle, ObjType::TERM_CLIENT, 4))))
     return S_DENIED;
   if (r->op == TERM_READY) {
     if (r->buffer || r->bytes)
@@ -599,15 +599,15 @@ int terminal_call(Handle* owner, u32 pid, u32 policy, const TerminalRequest* r,
         (!t->closed && t->output_size < 1024 ? STREAM_WRITABLE : 0) |
         (!t->closed && t->eof ? STREAM_EOF : 0) |
         (t->closed ? STREAM_HANGUP : 0);
-    if (role && !handle_get(owner, r->handle, OBJ_TERM_CLIENT, 2))
+    if (role && !handle_get(owner, r->handle, ObjType::TERM_CLIENT, 2))
       ready &= ~(STREAM_READABLE | STREAM_EOF);
-    if (role && !handle_get(owner, r->handle, OBJ_TERM_CLIENT, 4))
+    if (role && !handle_get(owner, r->handle, ObjType::TERM_CLIENT, 4))
       ready &= ~STREAM_WRITABLE;
     return (int)ready;
   }
   if (r->op == TERM_EVENT) {
     if (r->bytes < sizeof(TerminalEvent)) return S_INVALID;
-    UACCESS_TRY(uaccess_prepare(user_pd, r->buffer, sizeof(TerminalEvent), USER_WRITE));
+    UACCESS_TRY(uaccess_prepare(user_pd, r->buffer, sizeof(TerminalEvent), UserAccess::WRITE));
     if (!t->events)
       return t->closed ? S_CLOSED : S_AGAIN;
     memcpy((void*)r->buffer, &t->event[0], sizeof(TerminalEvent));
@@ -619,7 +619,7 @@ int terminal_call(Handle* owner, u32 pid, u32 policy, const TerminalRequest* r,
   if (r->op != TERM_READ && r->op != TERM_WRITE && r->op != TERM_DRAIN)
     return S_INVALID;
   if (r->bytes > 1024) return S_INVALID;
-  if (r->bytes) UACCESS_TRY(uaccess_prepare(user_pd, r->buffer, r->bytes, (r->op != TERM_WRITE) ? USER_WRITE : USER_READ));
+  if (r->bytes) UACCESS_TRY(uaccess_prepare(user_pd, r->buffer, r->bytes, (r->op != TERM_WRITE) ? UserAccess::WRITE : UserAccess::READ));
   if (!r->bytes)
     return 0;
   if (r->op == TERM_WRITE) {

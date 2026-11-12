@@ -13,16 +13,16 @@ static u32 directory, foreign;
 static int active = 1, budget, populated;
 static u32 flags[3], reserved[3];
 static u8* memory;
-u32 process_user_limit(const u32* pd, u32 address) {
+extern "C" u32 process_user_limit(const u32* pd, u32 address) {
   return pd == &directory && address >= BASE && address <= BASE + 3 * PAGE_SIZE
              ? BASE + 3 * PAGE_SIZE : 0;
 }
-int paging_is_active(const u32* pd) { return active && pd == &directory; }
-u32 paging_user_flags(const u32* pd, u32 address) {
+extern "C" int paging_is_active(const u32* pd) { return active && pd == &directory; }
+extern "C" u32 paging_user_flags(const u32* pd, u32 address) {
   if (pd != &directory || address < BASE || address >= BASE + 3 * PAGE_SIZE) return 0;
   return flags[(address - BASE) / PAGE_SIZE];
 }
-int process_anon_page(u32* pd, u32 address, int populate) {
+extern "C" int process_anon_page(u32* pd, u32 address, int populate) {
   if (pd != &directory || address < BASE || address >= BASE + 3 * PAGE_SIZE) return S_INVALID;
   u32 i = (address - BASE) / PAGE_SIZE;
   if (!reserved[i]) return S_INVALID;
@@ -43,7 +43,7 @@ static BootRange range(u32 base, u32 length, u32 type) {
   assert(e820_range(&e, &r)); return r;
 }
 int main(void) {
-  memory = VirtualAlloc((void*)BASE, 3 * PAGE_SIZE, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+  memory = (u8*)VirtualAlloc((void*)BASE, 3 * PAGE_SIZE, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
   assert(memory == (u8*)BASE);
   u32 rounded = 123;
   assert(page_ceil_checked(0, &rounded) && rounded == 0);
@@ -75,18 +75,18 @@ int main(void) {
   assert(e820_page_usable(ranges, 3, 4) && !e820_page_usable(ranges, 3, 6));
   puts("PASS mm.boundaries.reserved-overlap-priority");
   reset(); reserved[0] = 1;
-  assert(uaccess_prepare(&foreign, BASE, 1, USER_READ) == S_INVALID);
-  active = 0; assert(uaccess_prepare(&directory, BASE, 1, USER_READ) == S_INVALID);
+  assert(uaccess_prepare(&foreign, BASE, 1, UserAccess::READ) == S_INVALID);
+  active = 0; assert(uaccess_prepare(&directory, BASE, 1, UserAccess::READ) == S_INVALID);
   assert(!populated);
   puts("PASS mm.boundaries.uaccess-address-space");
   reset();
-  assert(uaccess_prepare(&directory, BASE, 0, USER_READ) == S_OK);
+  assert(uaccess_prepare(&directory, BASE, 0, UserAccess::READ) == S_OK);
   assert(uaccess_prepare(&directory, BASE, 0, (UserAccess)99) == S_INVALID);
-  assert(uaccess_prepare(&directory, 0xffffffffu, 2, USER_READ) == S_INVALID);
-  assert(uaccess_prepare(&directory, BASE + 3 * PAGE_SIZE, 1, USER_READ) == S_INVALID);
+  assert(uaccess_prepare(&directory, 0xffffffffu, 2, UserAccess::READ) == S_INVALID);
+  assert(uaccess_prepare(&directory, BASE + 3 * PAGE_SIZE, 1, UserAccess::READ) == S_INVALID);
   flags[0] = PAGE_PRESENT | PAGE_USER;
-  assert(uaccess_prepare(&directory, BASE, 1, USER_READ) == S_OK);
-  assert(uaccess_prepare(&directory, BASE, 1, USER_WRITE) == S_INVALID && !populated);
+  assert(uaccess_prepare(&directory, BASE, 1, UserAccess::READ) == S_OK);
+  assert(uaccess_prepare(&directory, BASE, 1, UserAccess::WRITE) == S_INVALID && !populated);
   puts("PASS mm.boundaries.uaccess-permissions-and-bounds");
   reset(); reserved[0] = 1; char out[4] = "old";
   assert(copy_from_user(&directory, out, BASE + PAGE_SIZE - 2, 4) == S_INVALID);
@@ -100,7 +100,7 @@ int main(void) {
   assert(copy_to_user(&directory, BASE, "ok", 3) == S_OK && !memcmp(memory, "ok", 3));
   /* Model unmap returns the retained page; a fresh reservation starts zeroed. */
   flags[0] = 0; budget = 1;
-  assert(uaccess_prepare(&directory, BASE, 1, USER_READ) == S_OK && memory[0] == 0);
+  assert(uaccess_prepare(&directory, BASE, 1, UserAccess::READ) == S_OK && memory[0] == 0);
   puts("PASS mm.boundaries.partial-population-oom");
   reset(); flags[0] = flags[1] = PAGE_PRESENT | PAGE_USER | PAGE_WRITE;
   memory[PAGE_SIZE - 2] = 'a'; memory[PAGE_SIZE - 1] = 0;

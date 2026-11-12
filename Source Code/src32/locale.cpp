@@ -2,9 +2,9 @@
 int settings_language;
 #include "locale_data.inc"
 const char* locale_text_for(int language, TextKey key) {
-  if ((u32)key >= TEXT_KEY_COUNT)
+  if ((u32)key >= (u32)TEXT_KEY_COUNT)
     return "[invalid text key]";
-  return resources[key][language == 0 ? 0 : 1];
+  return resources[(int)key][language == 0 ? 0 : 1];
 }
 const char* locale_text(TextKey key) {
   return locale_text_for(settings_language, key);

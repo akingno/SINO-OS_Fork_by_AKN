@@ -9,7 +9,7 @@
 #include "panic.h"
 Object objects[OBJECTS];
 static u32 generation, cookie;
-int object_new(u32 type, int value) {
+int object_new(ObjType type, int value) {
   for (int i = 0; i < OBJECTS; i++)
     if (!objects[i].refs) {
       if (generation >= 0x7fffffu)
@@ -33,7 +33,7 @@ int handle_open(Handle* table, int index, u32 rights) {
     }
   return S_LIMIT;
 }
-Object* handle_get(Handle* table, u32 h, u32 type, u32 rights) {
+Object* handle_get(Handle* table, u32 h, ObjType type, u32 rights) {
   u32 slot = (h & 255) - 1;
   if (slot >= HANDLES)
     return 0;
@@ -49,15 +49,15 @@ void object_unref(int index) {
   if (index < 0 || index >= OBJECTS || !objects[index].refs) return;
   Object* o = &objects[index];
   if (!--o->refs) {
-    if (o->type == OBJ_SOCKET) net_close(o->value);
-    else if (o->type == OBJ_PROCESS) process_completion_release(o->value);
-    else if (o->type == OBJ_STREAM) process_stream_release(o->value);
-    else if (o->type == OBJ_DIRECTORY || o->type == OBJ_FILE || o->type == OBJ_STAGING)
+    if (o->type == ObjType::SOCKET) net_close(o->value);
+    else if (o->type == ObjType::PROCESS) process_completion_release(o->value);
+    else if (o->type == ObjType::STREAM) process_stream_release(o->value);
+    else if (o->type == ObjType::DIRECTORY || o->type == ObjType::FILE || o->type == ObjType::STAGING)
       filesys_release(o->value);
-    else if (o->type == OBJ_PIPE_READ || o->type == OBJ_PIPE_WRITE)
+    else if (o->type == ObjType::PIPE_READ || o->type == ObjType::PIPE_WRITE)
       pipe_release(o);
-    else if(o->type==OBJ_TERM_CONTROL||o->type==OBJ_TERM_CLIENT)
-      terminal_release(o->value,o->type==OBJ_TERM_CLIENT);
+    else if(o->type==ObjType::TERM_CONTROL||o->type==ObjType::TERM_CLIENT)
+      terminal_release(o->value,o->type==ObjType::TERM_CLIENT);
   }
 }
 int handle_close(Handle* table, u32 h) {
@@ -95,15 +95,15 @@ void handles_close(Handle* t) {
 void object_tests(void) {
   Handle t[HANDLES];
   memset(t, 0, sizeof(t));
-  int o = object_new(OBJ_EVENT, 0), h = handle_open(t, o, 3);
-  if (h < 0 || !handle_get(t, (u32)h, OBJ_EVENT, 1) ||
-      handle_get(t, (u32)h, OBJ_WINDOW, 1) ||
-      handle_get(t, (u32)h, OBJ_EVENT, 4) || handle_close(t, (u32)h) ||
-      handle_get(t, (u32)h, OBJ_EVENT, 1) ||
+  int o = object_new(ObjType::EVENT, 0), h = handle_open(t, o, 3);
+  if (h < 0 || !handle_get(t, (u32)h, ObjType::EVENT, 1) ||
+      handle_get(t, (u32)h, ObjType::WINDOW, 1) ||
+      handle_get(t, (u32)h, ObjType::EVENT, 4) || handle_close(t, (u32)h) ||
+      handle_get(t, (u32)h, ObjType::EVENT, 1) ||
       handle_close(t, (u32)h) != S_BADHANDLE)
     panic("Handle validation", 0, 0);
-  int b = object_new(OBJ_EVENT, 1), k = handle_open(t, b, 1);
-  if (k == h || handle_get(t, (u32)h, OBJ_EVENT, 1))
+  int b = object_new(ObjType::EVENT, 1), k = handle_open(t, b, 1);
+  if (k == h || handle_get(t, (u32)h, ObjType::EVENT, 1))
     panic("Stale handle", 0, 0);
   int duplicate = handle_duplicate(t, (u32)k, 1);
   if (duplicate < 0 || objects[b].refs != 2 ||
@@ -111,7 +111,7 @@ void object_tests(void) {
     panic("Handle duplication rights", 0, 0);
   handle_close(t, (u32)k);
   int newer = handle_duplicate(t, (u32)duplicate, 1);
-  if (newer == k || handle_get(t, (u32)k, OBJ_EVENT, 1))
+  if (newer == k || handle_get(t, (u32)k, ObjType::EVENT, 1))
     panic("Duplicated stale slot", 0, 0);
   handles_close(t);
   if (objects[b].refs)
