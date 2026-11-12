@@ -14,11 +14,18 @@ least 56 columns are available, then the real version, current grid size and
 No kernel drawing/color calls or ANSI parser are required for this banner.
 
 user/shell_commands.h is the command catalog shared by help and which.
-`help [command]` gives supported syntax; `which command` distinguishes a builtin
-from an explicitly cataloged executable. It does not search a global PATH.
+`help` lists every catalog entry by category, including diagnostics and explicitly
+unavailable commands. The list is generated from the command catalog, rather than
+a separate handwritten subset. `help command` gives syntax, purpose, parameter
+and option descriptions; aliases resolve to their canonical command. For example,
+`help echo` describes `-n`, `-e`, supported escapes and output redirection.
+`help status` explains the retained code, completion reason and startup status.
+Unavailable commands can be described with help but cannot be executed.
+`which command` distinguishes a builtin from an explicitly cataloged executable.
+It does not search a global PATH.
 DIR/dir/LS map to ls, TYPE/type/CAT to cat, VER to ver. Write-oriented DOS aliases
 are not advertised before their underlying commands exist. Diagnostic tools
-args/exitcode/spin/fault remain explicit and separate from everyday help.
+args/exitcode/spin/fault appear in the Diagnostics category.
 
 ## Strict tools with no directory grant
 

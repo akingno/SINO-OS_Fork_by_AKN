@@ -277,6 +277,30 @@ static void redirect_echo(u32 op_pos) {
   words.argc++;
   external(IX_WRITETOOLS, FS_LOOKUP | FS_READ | FS_WRITE | FS_CREATE);
 }
+static void help_catalog(void) {
+  put("Commands: help NAME for purpose, parameters and options.\n");
+  const u32 kinds[] = {0, 1, 2, 5, 6, 3, 4};
+  const char *labels[] = {"Shell", "Text/system", "Read files",
+      "Workspace (write session)", "Launch (write session)",
+      "Diagnostics", "Unavailable"};
+  for (u32 group = 0; group < sizeof(kinds) / sizeof(*kinds); group++) {
+    put(labels[group]);
+    put(":\n  ");
+    u32 columns = 2;
+    for (u32 i = 0; i < sizeof(shell_commands) / sizeof(*shell_commands); i++) {
+      const ShellCommand *item = shell_commands + i;
+      if (item->kind != kinds[group]) continue;
+      u32 count = strlen(item->name);
+      if (columns + count + 1 > 76) { put("\n  "); columns = 2; }
+      put(item->name); put(" "); columns += count + 1;
+    }
+    put("\n");
+  }
+  put("echo text > path / >> path: replace / append to a file.\n");
+  put("Aliases: DIR/dir/LS=ls TYPE/type/CAT=cat VER=ver cls=clear\n");
+  put("         md=mkdir del=rm copy=cp ren=mv; / = /home/user\n");
+  put("Scroll history: Shift+PageUp / Shift+PageDown.\n");
+}
 static void execute(void) {
   if (!length)
     return;
@@ -353,7 +377,7 @@ static void execute(void) {
       return;
     if (words.argc == 2) {
       const ShellCommand *item = shell_command(words.bytes + words.offsets[1]);
-      if (!item || item->kind == 4 || (which && item->kind == 6 && !writable)) {
+      if (!item || (which && (item->kind == 4 || (item->kind == 6 && !writable)))) {
         put(which ? "which: unavailable command\n"
                   : "help: unavailable command\n");
         status(1, PROCESS_EXITED, 0);
@@ -361,6 +385,8 @@ static void execute(void) {
       }
       if (!which) {
         put(item->usage);
+        put("\n");
+        put(item->details);
         put("\n");
       } else {
         put(item->name);
@@ -371,18 +397,7 @@ static void execute(void) {
                               : ": /boot/gcmd.snx (catalog 4)\n");
       }
     } else {
-      for (u32 i = 0; i < sizeof(shell_commands) / sizeof(*shell_commands); i++)
-        if (shell_commands[i].kind == 1 || shell_commands[i].kind == 2) {
-          put(shell_commands[i].usage);
-          put("\n");
-        }
-      put("builtins: help pwd cd history status exit\n");
-      put("navigation: which; clear (Ctrl+L); / = /home/user\n");
-      put("identity: whoami hostname env\n");
-      put("workspace (write session): touch mkdir rm rmdir write append cp mv "
-          "sync\n");
-      put("write session: echo text > path, echo text >> path, run, kill, nettest\n");
-      put("diagnostics: args exitcode spin fault\n");
+      help_catalog();
     }
   } else if (streq(command, "whoami")) {
     if (usage(1, 1))

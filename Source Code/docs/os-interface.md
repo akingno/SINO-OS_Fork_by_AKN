@@ -117,7 +117,9 @@ its first stack top at `0x80010000`. The remaining stacks are spaced 32 KiB
 apart with 16 KiB mapped per stack. The dynamic allocator skips pages occupied
 by the actual image. New v2 programs build with `SINO_SNX_ABI=2` and link with
 `--defsym=snx_abi=2`. The repository build selects this through the app's ABI
-entry and keeps existing apps on v1.
+entry. The daily applications `conhost`, `gsh`, `gcmd`, `tview` and `writer`,
+plus the `memv2` probe, use v2. The remaining test programs stay on v1,
+including the explicit v1 compatibility and address-layout probes.
 
 The kernel publishes E820 RAM above 64 MiB after switching to its formal
 supervisor page tables. The identity window ends at 1 GiB, where SNX user

@@ -70,7 +70,7 @@ static int contains(const char* s, u32 length, const char* pattern) {
   return 0;
 }
 static void emit(Sink* sink, const void* bytes, u32 n) {
-  const u8* p = bytes;
+  const u8* p = (const u8*)bytes;
   if (sink && sink->data) {
     if (n > sink->capacity - sink->length) {
       sink->overflow = 1;
@@ -362,10 +362,10 @@ static int clock_output(Sink* out, int date) {
 }
 static int command(Context* c, int argc, char** argv) {
   Sink* out = c->out;
-  char* cmd = argv[0];
-  for (char* p = cmd; *p; p++)
+  for (char* p = argv[0]; *p; p++)
     if (*p >= 'A' && *p <= 'Z')
       *p += 32;
+  const char* cmd = argv[0];
   if (streq(cmd, "dir"))
     cmd = "ls";
   if (streq(cmd, "type"))
@@ -1120,8 +1120,8 @@ static u32 bridge_received, bridge_needed, bridge_sent, bridge_size,
     bridge_updated;
 
 void shell_bridge_init(void) {
-  bridge_request = kpage_alloc_run(2);
-  bridge_rx = kpage_alloc_run(2);
+  bridge_request = (u8*)kpage_alloc_run(2);
+  bridge_rx = (u8*)kpage_alloc_run(2);
   if (!bridge_request || !bridge_rx) {
     if (bridge_request) kpage_free_run(bridge_request, 2);
     if (bridge_rx) kpage_free_run(bridge_rx, 2);

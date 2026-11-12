@@ -6,12 +6,12 @@ command(path.join(root,'tools/nasm-3.02/nasm.exe'),['-f','win32','user/entry.asm
 command(path.join(tc,'g++.exe'),[...flags,'-c','user/runtime.cpp','-o',path.join(out,'runtime.o')]);
 // Each row names the output, source path, MODE and optional SNX ABI.
 const apps = [
- ['conhost', 'user/console_host.cpp', 0],
- ['writer', 'user/write_tool.cpp', 0],
- ['tview', 'user/tview.cpp', 0],
+ ['conhost', 'user/console_host.cpp', 0, 2],
+ ['writer', 'user/write_tool.cpp', 0, 2],
+ ['tview', 'user/tview.cpp', 0, 2],
  ['rdtest', 'tests/guest/read_tests.cpp', 0],
- ['gsh', 'user/gsh.cpp', 0],
- ['gcmd', 'user/gcmd.cpp', 0],
+ ['gsh', 'user/gsh.cpp', 0, 2],
+ ['gcmd', 'user/gcmd.cpp', 0, 2],
  ['brokerqa', 'tests/guest/interactive_tests.cpp', 0],
  ['termtest', 'tests/guest/terminal_tests.cpp', 0],
  ['pipetest', 'tests/guest/pipe_tests.cpp', 0],

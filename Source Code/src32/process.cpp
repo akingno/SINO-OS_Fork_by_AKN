@@ -305,7 +305,7 @@ static int paging_probe_setup(Process* p, int exhaust) {
   int failed_cleanly = free_pages == 1 && !alloc_user_page(p, high, 0) &&
                        free_pages == 1 && !paging_user_flags(p->pd, high);
   while (held) {
-    void** next = *held;
+    void** next = (void**)*held;
     kpage_free(held);
     held = next;
   }
