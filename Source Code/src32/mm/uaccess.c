@@ -1,3 +1,15 @@
+/*
+ * TODO(uaccess): Clarify and unify user memory access APIs.
+ *
+ * - Rename copy_in to copy_from_user for explicit direction.
+ * - Rename copy_string to copy_string_from_user.
+ * - Review whether copy_to_user is needed or already implemented.
+ * - Keep page-aware NUL-terminated string copying in uaccess,
+ *   rather than moving user pointer validation into kstring.
+ * - Ensure all copy helpers validate the active address space
+ *   and handle invalid or unmapped user pages consistently.
+ */
+
 #include "../api.h"
 #include "../process.h"
 #include "paging.h"
