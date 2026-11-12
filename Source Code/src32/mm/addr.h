@@ -18,10 +18,12 @@ static inline u32 page_offset(u32 address) {
 static inline u32 page_floor(u32 address) {
   return address & PAGE_MASK;
 }
-// 向上对齐到高20位，并清楚低12位（类似于1.1->2（低12位类比小数部分，去掉并向上对齐））
-// TODO: 此处 0xFFFFFFFF + 0xFFF 会有bug
-static inline u32 page_ceil(u32 address) {
-  return (address + PAGE_OFFSET_MASK) & PAGE_MASK;
+/* Fail without changing *out if the aligned byte value cannot fit in u32.
+ * Physical range endpoints at 4 GiB use wide arithmetic/PFNs in e820.h. */
+static inline int page_ceil_checked(u32 address, u32* out) {
+  if (!out || address > 0xffffffffu - PAGE_OFFSET_MASK) return 0;
+  *out = (address + PAGE_OFFSET_MASK) & PAGE_MASK;
+  return 1;
 }
 // 如果低 12 位都是0说明对齐了
 static inline int page_aligned(u32 address) {

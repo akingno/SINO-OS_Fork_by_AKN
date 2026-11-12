@@ -1,93 +1,65 @@
-/*
- * TODO(uaccess): Clarify and unify user memory access APIs.
- *
- * - Rename copy_in to copy_from_user for explicit direction.
- * - Rename copy_string to copy_string_from_user.
- * - Review whether copy_to_user is needed or already implemented.
- * - Keep page-aware NUL-terminated string copying in uaccess,
- *   rather than moving user pointer validation into kstring.
- * - Ensure all copy helpers validate the active address space
- *   and handle invalid or unmapped user pages consistently.
- */
-
 #include "../api.h"
 #include "../process.h"
 #include "paging.h"
 #include "uaccess.h"
 #include "../lib/kstring.h"
 
-/*
-  pd: 页目录
-  address: 虚拟地址
-  bytes: 检查的字节数量
-  access: 访问模式
-  TODO: uaccess_prepare() 不能保证完全没有副作用,
-  第一轮成功后，第二轮可能分配部分物理页，然后因内存不足而失败。此时需要确认上层如何处理已经建立的映射。
-  TODO: uaccess_prepare() 的页面循环也值得检查边界行为
-*/
 int uaccess_prepare(u32* pd, u32 address, u32 bytes, UserAccess access) {
+  if (access != USER_READ && access != USER_WRITE) return S_INVALID;
   u32 limit = process_user_limit(pd, address);
-  if (!limit || bytes > limit - address) {
+  if (!limit || address > limit || bytes > limit - address || !paging_is_active(pd))
     return S_INVALID;
-  }
-  if (!bytes) {
-    return S_OK;
-  }
-
-  // 计算需要的权限
-  u32 needed =
-      PAGE_PRESENT | PAGE_USER | (access == USER_WRITE ? PAGE_WRITE : 0);
-  u32 last = address + bytes - 1;
+  if (!bytes) return S_OK;
+  u32 needed = PAGE_PRESENT | PAGE_USER | (access == USER_WRITE ? PAGE_WRITE : 0);
+  u32 last_page = page_floor(address + bytes - 1);
   u32 first = page_floor(address);
   int missing = 0;
-  for (u32 page = first; page <= last; page += PAGE_SIZE) {
+  /* Validation has no allocation or external effects. */
+  for (u32 page = first;; page += PAGE_SIZE) {
     u32 flags = paging_user_flags(pd, page);
-    if ((flags & needed) == needed) { //页面存在，权限OK
-      continue;
+    if ((flags & needed) != needed) {
+      if (flags & PAGE_PRESENT) return S_INVALID;
+      UACCESS_TRY(process_anon_page(pd, page, 0));
+      missing = 1;
     }
-    if (flags & PAGE_PRESENT) { // 页面存在，权限不足
-      return S_INVALID;
-    }
-    UACCESS_TRY(process_anon_page(pd, page, 0));
-    missing = 1;
+    if (page == last_page) break;
   }
-  /* Check the whole range first, then populate before the syscall has effects.
-   */
+  /* OOM may retain zeroed anonymous pages already populated. They remain owned
+   * by this process and are reclaimed by unmap/exit. No data copy or external
+   * I/O has happened; callers must prepare before consuming/mutating objects. */
   if (missing) {
-    for (u32 page = first; page <= last; page += PAGE_SIZE) {
-      if (!(paging_user_flags(pd, page) & PAGE_PRESENT)) { // 先检查整个地址范围，再进行实际页面准备
+    for (u32 page = first;; page += PAGE_SIZE) {
+      if (!(paging_user_flags(pd, page) & PAGE_PRESENT))
         UACCESS_TRY(process_anon_page(pd, page, 1));
-      }
+      if (page == last_page) break;
     }
   }
   return S_OK;
 }
 
-// TODO: 为什么没有uaccess copy out
-// 把用户进程虚拟地址空间中的一段数据复制到内核提供的缓冲区
-int uaccess_copy_in(u32* pd, void* out, u32 address, u32 bytes) {
+int copy_from_user(u32* pd, void* out, u32 address, u32 bytes) {
   UACCESS_TRY(uaccess_prepare(pd, address, bytes, USER_READ));
-  if (bytes) {
-    memcpy(out, (const void*)address, bytes);
-  }
+  if (bytes) memcpy(out, (const void*)address, bytes);
   return S_OK;
 }
-
-/* Prepare and scan one page at a time. Bytes after the NUL may be unmapped. */
-int uaccess_copy_string(u32* pd, char* out, u32 address, u32 capacity) {
+int copy_to_user(u32* pd, u32 address, const void* source, u32 bytes) {
+  UACCESS_TRY(uaccess_prepare(pd, address, bytes, USER_WRITE));
+  if (bytes) memcpy((void*)address, source, bytes);
+  return S_OK;
+}
+/* Strings may update a prefix of out on failure. Only bytes up to the NUL
+ * need to be accessible; the next page is never touched after termination. */
+int copy_string_from_user(u32* pd, char* out, u32 address, u32 capacity) {
   while (capacity) {
     u32 span = PAGE_SIZE - page_offset(address);
-    if (span > capacity) {
-      span = capacity;
-    }
+    if (span > capacity) span = capacity;
     UACCESS_TRY(uaccess_prepare(pd, address, span, USER_READ));
     const char* source = (const char*)address;
     for (u32 i = 0; i < span; i++) {
-      if (!(*out++ = source[i])) {
-        return S_OK;
-      }
+      if (!(*out++ = source[i])) return S_OK;
     }
     capacity -= span;
+    if (!capacity || address > 0xffffffffu - span) return S_INVALID;
     address += span;
   }
   return S_INVALID;

@@ -85,3 +85,9 @@ infrastructure 还编译 6 个宿主模型：`test-terminal-model.c`、`test-gsh
 - `terminal_tests.c`
 
 测试夹具、通道、QMP、资源观察和工具转发都是基础设施，不作为新测试项。固定清单为 `tests/support/regression-cases.json` 和 `memory-cases.json`；标签调整时保留已有 ID，新增或删除覆盖时同步调整清单与注册表。
+
+## 内存范围与用户复制宿主边界
+
+`node 'Source Code/tests/host/test-mm-boundaries.js' --list` 预览；去掉 --list 执行 10 项固定 ID（mm.boundaries.*）。
+覆盖地址对齐溢出、E820 内外取整/重叠/4 GiB、所属与活动页目录、权限、准备先于分配、部分落页 OOM、字符串和双向复制。
+独立入口不计入统一注册表的 267 项。产物在 Build Output/dev/runs/mm-boundaries-*；契约见 [mm-access.md](mm-access.md)。

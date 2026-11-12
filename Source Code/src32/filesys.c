@@ -294,20 +294,20 @@ int filesys_call(Handle* owner, u32 caps, u32 call, u32 a, u32 b, u32 c,
     }
     case SYS_DIR_GRANT:
       if (c) return S_INVALID;
-      UACCESS_TRY(uaccess_copy_string(user_pd, path, a, sizeof(path)));
+      UACCESS_TRY(copy_string_from_user(user_pd, path, a, sizeof(path)));
       return grant(owner, caps, path, b);
     case SYS_OPEN_AT: {
       if (c != sizeof(OpenRequest)) return S_INVALID;
       OpenRequest request;
-      UACCESS_TRY(uaccess_copy_in(user_pd, &request, b, sizeof(request)));
-      UACCESS_TRY(uaccess_copy_string(user_pd, path, request.path, sizeof(path)));
+      UACCESS_TRY(copy_from_user(user_pd, &request, b, sizeof(request)));
+      UACCESS_TRY(copy_string_from_user(user_pd, path, request.path, sizeof(path)));
       return open_at(owner, a, path, &request);
     }
     case SYS_FILE_READ_AT:
     case SYS_FILE_WRITE_AT: {
       if (c != sizeof(FileIo)) return S_INVALID;
       FileIo io;
-      UACCESS_TRY(uaccess_copy_in(user_pd, &io, b, sizeof(io)));
+      UACCESS_TRY(copy_from_user(user_pd, &io, b, sizeof(io)));
       int read = call == SYS_FILE_READ_AT;
       if (io.offset > MAX_FILE || io.bytes > MAX_FILE - io.offset) return S_INVALID;
       if (io.bytes) UACCESS_TRY(uaccess_prepare(user_pd, io.buffer, io.bytes, (read) ? USER_WRITE : USER_READ));
@@ -348,22 +348,22 @@ int filesys_call(Handle* owner, u32 caps, u32 call, u32 a, u32 b, u32 c,
       return status;
     }
     case SYS_REMOVE_AT:
-      UACCESS_TRY(uaccess_copy_string(user_pd, path, b, sizeof(path)));
+      UACCESS_TRY(copy_string_from_user(user_pd, path, b, sizeof(path)));
       return remove_at(owner, a, path, c);
     case SYS_RENAME_AT: {
       if (b != sizeof(RenameSpec) || c) return S_INVALID;
       RenameSpec spec;
-      UACCESS_TRY(uaccess_copy_in(user_pd, &spec, a, sizeof(spec)));
+      UACCESS_TRY(copy_from_user(user_pd, &spec, a, sizeof(spec)));
       char dest[VFS_PATH];
-      UACCESS_TRY(uaccess_copy_string(user_pd, path, spec.source_path, sizeof(path)));
-      UACCESS_TRY(uaccess_copy_string(user_pd, dest, spec.target_path, sizeof(dest)));
+      UACCESS_TRY(copy_string_from_user(user_pd, path, spec.source_path, sizeof(path)));
+      UACCESS_TRY(copy_string_from_user(user_pd, dest, spec.target_path, sizeof(dest)));
       return rename_at(owner, spec.source_dir, path, spec.target_dir, dest);
     }
     case SYS_FILE_STAGE: {
       if (c != sizeof(StageSpec)) return S_INVALID;
       StageSpec spec;
-      UACCESS_TRY(uaccess_copy_in(user_pd, &spec, b, sizeof(spec)));
-      UACCESS_TRY(uaccess_copy_string(user_pd, path, spec.path, sizeof(path)));
+      UACCESS_TRY(copy_from_user(user_pd, &spec, b, sizeof(spec)));
+      UACCESS_TRY(copy_string_from_user(user_pd, path, spec.path, sizeof(path)));
       return stage(owner, a, path, spec.expected_revision);
     }
     case SYS_FILE_PUBLISH:

@@ -42,9 +42,8 @@ void paging_activate(const u32* pd) {
   index: 要修改的PDE索引
   pt: 页表指针
   flags: PTE 使用的权限标志
-  TODO: 改名叫 init_identity_table 之类的比较好
 */
-static void identity_table(u32* pd, u32 index, u32* pt, u32 flags) {
+static void init_identity_table(u32* pd, u32 index, u32* pt, u32 flags) {
   u32 base = index * TABLE_BYTES;  // PTE 起始地址
   // 写 1024 个PTE
   for (u32 i = 0; i < TABLE_ENTRIES; i++) {
@@ -57,24 +56,22 @@ static void identity_table(u32* pd, u32 index, u32* pt, u32 flags) {
   pd[index] = make_entry(virt_to_phys(pt), PAGE_PRESENT | PAGE_WRITE);
 }
 
-/* TODO: 此处位简化实现：启动映射
-  固定页表暂时恒等映射低端执行区和初始物理页池，
-  供开启分页及建立正式页表使用。这种启动过渡有必要，但不应决定长期布局。
-  替换方向：完成正式内核映射后撤掉不再需要的启动映射；先迁移启动数据、
-  页表及裸物理指针的访问，不能直接删除这里的映射。
-*/
+/* 临时页目录仅用于开启分页和建立正式页表；paging_kernel_init 已切换 CR3。
+ * TODO(MM-11): 审计正式页表中仍需保留的低端映射和启动资源生命周期，
+ * 再收紧长期映射及回收不再使用的启动资源；不能直接删除启动过渡映射。
+ */
 // 在正式的物理内存管理器和内核页表建立之前，用预留内存构造临时页表，让 CPU
 // 能够安全开启分页
 void paging_bootstrap(void) {
   u32* pd = phys_to_virt(BOOT_PD);
   u32* pt = phys_to_virt(BOOT_PT);
   memset(pd, 0, PAGE_SIZE);
-  identity_table(pd, 0, pt, PAGE_PRESENT | PAGE_WRITE);
+  init_identity_table(pd, 0, pt, PAGE_PRESENT | PAGE_WRITE);
   for (u32 i = BOOT_POOL_START / TABLE_BYTES;
        i < BOOT_IDENTITY_BYTES / TABLE_BYTES;
        i++) {  // i from 52/4 = 13; i < 64/4; i++
     pt += TABLE_ENTRIES;
-    identity_table(pd, i, pt, PAGE_PRESENT | PAGE_WRITE);
+    init_identity_table(pd, i, pt, PAGE_PRESENT | PAGE_WRITE);
   }
   // 把页目录给 CPU
   write_cr3(BOOT_PD);
@@ -115,7 +112,7 @@ void paging_kernel_init(void) {
       panic("No memory for kernel page table", i, free_pages);
     }
     // 分配完的一页建立恒等映射
-    identity_table(pd, i, pt, PAGE_PRESENT | PAGE_WRITE);
+    init_identity_table(pd, i, pt, PAGE_PRESENT | PAGE_WRITE);
     // 在 64 MiB 外，检查是否可用
     if (i >= BOOT_IDENTITY_BYTES / TABLE_BYTES) {
       for (u32 slot = 0; slot < TABLE_ENTRIES; slot++) {
@@ -175,55 +172,56 @@ void paging_activate_kernel(void) {
   paging_activate(kernel_pd);
 }
 
-/* TODO(mm/paging): Refactor kernel page protection helpers.
- *
- * Current protect() clears the entire PTE, while unprotect() recreates
- * a writable identity mapping instead of restoring the original entry.
- * This loses original permissions and may accidentally remap pages that
- * were intentionally absent or read-only.
- *
- * 1. Rename the APIs to reflect guard/un-guard semantics.
- * 2. Save and restore the original PTE, including address and flags.
- * 3. Validate page state and reject invalid or repeated operations.
- * 4. Restrict guarding to explicitly owned, safe kernel pages.
- * 5. Keep physical page ownership and allocation in page.c.
- * 6. Preserve TLB invalidation and extend protection self-tests.
- *
- * Future: implement a separate API for general page permission changes.
- */
-// 把内核直接映射区中的某个虚拟页设置为不可访问
-void paging_kernel_protect(u32 va) {
-  if (!page_aligned(va) || va >= direct_map_end) {
-    panic("paging_kernel_protect: bad va", va, direct_map_end);
-  }
+/* Up to eight process stacks plus boot-time checks; no allocation in guard paths.
+ * The kernel is single-core and non-preemptible while these records change. */
+enum { KERNEL_GUARDS = 16 };
+typedef struct { KernelGuard* owner; u32 id, va, saved; } GuardRecord;
+static GuardRecord guards[KERNEL_GUARDS];
+static u32 next_guard_id;
+int paging_kernel_guard(void* page, KernelGuard* owner) {
+  u32 va = (u32)page;
+  if (!kernel_pd || !owner || owner->id || !page_aligned(va) || va >= direct_map_end ||
+      ((u32)owner < va + PAGE_SIZE &&
+       ((u32)owner >= va || va - (u32)owner < sizeof(*owner))))
+    return S_INVALID;
   u32 pde = kernel_pd[pde_index(va)];
-  if (!(pde & PAGE_PRESENT)) {
-    panic("paging_kernel_protect: no PDE", va, pde);
+  if (!(pde & PAGE_PRESENT) || (pde & PAGE_USER)) return S_INVALID;
+  u32* pte = &((u32*)phys_to_virt(entry_address(pde)))[pte_index(va)];
+  if (!(*pte & PAGE_PRESENT) || (*pte & PAGE_USER) || entry_address(*pte) != va)
+    return S_INVALID;
+  GuardRecord* record = 0;
+  for (u32 i = 0; i < KERNEL_GUARDS; i++) {
+    if (guards[i].owner == owner || (guards[i].owner && guards[i].va == va))
+      return S_INVALID;
+    if (!guards[i].owner && !record) record = &guards[i];
   }
-  u32* pt = phys_to_virt(entry_address(pde));
-  pt[pte_index(va)] = 0;  // 不再有有效映射，起始物理页仍然在
-  invlpg(va);             // 清掉TLB缓存
-}
-
-void paging_kernel_unprotect(u32 va) {
-  if (!page_aligned(va) || va >= direct_map_end) {
-    panic("paging_kernel_unprotect: bad va", va, direct_map_end);
-  }
-  u32 pde = kernel_pd[pde_index(va)];
-  if (!(pde & PAGE_PRESENT)) {
-    panic("paging_kernel_unprotect: no PDE", va, pde);
-  }
-  u32* pt = phys_to_virt(entry_address(pde));
-  pt[pte_index(va)] =
-      make_entry(virt_to_phys((void*)va),
-                 PAGE_PRESENT | PAGE_WRITE);  // 让该页面恢复为存在且可写
+  if (!record || next_guard_id == 0xffffffffu) return S_LIMIT;
+  if (!kpage_guard_claim(page)) return S_INVALID;
+  u32 id = ++next_guard_id;
+  *record = (GuardRecord){owner, id, va, *pte};
+  owner->id = id;
+  *pte = 0;
   invlpg(va);
+  return S_OK;
 }
-
-// 检查传入页目录是否是当前CPU正在使用的页目录
-// TODO: 这里应该改为 is_active
-static int active(const u32* pd) {
-  return page_floor(read_cr3()) == virt_to_phys(pd);
+int paging_kernel_unguard(KernelGuard* owner) {
+  if (!owner || !owner->id) return S_INVALID;
+  for (u32 i = 0; i < KERNEL_GUARDS; i++) {
+    GuardRecord* record = &guards[i];
+    if (record->owner != owner || record->id != owner->id) continue;
+    u32* pt = phys_to_virt(entry_address(kernel_pd[pde_index(record->va)]));
+    if (pt[pte_index(record->va)]) return S_CHANGED;
+    pt[pte_index(record->va)] = record->saved;
+    invlpg(record->va);
+    kpage_guard_release((void*)record->va);
+    owner->id = 0;
+    *record = (GuardRecord){0};
+    return S_OK;
+  }
+  return S_INVALID;
+}
+int paging_is_active(const u32* pd) {
+  return pd && page_floor(read_cr3()) == virt_to_phys(pd);
 }
 
 /* Page tables are kernel pages, so the direct mapping always reaches them. */
@@ -319,14 +317,14 @@ phys_t paging_user_unmap(u32* pd, u32 va) {
      * this page table, so a single invlpg is insufficient.  Must complete
      * before the table page is freed.  If CR4.PGE is ever enabled, the
      * no-global-pages invariant that exempts inactive PDs must be revisited. */
-    if (active(pd)) {
+    if (paging_is_active(pd)) {
       paging_activate(pd);
     }
     kpage_free(pt);
   } else {
     /* Only the data PTE changed (1→0); invlpg suffices.  Inactive PDs need
      * no invalidation: every CR3 switch flushes the TLB (no global pages). */
-    if (active(pd)) {
+    if (paging_is_active(pd)) {
       invlpg(va);
     }
   }
@@ -385,7 +383,7 @@ u32 paging_user_find_gap(const u32* pd, u32 start, u32 end, u32 bytes) {
 // paging_user_unmap 只解除一个页面的映射，这个会释放整个进程的用户页表
 // TODO: 如果引入COW,这里逻辑就要改
 void paging_user_destroy(u32* pd) {
-  if (active(pd)){
+  if (paging_is_active(pd)){
     panic("paging_user_destroy: Destroying active user page directory", virt_to_phys(pd), 0);
   }
   for (u32 pde = USER_FIRST_PDE; pde < USER_END_PDE; pde++) {
@@ -409,7 +407,17 @@ void paging_protect_selftest(void) {
   void* run = kpage_alloc_run(2);
   if (!run)
     panic("paging_protect_selftest: alloc", 0, free_pages);
-  paging_kernel_protect((u32)run);
+  KernelGuard guard = {0}, other = {0};
+  if (paging_kernel_guard((void*)VGA_TEXT_BASE, &guard) != S_INVALID ||
+      paging_kernel_guard((u8*)run + 1, &guard) != S_INVALID ||
+      paging_kernel_guard(run, &guard) != S_OK ||
+      paging_kernel_guard(run, &other) != S_INVALID ||
+      paging_kernel_guard((u8*)run + PAGE_SIZE, &guard) != S_INVALID ||
+      kpage_free_run(run, 2) || page_free((phys_t)run))
+    panic("Guard ownership self-check", 0, 0);
+  KernelGuard copied = guard;
+  if (paging_kernel_unguard(&copied) != S_INVALID)
+    panic("Copied guard token accepted", 0, 0);
 
   u32 fc = fault_count;
   __asm__ volatile(
@@ -425,7 +433,9 @@ void paging_protect_selftest(void) {
   if (fault_count != fc + 1)
     panic("paging_protect_selftest: guard", fault_count, fc + 1);
 
-  paging_kernel_unprotect((u32)run);
+  if (paging_kernel_unguard(&guard) != S_OK ||
+      paging_kernel_unguard(&guard) != S_INVALID)
+    panic("Guard restore self-check", 0, 0);
   fc = fault_count;
   __asm__ volatile(
       "movl $1f, %[res]\n\t"
@@ -439,7 +449,17 @@ void paging_protect_selftest(void) {
   fault_resume = 0;
   if (fault_count != fc)
     panic("paging_protect_selftest: unprotect", fault_count, fc);
-  kpage_free_run(run, 2);
+  u32 va = (u32)run;
+  u32* pt = phys_to_virt(entry_address(kernel_pd[pde_index(va)]));
+  pt[pte_index(va)] &= ~PAGE_WRITE;
+  invlpg(va);
+  u32 original = pt[pte_index(va)];
+  if (paging_kernel_guard(run, &guard) != S_OK ||
+      paging_kernel_unguard(&guard) != S_OK || pt[pte_index(va)] != original)
+    panic("Guard lost original PTE", va, original);
+  pt[pte_index(va)] |= PAGE_WRITE;
+  invlpg(va);
+  if (!kpage_free_run(run, 2)) panic("Guard allocation free", va, 0);
   if (free_pages != saved_free)
     panic("paging_protect_selftest: leak", free_pages, saved_free);
 

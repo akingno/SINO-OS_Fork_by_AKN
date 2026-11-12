@@ -48,6 +48,7 @@ typedef struct {
   u32* pd;
   u32 abi, code_end;
   void* kernel_stack;
+  KernelGuard stack_guard;
   Thread thread[NT];
   Handle handles[HANDLES];
   char name[32];
@@ -140,7 +141,8 @@ static void release(Process* p) {
   if (p->pd)
     paging_user_destroy(p->pd);
   if (p->kernel_stack) {
-    paging_kernel_unprotect((u32)p->kernel_stack);
+    if (p->stack_guard.id && paging_kernel_unguard(&p->stack_guard) != S_OK)
+      panic("Kernel stack guard restore failed", p->pid, p->stack_guard.id);
     kpage_free_run(p->kernel_stack, 2);
   }
   /* Publish only after execution resources and owned handles are gone. */
@@ -178,9 +180,8 @@ static void free_user_pages(Process* p, u32 start, u32 end) {
  * 替换方向：统一管理映像、栈和匿名区的虚拟区间，记录权限与后备类型，
  * 支持查找、合并和拆分；保留地址预留与物理页分配的分离。 */
 static int anon_map(Process* p, u32 bytes) {
-  if (!bytes || bytes > 0xffffffffu - PAGE_OFFSET_MASK)
+  if (!bytes || !page_ceil_checked(bytes, &bytes))
     return S_INVALID;
-  bytes = page_ceil(bytes);
   AnonRegion* slot = 0;
   u32 used = 0;
   for (u32 i = 0; i < ANON_MAX_REGIONS; i++) {
@@ -471,7 +472,10 @@ static int launch_policy(const char* path, u32 caps, const char* arguments,
     release(p);
     return S_NOMEM;
   }
-  paging_kernel_protect((u32)p->kernel_stack);
+  if (paging_kernel_guard(p->kernel_stack, &p->stack_guard) != S_OK) {
+    release(p);
+    return S_NOMEM;
+  }
   for (u32 offset = 0; offset < h->memory_bytes; offset += PAGE_SIZE) {
     phys_t page = alloc_user_page(p, USER_BASE + offset, offset >= h->data_offset);
     if (!page) {
@@ -835,7 +839,7 @@ int process_kill(u32 pid, i32 code) {
 static int homepath(u32 address, char* path, int writing) {
   char raw[VFS_PATH];
   u32* user_pd = current->pd;
-  UACCESS_TRY(uaccess_copy_string(user_pd, raw, address, sizeof(raw)));
+  UACCESS_TRY(copy_string_from_user(user_pd, raw, address, sizeof(raw)));
   if (raw[0] != '/') return S_INVALID;
   if (vfs_canonical(raw, path) < 0)
     return S_INVALID;
@@ -969,7 +973,7 @@ static int syscall(Frame* f) {
     case SYS_TERMINAL: {
       if (b!=sizeof(TerminalRequest) || c) return S_INVALID;
       TerminalRequest request;
-      UACCESS_TRY(uaccess_copy_in(user_pd, &request, a, sizeof(request)));
+      UACCESS_TRY(copy_from_user(user_pd, &request, a, sizeof(request)));
       u32 wait_op = 0, timeout = request.extra;
       if (request.op == TERM_READ && request.value == TERM_READ_BLOCK) {
         wait_op = WAIT_TERM_READ;
@@ -1046,7 +1050,7 @@ static int syscall(Frame* f) {
         streams[0] = extended.in; streams[1] = extended.out; streams[2] = extended.err;
       }
       if (spec.argc > RUN_ARGC || spec.argv_bytes > RUN_ARGS || spec.input_bytes > RUN_BYTES) return S_INVALID;
-      UACCESS_TRY(uaccess_copy_string(user_pd, path, spec.path, sizeof(path)));
+      UACCESS_TRY(copy_string_from_user(user_pd, path, spec.path, sizeof(path)));
       if (spec.argc) UACCESS_TRY(uaccess_prepare(user_pd, spec.offsets, spec.argc * 4, USER_READ));
       if (spec.argv_bytes) UACCESS_TRY(uaccess_prepare(user_pd, spec.argv, spec.argv_bytes, USER_READ));
       if (spec.input_bytes) UACCESS_TRY(uaccess_prepare(user_pd, spec.input, spec.input_bytes, USER_READ));
@@ -1128,7 +1132,7 @@ static int syscall(Frame* f) {
     case SYS_RUN_READ: {
       if (c != sizeof(RunRead)) return S_INVALID;
       RunRead read;
-      UACCESS_TRY(uaccess_copy_in(user_pd, &read, b, sizeof(read)));
+      UACCESS_TRY(copy_from_user(user_pd, &read, b, sizeof(read)));
       if (read.capacity > RUN_IO_MAX) return S_INVALID;
       if (read.capacity) UACCESS_TRY(uaccess_prepare(user_pd, read.buffer, read.capacity, USER_WRITE));
       return process_run_read(current->handles, a, read.role, read.offset, (void*)read.buffer, read.capacity);
@@ -1139,7 +1143,7 @@ static int syscall(Frame* f) {
       r = homepath(a, path, 0);
       if (r) return r;
       if (b) {
-        UACCESS_TRY(uaccess_copy_string(user_pd, args, b, sizeof(args)));
+        UACCESS_TRY(copy_string_from_user(user_pd, args, b, sizeof(args)));
       } else args[0] = 0;
       return tracked_launch(current->handles, path, args, 0);
     }
@@ -1150,23 +1154,19 @@ static int syscall(Frame* f) {
       return process_cancel_owned(current->handles, a);
     case SYS_SYSTEM_INFO: {
       if (c || b < sizeof(SystemInfo)) return S_INVALID;
-      UACCESS_TRY(uaccess_prepare(user_pd, a, sizeof(SystemInfo), USER_WRITE));
       SystemInfo info = {sizeof(SystemInfo), 1, SYSTEM_FEATURES, 100,
                          NP, NT, HANDLES, OBJECTS, MAX_FILE, SNX_V2_IMAGE_BYTES, 16384, 0};
-      memcpy((void*)a, &info, sizeof(info));
-      return 0;
+      return copy_to_user(user_pd, a, &info, sizeof(info));
     }
     case SYS_START_INFO: {
       if (c || b < sizeof(StartInfo)) return S_INVALID;
-      UACCESS_TRY(uaccess_prepare(user_pd, a, sizeof(StartInfo), USER_WRITE));
       StartInfo info = {sizeof(StartInfo), 1, current->policy, current->caps,
                         SYSTEM_FEATURES, 0};
-      memcpy((void*)a, &info, sizeof(info));
-      return 0;
+      return copy_to_user(user_pd, a, &info, sizeof(info));
     }
     case SYS_LEASE: {
       char name[64];
-      UACCESS_TRY(uaccess_copy_string(user_pd, name, a, sizeof(name)));
+      UACCESS_TRY(copy_string_from_user(user_pd, name, a, sizeof(name)));
       if (!name[0]) return S_INVALID;
       int free = -1;
       for (int i = 0; i < 8; i++) {
@@ -1422,7 +1422,7 @@ static int syscall(Frame* f) {
         return r;
       char args[256];
       if (b) {
-        UACCESS_TRY(uaccess_copy_string(user_pd, args, b, sizeof(args)));
+        UACCESS_TRY(copy_string_from_user(user_pd, args, b, sizeof(args)));
       } else
         args[0] = 0;
       return process_launch_args(path, current->caps & CAP_HOME,

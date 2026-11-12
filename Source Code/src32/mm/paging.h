@@ -55,12 +55,13 @@ u32 paging_user_count(const u32* pd);
 u32 paging_user_find_gap(const u32* pd, u32 start, u32 end, u32 bytes);
 void paging_activate(const u32* pd);
 
-/* PTE-level changes inside the frozen kernel direct mapping.
- * protect clears PAGE_PRESENT; unprotect restores the identity entry.
- * Both flush the TLB entry. va must be page-aligned and below direct_map_end.
- */
-void paging_kernel_protect(u32 va);
-void paging_kernel_unprotect(u32 va);
+/* Kernel guards require a live kpage allocation. Initialize the token to zero
+ * and keep it at the same address until unguard succeeds. Copying a token does
+ * not transfer ownership. Guarded allocations cannot be freed/reused. */
+typedef struct { u32 id; } KernelGuard;
+int paging_kernel_guard(void* page, KernelGuard* owner);
+int paging_kernel_unguard(KernelGuard* owner);
+int paging_is_active(const u32* pd);
 void paging_protect_selftest(void);
 
 #endif

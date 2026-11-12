@@ -22,6 +22,7 @@
 | 引导、镜像、FAT12 启动卷 | `.\dev.ps1 -BuildOnly`，再 `node 'Source Code/tests/host/test-boot.js' '<本次普通构建目录>'`；1 项 | 涉及用户态启动/隔离时追加相应进程或内存专项 |
 | 匿名映射、懒分配、SDK 堆；`anon_map/unmap` | 下方内存命令的 `anonymous`；5 项 | 映像、高页或线程栈布局变化时追加 `images` |
 | 物理页、页表、高页、SNX、用户栈；`page_* / paging_*` | 下方内存命令的 `images`；9 项 | 涉及匿名映射/OOM 时加 `anonymous`；启动页表/物理池初始化变化时加普通启动检查 |
+| E820 对齐/重叠、地址溢出、uaccess 复制契约 | `node 'Source Code/tests/host/test-mm-boundaries.js'`；10 项，`--list` 预览 | 替代页表与分配边界的宿主检查；系统路径仍按下列 images / anonymous 及追加条件选测 |
 | 用户缓冲区；`uaccess_*` | `anonymous`；5 项，含跨页文件/管道 I/O | 文件或终端系统调用校验路径变化时，加对应 `files` 或 `terminal-waits`；新的非法指针边界另加针对性探针 |
 | 调度、进程/线程退出、故障回收；`process_step / release / entry.asm` | `.\regression.ps1 -Suite process`；8 项 | 完成通知/等待器变化加 `completion-waits`；管道/终端唤醒变化只加相应等待专项 |
 | 系统调用策略、权限、句柄授权；`launch_policy / syscall / object` | `.\regression.ps1 -Suite policy`；2 项 | 对象生命周期变化加受影响对象的套件；线程/进程资源变化加 `process` |

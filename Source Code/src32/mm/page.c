@@ -2,6 +2,7 @@
 #include "../klog.h"
 #include "addr.h"
 #include "page.h"
+#include "e820.h"
 #include "paging.h"
 #include "kmap.h"
 #include "../lib/kstring.h"
@@ -10,34 +11,10 @@
 // 一次性最大连续分配 64 页，最大区域条目 32
 enum { MAX_RUN = 64, E820_MAX = 32 };
 // 每个物理页的状态
-enum { PAGE_FREE, PAGE_USED, PAGE_RESERVED };
-
-/*
-BIOS 返回的一条 E820 内存记录
-base: 物理区域起始地址的低32位
-base_hi: 高32位（需要是因为一个区域的结束位置可能超过32位地址范围）
-length:  区域长度的低32位
-length_hi: 区域长度的高32位
-type: 内存区域的类型（1 usable 2 reserved...）type == 1为可分配 RAM
-attributes: 扩展属性，我们检查最低位来看此条目是否有效
-*/
-typedef struct PACKED {
-  u32 base, base_hi, length, length_hi, type, attributes;
-} E820Entry;
-
-/*
-类似 E820Entry，但是不少BIOS提供的格式，而是简化的，
-所以此处使用 Page Frame Number = Phisical Addr / 4096
-start_pfn: 物理区域起始页框编号
-end_pfn: 结束编号
-type: 同E820Entry的type
-*/
-typedef struct {
-  u32 start_pfn, end_pfn, type;
-} Range;
+enum { PAGE_FREE, PAGE_USED, PAGE_RESERVED, PAGE_KERNEL, PAGE_GUARDED };
 
 // 最大 32 个 物理区域描述（一段，起始到结束，以及type，如上描述）
-static Range ranges[E820_MAX];
+static BootRange ranges[E820_MAX];
 static u32 range_count;  // ranges 的有效条目
 
 // u8数组, 每个元素是一个物理页的状态（其实只要两bit，这里剩下6bit的全冗余了）
@@ -66,21 +43,12 @@ static int logged_extended_allocation, logged_high_allocation;
 // 遍历 ranges 看start 所在 FPN 其所在范围内是否可用
 // 因为 ranges 内条目并不是顺序放的，所以要遍历所有条目才行
 int page_boot_usable(phys_t start) {
-  u32 pfn = start / PAGE_SIZE;
-  int usable = 0;
-  for (u32 i = 0; i < range_count; i++) {
-    const Range* r = &ranges[i];
-    if (r->start_pfn > pfn || r->end_pfn <= pfn)  // 这一段在检查范围外，跳过
-      continue;
-    if (r->type != 1)  // 这一段在检查范围内且不可用，返回0
-      return 0;
-    usable = 1;
-  }
-  return usable;
+  return e820_page_usable(ranges, range_count, start / PAGE_SIZE);
 }
 
 // 把一段物理页正式标为分配器的可分配资源
-// TODO: 这个函数和 page_boot_usable 能不能结合起来来优化遍历？
+// 可用性规则已统一到 e820_page_usable。
+// TODO(MM-07): 测量启动开销后，考虑规范化区间以减少逐页重复遍历。
 static void publish_pages(u32 start_pfn, u32 end_pfn) {
   u32 metadata_pfn = virt_to_phys(mem_map) / PAGE_SIZE;
   // 把这个 pfn 范围内的、没有存放mem map metadata 且可用的页面标为FREE
@@ -93,86 +61,72 @@ static void publish_pages(u32 start_pfn, u32 end_pfn) {
   }
 }
 
-// 从E820开始的 内存分配器展开
-// TODO: 这个函数需要拆分
-void page_init(void) {
-  // 从内存里读取条目数量和数组
+/* Only the loader's E820 handoff is read here. No page allocation is allowed
+ * until the metadata has been placed and the initial pool published. */
+static void read_boot_memory_map(void) {
   u32 count = *(volatile u16*)phys_to_virt(E820_COUNT_ADDRESS);
   const E820Entry* map = phys_to_virt(E820_TABLE_ADDRESS);
   if (!count || count > E820_MAX) {
     panic("Invalid E820 memory map", count, 0);
   }
-
   for (u32 i = 0; i < count; i++) {
-    const E820Entry* e = &map[i];
-    // 排除 无效条目、超32为范围以及区域长度为0
-    if (!(e->attributes & 1) || e->base_hi || (!e->length_hi && !e->length)) {
-      continue;
-    }
-    // TODO: base_pfn 当前向下取整，
-    // TODO: 如果 E820 的可用区域起点不是 4 KiB
-    // 对齐的，就有可能把只部分可用的页面当作完整可用页。
-    // TODO: 更加严格的方式是对可用区域起点向上对齐，结束位置向下对齐。
-    u32 base_pfn = e->base / PAGE_SIZE;
-    // 结束地址（可能超32位）并限制在 4GiB内，然后得到结束FPN
-    unsigned long long end64 =
-        (unsigned long long)e->base +
-        ((unsigned long long)e->length_hi << 32 | e->length);
-    if (end64 > (unsigned long long)PHYS_LIMIT_PAGES << PAGE_SHIFT) {
-      end64 = (unsigned long long)PHYS_LIMIT_PAGES << PAGE_SHIFT;
-    }
-    u32 end_pfn = (u32)(end64 >> PAGE_SHIFT);
-    if (base_pfn >= end_pfn) {
-      continue;
-    }
-    // 保存range
-    ranges[range_count++] = (Range){base_pfn, end_pfn, e->type};
-    // 更新得到最大有效结束FPN
-    if (e->type == 1 && end_pfn > nr_pages) {
-      nr_pages = end_pfn;
-    }
+    BootRange range;
+    if (!e820_range(&map[i], &range)) continue;
+    ranges[range_count++] = range;
+    if (range.type == 1 && range.end_pfn > nr_pages)
+      nr_pages = range.end_pfn;
   }
+}
 
-  // 向上取整再除，得到需要的 mem_map 大小
-  metadata_pages = (nr_pages + PAGE_SIZE - 1) / PAGE_SIZE;
-
-  // 初始 64 MiB 范围与实际可用物理页上界中较小的
-  u32 boot_end_pfn = nr_pages < BOOT_IDENTITY_BYTES / PAGE_SIZE
-                         ? nr_pages
-                         : BOOT_IDENTITY_BYTES / PAGE_SIZE;
-
-  u32 run = 0, metadata_base = 0;
-  // 找 metadata_pages 个连续页面来放 mem_map
+/* Metadata must fit in complete usable pages inside the bootstrap mapping.
+ * Return a physical address; no access to unpublished/high pages is needed. */
+static phys_t find_boot_metadata(u32 boot_end_pfn) {
+  u32 run = 0;
   for (u32 pfn = LOW_START_PFN; pfn < boot_end_pfn; pfn++) {
     if (!page_boot_usable(pfn * PAGE_SIZE)) {
       run = 0;
       continue;
     }
-    if (++run == metadata_pages) {
-      metadata_base = (pfn + 1 - run) * PAGE_SIZE;
-      break;
-    }
+    if (++run == metadata_pages)
+      return (pfn + 1 - run) * PAGE_SIZE;
   }
-  // 初始化 mem_map
-  if (!metadata_base) {
-    panic("page_init: No boot space for page metadata", nr_pages,
-          metadata_pages);
-  }
-  // 先将全部页面视为不可分配 -> 再用 publish_pages
-  // 把已经确认可以使用的页面标记为 FREE
-  mem_map = phys_to_virt(metadata_base);
+  panic("page_init: No boot space for page metadata", nr_pages, metadata_pages);
+  return PHYS_NULL;
+}
+
+static void init_page_metadata(u32 boot_end_pfn) {
+  phys_t base = find_boot_metadata(boot_end_pfn);
+  mem_map = phys_to_virt(base);
+  /* All pages start reserved, including the metadata itself. */
   memset(mem_map, PAGE_RESERVED, metadata_pages * PAGE_SIZE);
+}
+
+static void publish_boot_pages(u32 boot_end_pfn) {
   publish_pages(LOW_START_PFN, boot_end_pfn);
-  if (!free_pages) {
+  if (!free_pages)
     panic("page_init: No allocatable physical pages", nr_pages, metadata_pages);
-  }
+}
+
+static void log_page_metadata(void) {
   pr_debug("PAGE metadata base=");
-  pr_debug_hex(metadata_base);
+  pr_debug_hex(virt_to_phys(mem_map));
   pr_debug(" pages=");
   pr_debug_hex(metadata_pages);
   pr_debug(" nr_pages=");
   pr_debug_hex(nr_pages);
   pr_debug("\n");
+}
+
+/* Called once: parse -> size -> place/reserve metadata -> publish boot pool.
+ * Extended pages are still published separately after paging_kernel_init. */
+void page_init(void) {
+  read_boot_memory_map();
+  metadata_pages = (nr_pages + PAGE_SIZE - 1) / PAGE_SIZE;
+  u32 boot_end_pfn = nr_pages < BOOT_IDENTITY_BYTES / PAGE_SIZE
+                         ? nr_pages : BOOT_IDENTITY_BYTES / PAGE_SIZE;
+  init_page_metadata(boot_end_pfn);
+  publish_boot_pages(boot_end_pfn);
+  log_page_metadata();
 }
 
 // 发布启动映射范围以外的物理页
@@ -212,7 +166,8 @@ static phys_t alloc_from(u32 start_pfn, u32 end_pfn, u32 count, u32* hint) {
     h = start_pfn;
   }
   // 两轮搜索：1. 从 hint 搜索到范围末尾 2. 如果没找到，就回头搜索前半段
-  // TODO: 这个算法可以改进，目前是类似 nextfit 的线性扫描，O(1)
+  // next-fit 使用游标减少重复搜索，最坏仍为 O(N) 页状态扫描。
+  // TODO(MM-08): 检查 hint 分界的连续块完整性，再根据测量决定索引优化。
   for (int pass = 0; pass < 2; pass++) {
     u32 from = pass ? start_pfn : h;
     u32 to = pass ? h : end_pfn;
@@ -233,7 +188,7 @@ static phys_t alloc_from(u32 start_pfn, u32 end_pfn, u32 count, u32* hint) {
 }
 
 // 物理地址和页数，尝试释放对应的连续页面。
-static int free_run(phys_t page, u32 count) {
+static int free_run(phys_t page, u32 count, u8 state) {
   u32 pfn = page / PAGE_SIZE;
   // 此处检查分配器释放是否是完整物理页，因为不能从页中间释放
   if (!count || count > MAX_RUN || !page_aligned(page) ||
@@ -241,7 +196,7 @@ static int free_run(phys_t page, u32 count) {
     return 0;
   }
   for (u32 i = 0; i < count; i++) {  // 防重复释放
-    if (mem_map[pfn + i] != PAGE_USED) {
+    if (mem_map[pfn + i] != state) {
       return 0;
     }
   }
@@ -267,6 +222,7 @@ void* kpage_alloc_run(u32 count) {
   if (!page) {
     return 0;
   }
+  memset(mem_map + page / PAGE_SIZE, PAGE_KERNEL, count);
   zero_run(page, count);
   if (page >= BOOT_IDENTITY_BYTES && !logged_extended_allocation) {
     logged_extended_allocation = 1;
@@ -285,13 +241,30 @@ void* kpage_alloc(void) {
 
 // 释放连续的内核页面
 int kpage_free_run(void* page, u32 count) {
-  return free_run(virt_to_phys(page), count);
+  return free_run(virt_to_phys(page), count, PAGE_KERNEL);
 }
 
 // 释放某一页
 // TODO: 释放一页可以单独优化，避免冗余检查
 int kpage_free(void* page) {
   return kpage_free_run(page, 1);
+}
+
+/* Paging alone changes a live kernel allocation into a guard. Guarded pages
+ * cannot be freed through either allocator until their PTE has been restored. */
+int kpage_guard_claim(void* page) {
+  u32 address = (u32)page, pfn = address / PAGE_SIZE;
+  if (!page_aligned(address) || address < BOOT_POOL_START ||
+      address >= direct_map_end || pfn >= nr_pages || mem_map[pfn] != PAGE_KERNEL)
+    return 0;
+  mem_map[pfn] = PAGE_GUARDED;
+  return 1;
+}
+void kpage_guard_release(void* page) {
+  u32 pfn = virt_to_phys(page) / PAGE_SIZE;
+  if (pfn >= nr_pages || mem_map[pfn] != PAGE_GUARDED)
+    panic("Invalid guarded page release", (u32)page, pfn);
+  mem_map[pfn] = PAGE_KERNEL;
 }
 
 // 分配用户进程的物理页
@@ -323,7 +296,7 @@ phys_t page_alloc(void) {
 }
 
 int page_free(phys_t page) {
-  return free_run(page, 1);
+  return free_run(page, 1, PAGE_USED);
 }
 
 // 物理页分配器自检，每次启动运行
