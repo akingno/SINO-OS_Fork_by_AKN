@@ -1,7 +1,7 @@
 /* Development-only v2 protocol; owns only tasks created by this session. */
 #include "run_bridge.h"
 #ifdef SINO_SHELL_BRIDGE
-#include "process.h"
+#include "task/task.h"
 #include "klog.h"
 #include "lib/kstring.h"
 static Handle owner[HANDLES];

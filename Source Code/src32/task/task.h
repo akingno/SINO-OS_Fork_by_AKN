@@ -1,9 +1,9 @@
-#ifndef SINO_PROCESS_H
-#define SINO_PROCESS_H
-#include "api.h"
-#include "interactive.h"
-#include "kernel.h"
-#include "object.h"
+#ifndef SINO_TASK_H
+#define SINO_TASK_H
+#include "../api.h"
+#include "../interactive.h"
+#include "../kernel.h"
+#include "../object.h"
 #ifdef __cplusplus
 extern "C" {
 #endif

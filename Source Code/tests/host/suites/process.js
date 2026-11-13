@@ -4,6 +4,7 @@ async function run(api) {
     const {check, guestLog, processes, native, resources, report, value, launch, until, gone, command} = api;
     await check('boot and kernel object contracts', async () => {
         assert.match(guestLog(), /PAGE allocator self-check passed/);
+        assert.match(guestLog(), /SYNC IRQ guard self-check passed/);
         assert.match(guestLog(), /OBJECT handles rights\/stale\/release PASS/);
         assert.match(guestLog(), /CPL3 selectors 1B\/23, I\/O denied/);
         assert.equal((await processes()).length, 0);

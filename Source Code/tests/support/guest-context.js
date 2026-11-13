@@ -21,7 +21,8 @@ function createGuest(context) {
     }
     // Fail visibly when this private inspection adapter needs updating.
     const objectHeader = fs.readFileSync(path.join(__dirname, '../../src32/object.h'), 'utf8');
-    assert.match(objectHeader, /u32\s+generation,\s*refs,\s*type;\s*int\s+value;\s*}\s*Object;/);
+    assert.match(objectHeader, /enum class ObjType\s*:\s*u32\s*{/);
+    assert.match(objectHeader, /u32\s+generation,\s*refs;\s*ObjType\s+type;\s*int\s+value;\s*}\s*Object;/);
     const objectCount = Number(objectHeader.match(/#define\s+OBJECTS\s+(\d+)/)?.[1]);
     assert(objectCount > 0 && objectCount <= 1024, 'object-table adapter bound');
     report.inspection = {symbolsSha256:build.symbolsSha256, objectCount, objectBytes:16};

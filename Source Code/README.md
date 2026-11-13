@@ -11,7 +11,8 @@ src32/                内核（C++17 + x86 汇编）
   lib/                内核工具库（kstring.cpp）
   loader.asm          引导加载器
   kernel.cpp          内核主入口
-  process.cpp         进程管理、系统调用分发、权限策略
+  task/               进程、线程、调度及 C ABI 桥接
+  sync/               单核短临界区与同步接口边界
   panic.cpp           panic 与停机处理
   api.h               系统调用编号与用户态共享结构
   boot-layout.h       2.88 MB 启动镜像布局（NASM/C/JS 共用）
@@ -91,6 +92,7 @@ docs/                 技术契约文档
 - [系统架构](docs/architecture.md)
 - [系统调用接口](docs/os-interface.md)
 - [内存访问契约](docs/mm-access.md)
+- [进程与同步模块](docs/task-subsystem.md)
 - [文字控制台](docs/text-console.md)
 - [启动镜像布局](docs/boot-image.md)
 - [应用开发指南](docs/app-dev-guide.md)

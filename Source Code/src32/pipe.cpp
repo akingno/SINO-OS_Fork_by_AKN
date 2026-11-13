@@ -1,7 +1,7 @@
 /* Bounded byte pipes. Kernel operations never sleep or retain user buffers.
    One object per endpoint; Dup/launch references keep that endpoint alive. */
 #include "pipe.h"
-#include "process.h"
+#include "task/task.h"
 #include "lib/kstring.h"
 #include "mm/page.h"
 typedef struct {

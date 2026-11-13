@@ -22,7 +22,7 @@
   - 线程栈之间有未映射守护页
   - `paging_user_map` / `paging_user_find_gap` 支持跨 4 MiB 边界映射和动态地址窗口
 - **用户缓冲区校验**（`uaccess.c`）：所有系统调用的用户指针经过页表权限检查，覆盖跨页、无效尾页和嵌套指针场景
-- **匿名内存映射**（`process.c: anon_map / anon_unmap`）：用户程序可申请私有匿名页，首次访问时按需分配零填充物理页（lazy allocation）。配额耗尽时系统调用返回 `S_NOMEM`，释放后缺页则触发故障退出
+- **匿名内存映射**（`task/process.cpp: anon_map / anon_unmap`）：用户程序可申请私有匿名页，首次访问时按需分配零填充物理页（lazy allocation）。配额耗尽时系统调用返回 `S_NOMEM`，释放后缺页则触发故障退出
 - **SNX v2 格式**：用户程序内存上限从 192 KiB（v1）提升到 16 MiB，链接基址均为 `0x40000000`
 
 ## 进程与线程

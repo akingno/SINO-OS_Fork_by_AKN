@@ -7,8 +7,10 @@
 | 目录 | 说明 |
 | --- | --- |
 | `Source Code/` | 唯一开发源码目录 |
-| `Source Code/src32/` | 内核（C + x86 汇编） |
-| `Source Code/src32/mm/` | 独立内存管理子系统（page.c、paging.c、uaccess.c） |
+| `Source Code/src32/` | 内核（C++17 + x86 汇编） |
+| `Source Code/src32/task/` | 进程、线程、调度；task.h 为跨模块接口，internal.h 不向其他子系统暴露 |
+| `Source Code/src32/sync/` | 单核短临界区与同步边界；IrqGuard 保存/恢复原 IF |
+| `Source Code/src32/mm/` | 独立内存管理子系统（page.cpp、paging.cpp、uaccess.cpp） |
 | `Source Code/user/` | Ring 3 CLI 程序（gsh、gcmd、tview、writer 等） |
 | `Source Code/tools/` | 构建、发布与共享开发工具 |
 | `Source Code/tests/` | 稳定套件、Ring 3 探针、共享工具；TESTING.md 为 AI 选测入口 |
@@ -29,7 +31,7 @@
 
 每个开发步骤只自动运行与改动直接相关的命令和接口测试，合计最多 50 项（含选跑的旧用例）。每个专项的自动验收可执行最多 20 个相关用例。运行前确认用例数，优先通过摘要脚本查看结果，只在失败时查看对应日志片段。
 
-**AI 选测必须先读 [模块 → 测试命令指南](Source Code/tests/TESTING.md)，只匹配本次模块及追加条件。** 不逐个查阅所有测试，不因修改 process.c 等共享文件就全跑关联模块。完整目录仅在指南没有对应项、需要明确追加或用户要求列举时查阅。
+**AI 选测必须先读 [模块 → 测试命令指南](Source Code/tests/TESTING.md)，只匹配本次模块及追加条件。** 不逐个查阅所有测试，不因修改 task/process.cpp 等共享文件就全跑关联模块。完整目录仅在指南没有对应项、需要明确追加或用户要求列举时查阅。
 
 - 运行前说明模块、命令、选择原因和用例数；统一入口用同一选择加 `-List` 预览。重复/重叠选择自动去重；漏跑、重跑或额外 ID 不能通过。
 - 通过后停止。仅因新的修改、失败或明确的未验证影响扩大或重跑；50/20 是上限，不是目标。测试器检查仅在测试框架变化时运行，纯文档/目录说明修改不启动系统回归。
@@ -62,7 +64,7 @@
 | 全量基础回归 | `powershell -NoProfile -ExecutionPolicy Bypass -File .\regression.ps1 -Suite core -Full` | 按功能组合的非 GUI 回归，仅按需全量运行 |
 | 查看回归结果 | `.\test-summary.ps1 -RunDirectory 'Build Output/dev/runs/<编号>'` | 不重跑，正常通过不展开 |
 | 运行独立 CLI | `.\run.ps1 -Program /boot/clitest.snx -Arguments echo` | 严格进程，独立 stdout/stderr |
-| 找接口 | `rg -n 'SYS_READ' 'Source Code/src32/process.c' 'Source Code/user/sdk.h'` | 替换符号和文件 |
+| 找接口 | `rg -n 'SYS_READ' 'Source Code/src32/task/process.cpp' 'Source Code/user/sdk.h'` | 替换符号和文件 |
 
 日常启动检查先执行 `-BuildOnly`，再把该次输出目录传给 `tests/host/test-boot.js`。其他接受 `SINO_ISO` 的套件可用同次构建的显式路径：
 
@@ -80,46 +82,48 @@ Shell 宿主测试参数：`-ExpectedExitCode 1` 断言预期失败，`-TimeoutS
 
 ## 系统地图（路径相对 Source Code/）
 
-32 位 x86 BIOS，单体内核。GUI 移除已完成计划四步：桌面、窗口管理、图形绘制、设置与内置 Ring 0 应用已移除；窗口相关系统调用保留编号并返回错误。GUI Ring 3 终端前端和文件管理器，以及 UIASSET.BIN、PINYIN.TXT、CJK_OFL.TXT 已删除且不再构建或打包。普通镜像通过 VGA 80×25 文字控制台自动进入 Ring 3 gsh；ShellBridge 镜像继续提供独立测试通道，gcmd、tview、writer 保留；brokerqa 是无界面 Shell / 会话探针，继续构建并打包到 ShellBridge 镜像。GUI 测试、注册项和旧转发入口已删除。普通镜像自动启动 conhost.snx 和 gsh.snx，日志依次确认 `SINO CLI ready` 与 `CONSOLE SHELL ready`；US 键盘直接输入，无中文输入法或拼音字典。文字屏幕仅显示 ASCII，UTF-8 文件数据保留。主循环依次推进 RTC、ShellBridge（启用时）、网络、用户线程；语言状态由 locale.c 持有。SYS_CONSOLE=0x150 仅授予内核启动的 conhost；普通或严格启动的相同程序也不能取得设备权限。
+32 位 x86 BIOS，单体内核。GUI 移除已完成计划四步：桌面、窗口管理、图形绘制、设置与内置 Ring 0 应用已移除；窗口相关系统调用保留编号并返回错误。GUI Ring 3 终端前端和文件管理器，以及 UIASSET.BIN、PINYIN.TXT、CJK_OFL.TXT 已删除且不再构建或打包。普通镜像通过 VGA 80×25 文字控制台自动进入 Ring 3 gsh；ShellBridge 镜像继续提供独立测试通道，gcmd、tview、writer 保留；brokerqa 是无界面 Shell / 会话探针，继续构建并打包到 ShellBridge 镜像。GUI 测试、注册项和旧转发入口已删除。普通镜像自动启动 conhost.snx 和 gsh.snx，日志依次确认 `SINO CLI ready` 与 `CONSOLE SHELL ready`；US 键盘直接输入，无中文输入法或拼音字典。文字屏幕仅显示 ASCII，UTF-8 文件数据保留。主循环依次推进 RTC、ShellBridge（启用时）、网络、用户线程；语言状态由 locale.cpp 持有。SYS_CONSOLE=0x150 仅授予内核启动的 conhost；普通或严格启动的相同程序也不能取得设备权限。
 
 启动镜像仍固定 2.88 MB，删除资源减少文件占用，不改变镜像总容量。开发、发行和验收默认 4096 MiB RAM、1 个虚拟 CPU；64 MiB 整机兼容已撤销，启动阶段的 64 MiB 临时映射仍保留。测试报告用 QMP 核对实际内存与 CPU；32 位非 PAE 仅管理 E820 在 4 GiB 以下的可用页，不保证安装 RAM 全部可用。
 
 | 任务 | 起读文件 / 符号 | 对应验证入口 |
 | --- | --- | --- |
-| 开机文字 Shell | user/console_host.c、src32/console.c、process.c:SYS_CONSOLE、loader.asm | `node 'Source Code/tests/host/test-console.js' <普通 BuildOnly 目录>`；9 项；追加 `--persistence` 为 3 项跨重启自动保存检查；契约 docs/text-console.md |
-| 构建、引导 | build32.ps1、build-image32.js、src32/loader.asm、src32/kernel.c:kmain | `tests/host/test-boot.js <BuildOnly 构建目录>` |
-| FAT12 启动卷 | src32/fs/boot_fat12.c:fs_init / fs_read / fs_read_at、src32/boot-ramdisk.h | 普通镜像无窗口启动；ShellBridge 验证 `/boot` 读取 |
-| 物理页分配、启动页表 | src32/mm/page.c:page_init / page_alloc_run、src32/mm/paging.c:paging_bootstrap / paging_kernel_init | 普通镜像无窗口启动，核对启动日志 |
-| 用户页表、权限和线程栈 | src32/mm/paging.c、src32/mm/uaccess.c:uaccess_prepare、src32/process.c:launch_policy / alloc_user_stack | ShellBridge 中 `run -s /boot/poltest.snx paging-a/b` |
-| 多用户页表与动态地址窗口 | src32/mm/paging.c:paging_user_map / paging_user_find_gap | ShellBridge 中 `run -s /boot/poltest.snx paging-c` 系列 |
-| 匿名内存与 SDK 堆 | src32/process.c:anon_map / anon_unmap、user/runtime.c | ShellBridge 中 `run -s /boot/fstest.snx anon-*` 系列 |
-| 内存范围与用户复制边界 | src32/mm/e820.h、addr.h、uaccess.c；docs/mm-access.md | `node 'Source Code/tests/host/test-mm-boundaries.js'`；10 项，`--list` 预览；系统验收按 images / anonymous 选测 |
-| 用户缓冲区校验 | src32/mm/uaccess.c、src32/process.c | ShellBridge 中 fstest.snx / termtest.snx 的 uaccess 系列 |
-| 匿名页按需分配 | src32/process.c:anon_map / process_anon_page / process_interrupt | ShellBridge 中 anon-lazy / anon-oom / anon-fault |
-| 高页、SNX v2 与匿名内存 | src32/mm/page.c、src32/mm/paging.c、user/linker.ld | `tests/host/test-memory.js images <ShellBridge 构建目录>` 或 `anonymous <同一构建目录>`，不依赖历史镜像 |
-| 调度、故障回收 | src32/process.c:process_step / release、src32/entry.asm | `regression.ps1 -Suite process`；8 项 |
-| 系统调用与权限 | src32/api.h → src32/process.c:syscall → src32/object.c；同步 user/sdk.h | `regression.ps1 -Suite policy`；契约 docs/os-interface.md |
-| 完成记录 | src32/process.c:release / SYS_SPAWN_TRACKED / SYS_PROCESS_RESULT | `regression.ps1 -Suite completion`；契约 docs/os-interface.md |
-| 进程完成阻塞等待 | src32/process.c:release / user_completion_result / retry_wait；tests/guest/completion_tests.c | `tests/host/test-completion-waits.js <ShellBridge 构建目录>`（8 项）；契约 docs/os-interface.md |
-| 有限 CLI | src32/process.c:process_run_start、run_bridge.c、shell_bridge.c | `regression.ps1 -Suite cli` / `managed-cli`；run.ps1；契约 docs/bounded-cli.md |
-| 目录授权与文件对象 | src32/filesys.c、vfs.c、process.c:RunSpecV2；tests/guest/file_tests.c | `regression.ps1 -Suite files`；契约 docs/file-objects.md |
-| 管道与标准流 | src32/pipe.c/.h、object.c、process.c:RunSpecV3；tests/guest/pipe_tests.c | `regression.ps1 -Suite pipes`；契约 docs/stream-pipes.md |
-| 管道阻塞读写 | src32/process.c:transfer_pipe / retry_wait、src32/pipe.c:pipe_release | `tests/host/test-pipe-waits.js <ShellBridge 构建目录>`（10 项）；契约 docs/stream-pipes.md |
-| 文本会话后端 | src32/terminal.c/.h、process.c:SYS_TERMINAL；tests/guest/terminal_tests.c | `regression.ps1 -Suite terminal`；契约 docs/terminal-sessions.md |
-| 终端阻塞读取 | src32/terminal.c:wake_readers、process.c:SYS_TERMINAL / retry_wait；tests/guest/terminal_tests.c | `tests/host/test-terminal-waits.js <ShellBridge 构建目录>`（11 项）；契约 docs/terminal-sessions.md |
-| 阻塞等待 SDK 与 Shell | user/stream.h、user/sdk.h、user/interactive.h、user/gsh.c:external | `tests/host/test-shell-waits.js <ShellBridge 构建目录>`（5 项，目录须含同次构建的 kernel-normal.exe）；契约 docs/os-interface.md |
-| 交互启动代理 | src32/interactive.h、process.c、terminal.c；tests/guest/interactive_tests.c | `regression.ps1 -Suite interactive`；契约 docs/interactive-runs.md |
-| Shell | user/gsh.c、gsh_parse.h、gcmd.c | `regression.ps1 -Suite shell-waits`；契约 docs/user-shell.md |
-| 只读文件工具 | user/tview.c、file_text.h | tests/host/test-file-text.c 宿主模型；契约 docs/file-tools.md |
-| 常用命令与欢迎文本 | user/gsh.c、gcmd.c、shell_commands.h、shell_banner.h | shell-commands（112 项，仅显式全量）；契约 docs/shell-tools.md |
-| 写工作区 | user/write_tool.c、gsh.c；process.c 可信来源 | 文件机制按 files 选测；契约 docs/workspace-shell.md；原 GUI 集成覆盖已移除 |
-| 行编辑与文本模型 | user/gsh.c、line_edit.h、terminal_edit_model.h、terminal_model.h | tests/host/test-line-edit.c / test-line-model.c / test-terminal-model.c；契约 docs/shell-editing.md |
-| 保存与恢复 | src32/vfs.c → src32/storage.c → src32/disk.c | files / persistence |
-| 键盘解码 | src32/keyboard.c | tests/host/test-keyboard.js（宿主逻辑） |
-| 时钟与 RTC | src32/rtc.c、src32/process.c:SYS_TIME | `regression.ps1 -Suite rtc-driver` |
-| 网络 | src32/net.h、src32/net.c:net_poll、user/netlib.c | `regression.ps1 -Suite network`（仅回环） |
-| 日志与语言资源 | src32/klog.c/.h、src32/locale.c/.h、resources/locale/ | tests/host/test-src32-refactor.js（41 项） |
+| 开机文字 Shell | user/console_host.cpp、src32/console.cpp、task/process.cpp:SYS_CONSOLE、loader.asm | `node 'Source Code/tests/host/test-console.js' <普通 BuildOnly 目录>`；9 项；追加 `--persistence` 为 3 项跨重启自动保存检查；契约 docs/text-console.md |
+| 构建、引导 | build32.ps1、build-image32.js、src32/loader.asm、src32/kernel.cpp:kmain | `tests/host/test-boot.js <BuildOnly 构建目录>` |
+| FAT12 启动卷 | src32/fs/boot_fat12.cpp:fs_init / fs_read / fs_read_at、src32/boot-ramdisk.h | 普通镜像无窗口启动；ShellBridge 验证 `/boot` 读取 |
+| 物理页分配、启动页表 | src32/mm/page.cpp:page_init / page_alloc_run、src32/mm/paging.cpp:paging_bootstrap / paging_kernel_init | 普通镜像无窗口启动，核对启动日志 |
+| 用户页表、权限和线程栈 | src32/mm/paging.cpp、src32/mm/uaccess.cpp:uaccess_prepare、src32/task/process.cpp:launch_policy / alloc_user_stack | ShellBridge 中 `run -s /boot/poltest.snx paging-a/b` |
+| 多用户页表与动态地址窗口 | src32/mm/paging.cpp:paging_user_map / paging_user_find_gap | ShellBridge 中 `run -s /boot/poltest.snx paging-c` 系列 |
+| 匿名内存与 SDK 堆 | src32/task/process.cpp:anon_map / anon_unmap、user/runtime.cpp | ShellBridge 中 `run -s /boot/fstest.snx anon-*` 系列 |
+| 内存范围与用户复制边界 | src32/mm/e820.h、addr.h、uaccess.cpp；docs/mm-access.md | `node 'Source Code/tests/host/test-mm-boundaries.js'`；10 项，`--list` 预览；系统验收按 images / anonymous 选测 |
+| 用户缓冲区校验 | src32/mm/uaccess.cpp、src32/task/process.cpp | ShellBridge 中 fstest.snx / termtest.snx 的 uaccess 系列 |
+| 匿名页按需分配 | src32/task/process.cpp:anon_map / anonPage；task/scheduler.cpp:interrupt | ShellBridge 中 anon-lazy / anon-oom / anon-fault |
+| 高页、SNX v2 与匿名内存 | src32/mm/page.cpp、src32/mm/paging.cpp、user/linker.ld | `tests/host/test-memory.js images <ShellBridge 构建目录>` 或 `anonymous <同一构建目录>`，不依赖历史镜像 |
+| 调度、故障回收 | src32/task/scheduler.cpp:step / interrupt；task/process.cpp:release；src32/entry.asm | `regression.ps1 -Suite process`；8 项 |
+| 系统调用与权限 | src32/api.h → src32/task/process.cpp:dispatchSyscall → src32/object.cpp；同步 user/sdk.h | `regression.ps1 -Suite policy`；契约 docs/os-interface.md |
+| 完成记录 | src32/task/process.cpp:release / SYS_SPAWN_TRACKED / SYS_PROCESS_RESULT | `regression.ps1 -Suite completion`；契约 docs/os-interface.md |
+| 进程完成阻塞等待 | src32/task/process.cpp:release / user_completion_result / retry_wait；tests/guest/completion_tests.cpp | `tests/host/test-completion-waits.js <ShellBridge 构建目录>`（8 项）；契约 docs/os-interface.md |
+| 有限 CLI | src32/task/process.cpp:process_run_start、run_bridge.cpp、shell_bridge.cpp | `regression.ps1 -Suite cli` / `managed-cli`；run.ps1；契约 docs/bounded-cli.md |
+| 目录授权与文件对象 | src32/filesys.cpp、vfs.cpp、task/process.cpp:RunSpecV2；tests/guest/file_tests.cpp | `regression.ps1 -Suite files`；契约 docs/file-objects.md |
+| 管道与标准流 | src32/pipe.cpp/.h、object.cpp、task/process.cpp:RunSpecV3；tests/guest/pipe_tests.cpp | `regression.ps1 -Suite pipes`；契约 docs/stream-pipes.md |
+| 管道阻塞读写 | src32/task/process.cpp:transfer_pipe / retry_wait、src32/pipe.cpp:pipe_release | `tests/host/test-pipe-waits.js <ShellBridge 构建目录>`（10 项）；契约 docs/stream-pipes.md |
+| 文本会话后端 | src32/terminal.cpp/.h、task/process.cpp:SYS_TERMINAL；tests/guest/terminal_tests.cpp | `regression.ps1 -Suite terminal`；契约 docs/terminal-sessions.md |
+| 终端阻塞读取 | src32/terminal.cpp:wake_readers、task/process.cpp:SYS_TERMINAL / retry_wait；tests/guest/terminal_tests.cpp | `tests/host/test-terminal-waits.js <ShellBridge 构建目录>`（11 项）；契约 docs/terminal-sessions.md |
+| 阻塞等待 SDK 与 Shell | user/stream.h、user/sdk.h、user/interactive.h、user/gsh.cpp:external | `tests/host/test-shell-waits.js <ShellBridge 构建目录>`（5 项，目录须含同次构建的 kernel-normal.exe）；契约 docs/os-interface.md |
+| 交互启动代理 | src32/interactive.h、task/process.cpp、terminal.cpp；tests/guest/interactive_tests.cpp | `regression.ps1 -Suite interactive`；契约 docs/interactive-runs.md |
+| Shell | user/gsh.cpp、gsh_parse.h、gcmd.cpp | `regression.ps1 -Suite shell-waits`；契约 docs/user-shell.md |
+| 只读文件工具 | user/tview.cpp、file_text.h | tests/host/test-file-text.cpp 宿主模型；契约 docs/file-tools.md |
+| 常用命令与欢迎文本 | user/gsh.cpp、gcmd.cpp、shell_commands.h、shell_banner.h | shell-commands（112 项，仅显式全量）；契约 docs/shell-tools.md |
+| 写工作区 | user/write_tool.cpp、gsh.cpp；task/process.cpp 可信来源 | 文件机制按 files 选测；契约 docs/workspace-shell.md；原 GUI 集成覆盖已移除 |
+| 行编辑与文本模型 | user/gsh.cpp、line_edit.h、terminal_edit_model.h、terminal_model.h | tests/host/test-line-edit.cpp / test-line-model.cpp / test-terminal-model.cpp；契约 docs/shell-editing.md |
+| 保存与恢复 | src32/vfs.cpp → src32/storage.cpp → src32/disk.cpp | files / persistence |
+| 键盘解码 | src32/keyboard.cpp | tests/host/test-keyboard.js（宿主逻辑） |
+| 时钟与 RTC | src32/rtc.cpp、src32/task/process.cpp:SYS_TIME | `regression.ps1 -Suite rtc-driver` |
+| 网络 | src32/net.h、src32/net.cpp:net_poll、user/netlib.cpp | `regression.ps1 -Suite network`（仅回环） |
+| 日志与语言资源 | src32/klog.cpp/.h、src32/locale.cpp/.h、resources/locale/ | tests/host/test-src32-refactor.js（41 项） |
 | QEMU 测试基础设施 | tools/shell-test.js、tools/qmp.js、tests/support/regression-vm.js | 按改动选择；verify-system.js 仅宿主键盘检查 |
+
+task 提取契约见 [task-subsystem.md](Source Code/docs/task-subsystem.md)。C ABI 入口在 task/entry.cpp；调度/中断在 task/scheduler.cpp，Thread 等待成员在 task/thread.cpp；加载缓冲私有且不可重入。
 
 ## 关键边界
 
@@ -135,6 +139,10 @@ Shell 宿主测试参数：`-ExpectedExitCode 1` 断言预期失败，`-TimeoutS
 - 通用子进程委托、cwd/env 继承尚未实现
 
 独立 VM 配置宿主检查：`node 'Source Code/tests/host/test-vm-config.js'`，4 项，`--list` 预览。内存专项 images 11 项、anonymous 7 项；OOM 为 ShellBridge 只读探针绑定页目录的定向注入，普通镜像不含注入后端。
+
+## 新代码约定
+
+新增实现使用 freestanding C++17、显式底层类型的 enum class，优先 namespace 与职责明确的成员函数。控制语句均带 `{}`；C ABI/汇编边界使用 extern "C"，内部保持 C++ 链接。禁止异常、RTTI、STL、宿主运行库及隐式动态初始化；局部 RAII 只能用于不分配、不阻塞的资源管理。task/internal.h 仅供 task 实现，跨模块使用 task/task.h。
 
 ## 提交与推送
 

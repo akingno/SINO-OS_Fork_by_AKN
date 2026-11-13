@@ -5,7 +5,7 @@
 #include "rtc.h"
 /* SINO SH: project-specific shell, separate from the SINO32 kernel. */
 #include "vfs.h"
-#include "process.h"
+#include "task/task.h"
 #include "storage.h"
 #include "lib/kstring.h"
 #include "mm/page.h"

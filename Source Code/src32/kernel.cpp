@@ -6,7 +6,8 @@
 #include "mm/kmap.h"
 #include "storage.h"
 #include "disk.h"
-#include "process.h"
+#include "task/task.h"
+#include "sync/irq.h"
 #include "vfs.h"
 #include "net.h"
 #include "keyboard.h"
@@ -362,6 +363,7 @@ extern "C" void kmain(void) {
   storage_init();
   rtc_init();
   sti();
+  sync::selfTest();
   u32 begin = ticks;
   while (ticks - begin < 3)
     halt();

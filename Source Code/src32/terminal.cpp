@@ -3,7 +3,7 @@
  */
 #include "terminal.h"
 #include "mm/uaccess.h"
-#include "process.h"
+#include "task/task.h"
 #include "lib/kstring.h"
 #include "mm/page.h"
 typedef struct {
