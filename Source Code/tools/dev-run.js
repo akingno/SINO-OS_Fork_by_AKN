@@ -7,6 +7,7 @@ const net = require('node:net');
 const {spawn, execFileSync} = require('node:child_process');
 const {QMP} = require('./qmp');
 const host = require('./host-tools');
+const vm = require('./vm-config');
 const sourceRoot = path.resolve(__dirname, '..');
 const repoRoot = path.dirname(sourceRoot);
 const devRoot = path.join(repoRoot, 'Build Output', 'dev');
@@ -36,6 +37,7 @@ function sources() {
     for (const name of ['src32','user','disk32','resources','tools','tests']) walk(path.join(sourceRoot, name));
     for (const name of fs.readdirSync(sourceRoot)) if (/^build.*\.(js|ps1)$/.test(name)) files.push(path.join(sourceRoot, name));
     files.push(path.join(sourceRoot, 'LICENSE'));
+    files.push(path.join(sourceRoot, 'release/launch.ps1'));
     files.push(path.join(repoRoot, 'dev.ps1'));
     files.push(path.join(repoRoot, 'run.ps1'));
     const inputs = files.sort().map(file => ({path:path.relative(repoRoot,file).replaceAll('\\','/'),sha256:sha(fs.readFileSync(file))}));
@@ -124,7 +126,7 @@ async function run(directory) {
     if (!fs.statSync(dataFile).isFile() || fs.statSync(dataFile).size !== 16*1024*1024) throw Error('Unexpected development data disk.');
     const port = await availablePort();
     const name = `SINO Dev ${build.buildId}`;
-    const args = ['-L',firmware,'-name',name,'-machine','pc,vmport=on','-accel','tcg','-m','64M','-vga','std','-nic','none',
+    const args = ['-L',firmware,'-name',name,'-machine','pc,vmport=on','-accel','tcg',...vm.args(),'-vga','std','-nic','none',
         '-drive','file=SINO.iso,format=raw,media=cdrom,if=ide,index=2,readonly=on',
         '-drive','file=../../data.img,format=raw,if=ide,index=0','-boot','order=d','-rtc','base=localtime',
         '-display','gtk,show-menubar=off,show-cursor=off,zoom-to-fit=off',
@@ -153,6 +155,7 @@ async function run(directory) {
         }
         qmp = await connect(port);
         if ((await qmp.call('query-name')).name !== name) throw Error('Unexpected QMP VM identity.');
+        const profile = await vm.verify(qmp);
         const status = await qmp.call('query-status');
         if (!status.running) throw Error('Guest is not running.');
         const blocks = await qmp.call('query-block');
@@ -161,7 +164,7 @@ async function run(directory) {
         if (mounted.length!==2 || !mounted.some(b=>b.file===dataFile)) throw Error('Unexpected VM disk attachment.');
         if (sha(fs.readFileSync(build.iso))!==build.isoSha256) throw Error('ISO changed after build verification.');
         const checks = ['source fingerprint unchanged during build','ISO embeds current boot image','guest reports matching build ID','CLI ready without kernel panic','QMP reports running','only development ISO and data disk attached'];
-        const report = {...build,result:'PASS',verifiedAt:new Date().toISOString(),qemu:exe,qmpPort:port,pid:child.pid,mounted,checks};
+        const report = {...build,result:'PASS',verifiedAt:new Date().toISOString(),qemu:exe,qmpPort:port,pid:child.pid,profile,mounted,checks};
         writeJSON(path.join(directory,'verification.json'),report);
         console.log(`PASS ${build.buildId}\nISO: ${build.iso}\nSHA256: ${build.isoSha256}\nReport: ${path.join(directory,'verification.json')}\nDevelopment VM is running. Close its window before the next development launch.`);
     } catch (error) {

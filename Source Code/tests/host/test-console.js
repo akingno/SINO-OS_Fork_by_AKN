@@ -6,6 +6,7 @@ const {createHash} = require('node:crypto');
 const root = path.resolve(__dirname, '../..');
 const {QMP} = require(path.join(root, 'tools/qmp'));
 const {qemuPath, sources} = require(path.join(root, 'tools/dev-run'));
+const vm = require('../../tools/vm-config');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const persistence = process.argv.includes('--persistence');
 const {volume} = require(path.join(root, 'tools/test-volume'));
@@ -29,7 +30,7 @@ async function main(arg) {
     function launch() {
     error = null;
     const stderr = fs.openSync(path.join(directory,'qemu-stderr.log'),'a');
-    child = spawn(exe,['-L',firmware,'-machine','pc','-accel','tcg','-m','64M','-vga','std',
+    child = spawn(exe,['-L',firmware,'-machine','pc','-accel','tcg',...vm.args(),'-vga','std',
         '-nic','none','-display','none','-serial','none','-monitor','none','-no-reboot',
         '-drive','file=SINO.iso,format=raw,media=cdrom,if=ide,index=2,readonly=on',
         '-drive','file=data.img,format=raw,if=ide,index=0','-boot','order=d',
@@ -60,6 +61,7 @@ async function main(arg) {
     async function check(id,fn){const item={id,result:'FAIL'};report.cases.push(item);await fn();item.result='PASS';console.log('PASS '+id);}
     try {
         await until(async()=>{try{q=await new QMP(port).connect();return true;}catch{return false;}},'QMP');
+        report.profile = await vm.verify(q);
         if (persistence) {
             const snapshot = () => volume(path.join(directory,'data.img')).current.records;
             async function reboot() {

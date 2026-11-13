@@ -2,10 +2,13 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const {spawn} = require('node:child_process');
+const net = require('node:net');
 const {createHash} = require('node:crypto');
 const {setTimeout: sleep} = require('node:timers/promises');
 const {qemuPath} = require('../../tools/dev-run');
 const {bootPayload} = require('../support/iso-boot');
+const {QMP} = require('../../tools/qmp');
+const vm = require('../../tools/vm-config');
 
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 
@@ -18,13 +21,17 @@ async function boot(executable, directory, buildId) {
     finally { fs.closeSync(disk); }
 
     const kernelLog = path.join(directory, 'kernel.log');
+    const reservation = net.createServer();
+    await new Promise(resolve => reservation.listen(0, '127.0.0.1', resolve));
+    const port = reservation.address().port;
+    await new Promise(resolve => reservation.close(resolve));
     const stderr = fs.openSync(path.join(directory, 'qemu-stderr.log'), 'wx');
     let child;
     try {
         child = spawn(executable, [
-            '-L', firmware, '-machine', 'pc,vmport=on', '-accel', 'tcg', '-m', '64M',
+            '-L', firmware, '-machine', 'pc,vmport=on', '-accel', 'tcg', ...vm.args(),
             '-vga', 'std', '-nic', 'none', '-display', 'none', '-monitor', 'none',
-            '-serial', 'none', '-no-reboot',
+            '-serial', 'none', '-no-reboot', '-qmp', `tcp:127.0.0.1:${port},server=on,wait=off`,
             '-drive', 'file=SINO.iso,format=raw,media=cdrom,if=ide,index=2,readonly=on',
             '-drive', 'file=data.img,format=raw,if=ide,index=0', '-boot', 'order=d',
             '-debugcon', 'file:kernel.log', '-global', 'isa-debugcon.iobase=0xe9'
@@ -35,6 +42,7 @@ async function boot(executable, directory, buildId) {
     child.on('error', error => { spawnError = error; });
     const stopped = new Promise(resolve => child.once('close', resolve));
     const deadline = Date.now() + 30000;
+    let qmp;
     try {
         while (true) {
             if (spawnError) throw spawnError;
@@ -46,12 +54,14 @@ async function boot(executable, directory, buildId) {
                 assert(log.includes('FAT12 RAM disk ready'), 'FAT12 volume did not mount');
                 assert(log.includes('TIMER IRQ0 delivered'), 'Timer interrupt did not arrive');
                 assert(!log.includes('SINO SHELL BRIDGE'), 'Expected an ordinary build without ShellBridge');
-                return;
+                qmp = await new QMP(port).connect();
+                return await vm.verify(qmp);
             }
             assert(Date.now() < deadline, 'Boot timed out');
             await sleep(50);
         }
     } finally {
+        if (qmp) qmp.close();
         if (child.pid && child.exitCode === null && child.signalCode === null) child.kill();
         await stopped;
     }
@@ -72,9 +82,9 @@ async function main(args) {
     const run = fs.mkdtempSync(path.join(directory, 'boot-'));
     fs.writeFileSync(path.join(run, 'SINO.iso'), iso, {flag:'wx'});
     console.log(`Boot logs: ${run}`);
-    await boot(executable, run, build.buildId);
+    const profile = await boot(executable, run, build.buildId);
     fs.writeFileSync(path.join(run, 'boot-report.json'), JSON.stringify({result:'PASS',
-        buildId:build.buildId, cases:[{id:'boot.ordinary', result:'PASS'}]}, null, 2));
+        buildId:build.buildId, profile, cases:[{id:'boot.ordinary', result:'PASS'}]}, null, 2));
     console.log(`PASS headless CD boot for ${build.buildId} with FAT12, timer IRQ0 and ShellBridge disabled`);
 }
 

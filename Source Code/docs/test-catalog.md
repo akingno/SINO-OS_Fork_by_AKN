@@ -42,12 +42,14 @@
 | 入口（tests/host/） | 用例数 | 范围 |
 | --- | ---: | --- |
 | `test-console.js <普通 BuildOnly 目录> --persistence` | 3 | 不调用 sync；创建、更新/改名、删除后跨 QEMU 重启验证，保留其他文件 |
-| `test-console.js <普通 BuildOnly 目录>` | 6 | 开机提示、编辑/历史、工作区、取消、ASCII 输入、退出重启；QMP 键盘和 VGA 文字内存，不读取 GUI 场景或截图 |
+| `test-console.js <普通 BuildOnly 目录>` | 9 | 开机提示、编辑/历史、工作区、取消、ASCII 输入、退出重启、滚屏与输入固定；QMP 键盘和 VGA 文字内存，不读取 GUI 场景或截图 |
 | `test-boot.js <普通 BuildOnly 目录>` | 1 | ISO 身份、El Torito、FAT12、计时器、普通启动隔离；ID 为 boot.ordinary |
-| `test-memory.js images <ShellBridge 目录>` | 9 | 64 MiB / 1 GiB、SNX v1/v2、高页、线程栈与冷启动 |
-| `test-memory.js anonymous <ShellBridge 目录>` | 5 | 匿名映射、配额、跨页 I/O、故障和 OOM |
+| `test-memory.js images <ShellBridge 目录>` | 11 | 4 GiB 单核/E820 空洞、定向映像/页表 OOM 回滚、SNX v1/v2、高页、线程栈与冷启动 |
+| `test-memory.js anonymous <ShellBridge 目录>` | 7 | 匿名映射、配额、跨页 I/O、定向 OOM/首次触页故障及可写副本注入隔离 |
 
-上述入口均支持 `--list`（内存入口为 `test-memory.js images --list`）。内存用例以一次实际探针执行计数，原有 13/18 个命名条件均保留在报告的 conditions 中，未删除覆盖。两种内存容量的同名探针有不同上下文，不合并。
+上述入口均支持 `--list`（内存入口为 `test-memory.js images --list`）。内存用例按实际探针/配置契约执行计数，详细断言列在报告 conditions 中。默认配置为 4096 MiB、单核，并用 QMP 核对。旧 64 MiB 兼容例已移除，映像、页表和匿名页的失败回滚改由限定目标的注入保留覆盖，不再依赖耗尽全局物理池。
+
+`node 'Source Code/tests/host/test-vm-config.js' --list` 预览 4 项独立宿主检查：默认/专项参数、拒绝旧低内存及非法参数、QMP 身份、开发/发行/测试入口一致性。报告为 Build Output/phase00a/vm-config-report.json，不计入统一注册表的 267 项。
 
 四个 `test-*-waits.js <ShellBridge 目录>` 现仅转入同一统一注册表：管道 10、完成记录 8、终端 11、Shell/SDK 5。它们与 `-Suite *-waits` 共用完全相同的用例，不额外计数；支持 `--list`。
 

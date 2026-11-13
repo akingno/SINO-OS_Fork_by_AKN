@@ -6,6 +6,7 @@ const net = require('node:net');
 const crypto = require('node:crypto');
 const {spawn} = require('node:child_process');
 const {QMP} = require('./qmp');
+const vm = require('./vm-config');
 const {qemuPath, sources} = require('./dev-run');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const readJSON = file => JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, ''));
@@ -89,19 +90,19 @@ function scenarios(job) {
     return require('../tests/support/shell-transport-cases');
 }
 
-async function run(directory, {execute, seedDisk, memoryMiB = 64} = {}) {
+async function run(directory, {execute, seedDisk, memoryMiB = vm.memoryMiB} = {}) {
     const job = readJSON(path.join(directory, 'shell-job.json'));
     const build = readJSON(path.join(directory, 'build.json'));
     const report = {version:1, build, result:'FAIL', stage:'identity', cases:[],
         outputMode:'combined Shell output; diagnostics separately in kernel.log',
-        memoryMiB, startedAt:new Date().toISOString()};
+        memoryMiB, cpuCount:vm.cpuCount, startedAt:new Date().toISOString()};
     const reportFile = path.join(directory, 'shell-report.json');
     const dataFile = path.join(directory, 'shell-data.img');
     const kernelLog = path.join(directory, 'kernel.log');
     let child, channel, qmp, server, childError;
     const guestLog = () => fs.existsSync(kernelLog) ? fs.readFileSync(kernelLog, 'utf8') : '';
     try {
-        if (![64, 128, 1024, 2048].includes(memoryMiB)) throw Error('Unsupported test VM memory size.');
+        vm.args(memoryMiB);
         if (sources().sha256 !== build.sourceSha256 || hash(build.iso) !== build.isoSha256 ||
             path.resolve(build.iso) !== path.join(directory, 'SINO.iso')) throw Error('Build inputs or ISO identity changed.');
         if (seedDisk) {
@@ -131,7 +132,7 @@ async function run(directory, {execute, seedDisk, memoryMiB = 64} = {}) {
         let firmware = path.join(path.dirname(exe), 'share');
         if (fs.existsSync(path.join(firmware, 'qemu', 'bios-256k.bin'))) firmware = path.join(firmware, 'qemu');
         const args = ['-L', firmware, '-name', 'SINO Shell '+build.buildId,
-            '-machine','pc,vmport=on','-accel','tcg','-m',`${memoryMiB}M`,'-vga','std','-nic','none',
+            '-machine','pc,vmport=on','-accel','tcg',...vm.args(memoryMiB),'-vga','std','-nic','none',
             '-display','none','-monitor','none','-rtc','base=localtime',
             '-drive','file=SINO.iso,format=raw,media=cdrom,if=ide,index=2,readonly=on',
             '-drive','file=shell-data.img,format=raw,if=ide,index=0','-boot','order=d',
@@ -161,6 +162,7 @@ async function run(directory, {execute, seedDisk, memoryMiB = 64} = {}) {
         await bounded(connected, 2000, 'COM1 connection timed out.');
         qmp = new QMP(qmpPort);
         await bounded(qmp.connect(), 3000, 'QMP connection timed out.');
+        report.profile = await vm.verify(qmp, memoryMiB);
         const blocks = (await qmp.call('query-block')).filter(b => b.inserted).map(b => ({
             file:path.resolve(directory,b.inserted.file), readonly:b.inserted.ro}));
         if (blocks.length !== 2 || !blocks.some(b => b.file === build.iso && b.readonly) ||

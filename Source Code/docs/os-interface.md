@@ -124,7 +124,11 @@ including the explicit v1 compatibility and address-layout probes.
 The kernel publishes E820 RAM above 64 MiB after switching to its formal
 supervisor page tables. The identity window ends at 1 GiB, where SNX user
 addresses begin. Pages marked unavailable, boot reserves and allocator metadata
-stay outside the pool. The 64 MiB QEMU configuration still boots.
+stay outside the pool. Development, release and acceptance VMs default to 4096 MiB
+and one virtual CPU, verified with QMP. There is no 64 MiB runtime compatibility
+requirement. Non-PAE ignores RAM remapped above 4 GiB; installed RAM is not the
+allocatable page count. ShellBridge-only read-only probes inject allocation failures
+for their own page directories; ordinary kernels contain no injection backend.
 
 ## Trusted selection and old application compatibility
 

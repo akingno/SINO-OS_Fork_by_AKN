@@ -1,17 +1,33 @@
 {
   "images": [
     {
-      "id": "memory.images.64-mib-boots-with-its-existing-pool-and-16-mib-image-oom-rolls-back",
-      "name": "64 MiB boots with its existing pool and 16 MiB image OOM rolls back",
+      "id": "memory.images.4-gib-e820-pool-and-single-core-identity",
+      "name": "4 GiB single-core VM publishes only eligible E820 pages below 4 GiB",
       "conditions": [
-        "64 MiB boots with its existing pool and 16 MiB image OOM rolls back"
+        "4 GiB single-core VM identity",
+        "E820 reserved overlaps and MMIO holes stay out of the pool",
+        "direct map ends at 1 GiB and high RAM is available"
       ]
     },
     {
-      "id": "memory.images.1-gib-publishes-e820-high-pages-after-the-formal-cr3-switch",
-      "name": "1 GiB publishes E820 high pages after the formal CR3 switch",
+      "id": "memory.images.targeted-image-oom-rolls-back",
+      "name": "partial SNX image allocation failure restores all resources",
       "conditions": [
-        "1 GiB publishes E820 high pages after the formal CR3 switch"
+        "partial SNX image allocation failure restores all resources"
+      ]
+    },
+    {
+      "id": "memory.images.targeted-table-oom-rolls-back",
+      "name": "data page is reclaimed when its new page table allocation fails",
+      "conditions": [
+        "data page is reclaimed when its new page table allocation fails"
+      ]
+    },
+    {
+      "id": "memory.images.multi-pde-mappings-recover-after-injected-failure",
+      "name": "multi-PDE mapping succeeds after the failed launch is reclaimed",
+      "conditions": [
+        "multi-PDE mapping succeeds after the failed launch is reclaimed"
       ]
     },
     {
@@ -54,10 +70,10 @@
       ]
     },
     {
-      "id": "memory.images.private-disk-commits-binary-bytes-on-the-1-gib-image",
-      "name": "private disk commits binary bytes on the 1 GiB image",
+      "id": "memory.images.private-disk-commits-binary-bytes-on-the-4-gib-image",
+      "name": "private disk commits binary bytes on the 4 GiB image",
       "conditions": [
-        "private disk commits binary bytes on the 1 GiB image"
+        "private disk commits binary bytes on the 4 GiB image"
       ]
     },
     {
@@ -111,10 +127,24 @@
     },
     {
       "id": "memory.anonymous.physical-oom-leaves-output-intact",
-      "name": "physical OOM leaves output intact",
+      "name": "injected anonymous allocation failure leaves output intact",
       "conditions": [
-        "physical OOM leaves output intact",
-        "physical OOM preserves pending pipe bytes"
+        "injected anonymous allocation failure leaves output intact",
+        "injected anonymous allocation failure preserves pending pipe bytes"
+      ]
+    },
+    {
+      "id": "memory.anonymous.injected-first-touch-oom-is-contained",
+      "name": "first-touch anonymous allocation failure faults only the target process",
+      "conditions": [
+        "first-touch anonymous allocation failure faults only the target process"
+      ]
+    },
+    {
+      "id": "memory.anonymous.writable-probe-copy-is-not-injected",
+      "name": "a writable copy with the same argument cannot enable memory injection",
+      "conditions": [
+        "a writable copy with the same argument cannot enable memory injection"
       ]
     }
   ]

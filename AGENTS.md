@@ -82,7 +82,7 @@ Shell 宿主测试参数：`-ExpectedExitCode 1` 断言预期失败，`-TimeoutS
 
 32 位 x86 BIOS，单体内核。GUI 移除已完成计划四步：桌面、窗口管理、图形绘制、设置与内置 Ring 0 应用已移除；窗口相关系统调用保留编号并返回错误。GUI Ring 3 终端前端和文件管理器，以及 UIASSET.BIN、PINYIN.TXT、CJK_OFL.TXT 已删除且不再构建或打包。普通镜像通过 VGA 80×25 文字控制台自动进入 Ring 3 gsh；ShellBridge 镜像继续提供独立测试通道，gcmd、tview、writer 保留；brokerqa 是无界面 Shell / 会话探针，继续构建并打包到 ShellBridge 镜像。GUI 测试、注册项和旧转发入口已删除。普通镜像自动启动 conhost.snx 和 gsh.snx，日志依次确认 `SINO CLI ready` 与 `CONSOLE SHELL ready`；US 键盘直接输入，无中文输入法或拼音字典。文字屏幕仅显示 ASCII，UTF-8 文件数据保留。主循环依次推进 RTC、ShellBridge（启用时）、网络、用户线程；语言状态由 locale.c 持有。SYS_CONSOLE=0x150 仅授予内核启动的 conhost；普通或严格启动的相同程序也不能取得设备权限。
 
-启动镜像仍固定 2.88 MB，删除资源减少文件占用，不改变镜像总容量。
+启动镜像仍固定 2.88 MB，删除资源减少文件占用，不改变镜像总容量。开发、发行和验收默认 4096 MiB RAM、1 个虚拟 CPU；64 MiB 整机兼容已撤销，启动阶段的 64 MiB 临时映射仍保留。测试报告用 QMP 核对实际内存与 CPU；32 位非 PAE 仅管理 E820 在 4 GiB 以下的可用页，不保证安装 RAM 全部可用。
 
 | 任务 | 起读文件 / 符号 | 对应验证入口 |
 | --- | --- | --- |
@@ -133,6 +133,8 @@ Shell 宿主测试参数：`-ExpectedExitCode 1` 断言预期失败，`-TimeoutS
 - 严格策略（caps=0）默认拒绝，按白名单授权；兼容策略保留旧应用访问
 - 管道读写、完成记录查询、终端字节读取和交互命令结果支持显式线程级阻塞，超时为 0 表示无限等待，有限等待最多 60000 tick
 - 通用子进程委托、cwd/env 继承尚未实现
+
+独立 VM 配置宿主检查：`node 'Source Code/tests/host/test-vm-config.js'`，4 项，`--list` 预览。内存专项 images 11 项、anonymous 7 项；OOM 为 ShellBridge 只读探针绑定页目录的定向注入，普通镜像不含注入后端。
 
 ## 提交与推送
 

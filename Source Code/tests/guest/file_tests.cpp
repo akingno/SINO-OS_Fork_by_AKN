@@ -243,26 +243,24 @@ static int anon_lazy_test(void) {
 
 static int anon_oom_test(int fault) {
   u8* edge = (u8*)malloc(3 * 4096);
-  u8* pressure = (u8*)malloc(ANON_MAX_BYTES - 3 * 4096);
   PipePair pipe;
-  require(edge && pressure && PipeCreate(16, &pipe) == S_OK &&
+  require(edge && PipeCreate(16, &pipe) == S_OK &&
           StreamWrite(pipe.write, "queued!!", 8) == 8, "prepare OOM fixtures");
   u8* tail = edge + 4092;
   memset(tail, 0x5a, 4);
-  int status = S_OK;
-  for (u32 i = 0; i < ANON_MAX_BYTES - 3 * 4096 && status == S_OK; i += 4096)
-    status = QueryStartInfo((StartInfo*)(pressure + i));
-  require(status == S_NOMEM, "64 MiB test VM reaches physical OOM");
-  /* A table allocation may have left one page free. Consume it in a PDE
-     already used by the mapped prefix, without preparing the target page. */
-  status = QueryStartInfo((StartInfo*)(edge + 8192));
-  require(status == S_OK || status == S_NOMEM, "exhaust final spare page");
   if (fault) {
     Log("ANON EXPECT FIRST-TOUCH OOM FAULT\n");
     ((volatile u8*)edge)[4096] = 1;
     require(0, "user fault returned after physical OOM");
   }
-  require(StreamRead(pipe.read, tail, 8) == S_NOMEM && tail[0] == 0x5a && tail[3] == 0x5a,
+  int status = StreamRead(pipe.read, tail, 8);
+  // 可写副本和普通镜像不应注入；宿主单独断言此分支，验证探针隔离。
+  if (status == 8) {
+    require(same(tail, (const u8*)"queued!!", 8), "uninjected read succeeds");
+    Log("ANON UNINJECTED PASS\n");
+    return 0;
+  }
+  require(status == S_NOMEM && tail[0] == 0x5a && tail[3] == 0x5a,
           "syscall OOM leaves mapped output prefix unchanged");
   u8 data[8];
   require(StreamRead(pipe.read, data, 8) == 8 && same(data, (const u8*)"queued!!", 8),

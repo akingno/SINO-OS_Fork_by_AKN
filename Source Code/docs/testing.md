@@ -45,7 +45,7 @@ node 'Source Code/tests/host/test-boot.js' 'Build Output/dev/runs/<本轮构建�
 
 - **宿主**：Windows，GCC/GNU Binutils（能生成 i386 目标），Node.js，Python（构建时 locale 校验），源码包含 NASM 3.02
 - **环境变量**：`SINO_TOOLCHAIN`（GCC bin 目录）、`SINO_QEMU_DIR`（QEMU 目录）、`SINO_PYTHON`（Python 路径）
-- **客户机**：32 位 x86，64 MiB RAM，标准 VGA/VBE，PS/2，BIOS/MBR，ATA IDE
+- **客户机**：32 位 x86，4096 MiB RAM、单核，标准 VGA 文字模式，PS/2，BIOS/MBR，ATA IDE
 
 构建检查内核不超过约 160 KB、BSS 在保留页表之前、用户文件不超过 64 KiB、SNX v1 映像/数据不超过 192 KiB。
 
@@ -118,7 +118,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\test.ps1 -SelfTest -Full
 
 `-List` 只显示去重后的组、固定 ID 和用例数。默认总计最多 50 项、单组最多 20 项；超过时在构建前拒绝。用户显式手动全量运行可用 `-Full`，开发步骤自动验收仍遵守约定上限。`core`、50 项基础设施、25 项 Shell 通道和 112 项 Shell 命令都需要这个显式全量参数。普通单命令 `test.ps1 -Command ...` 不受整套自测影响；`test.ps1 -SelfTest` 同样先检查数量。
 
-`stress` 有 9 项（基线准备 + 8 次恢复），从普通进程套件移出。完成、终端和 Shell 等待专项已删除重复的基础整套探针和其他专项的相同唤醒用例；SDK 专项中的普通内核 Shell 语法重复检查由 112 项命令套件负责。64 MiB 与 1 GiB 内存场景仍分别保留，不能以探针名相同为由合并。
+`stress` 有 9 项（基线准备 + 8 次恢复），从普通进程套件移出。完成、终端和 Shell 等待专项已删除重复的基础整套探针和其他专项的相同唤醒用例；SDK 专项中的普通内核 Shell 语法重复检查由 112 项命令套件负责。64 MiB 运行兼容已撤销；默认场景为 4 GiB 单核，OOM 使用测试镜像中的定向失败注入。
 
 一个探针执行算一个用例，其内部断言或命名条件另行保留。RTC 的反复缓存读取不再被当作上百个独立用例；内存模式由 13/18 个条件改为 9/5 次真实执行，覆盖条件均保留。当前全部入口与数量见 [test-catalog.md](test-catalog.md)。
 
@@ -152,8 +152,8 @@ node 'Source Code/tests/host/test-src32-refactor.js'
 
 | 入口（位于 tests/host/） | 范围 | 用例数 |
 | --- | --- | --- |
-| `test-memory.js images <构建目录>` | 64 MiB / 1 GiB、高页、当前 SNX v1/v2、冷启动 | 9 |
-| `test-memory.js anonymous <构建目录>` | 匿名映射、配额、I/O、故障与 OOM | 5 |
+| `test-memory.js images <构建目录>` | 4 GiB/E820、高页、当前 SNX v1/v2、定向 OOM、冷启动 | 11 |
+| `test-memory.js anonymous <构建目录>` | 匿名映射、配额、I/O、定向 OOM/故障与注入隔离 | 7 |
 | `test-pipe-waits.js <构建目录>` | 管道阻塞与回收 | 10 |
 | `test-completion-waits.js <构建目录>` | 完成记录阻塞等待 | 8 |
 | `test-terminal-waits.js <构建目录>` | 终端阻塞读取 | 11 |

@@ -20,10 +20,10 @@
 | --- | --- | --- |
 | 开机文字控制台、ASCII 键盘和 Shell 前端 | 普通 `dev.ps1 -BuildOnly` 后运行 `node 'Source Code/tests/host/test-console.js' <构建目录>`；9 项，`--list` 预览 | 自动保存变化加同入口 `--persistence`（3 项，支持 `--list --persistence`）及 files / persistence；键盘滚屏或行编辑显示变化加 test-terminal-model.c / test-line-model.c 宿主模型；设备授权改动追加 policy；会话等待变化加 shell-waits；不恢复 GUI 套件 |
 | 引导、镜像、FAT12 启动卷 | `.\dev.ps1 -BuildOnly`，再 `node 'Source Code/tests/host/test-boot.js' '<本次普通构建目录>'`；1 项 | 涉及用户态启动/隔离时追加相应进程或内存专项 |
-| 匿名映射、懒分配、SDK 堆；`anon_map/unmap` | 下方内存命令的 `anonymous`；5 项 | 映像、高页或线程栈布局变化时追加 `images` |
-| 物理页、页表、高页、SNX、用户栈；`page_* / paging_*` | 下方内存命令的 `images`；9 项 | 涉及匿名映射/OOM 时加 `anonymous`；启动页表/物理池初始化变化时加普通启动检查 |
+| 匿名映射、懒分配、SDK 堆；`anon_map/unmap` | 下方内存命令的 `anonymous`；7 项 | 映像、高页或线程栈布局变化时追加 `images` |
+| 物理页、页表、高页、SNX、用户栈；`page_* / paging_*` | 下方内存命令的 `images`；11 项 | 涉及匿名映射/OOM 时加 `anonymous`；启动页表/物理池初始化变化时加普通启动检查 |
 | E820 对齐/重叠、地址溢出、uaccess 复制契约 | `node 'Source Code/tests/host/test-mm-boundaries.js'`；10 项，`--list` 预览 | 替代页表与分配边界的宿主检查；系统路径仍按下列 images / anonymous 及追加条件选测 |
-| 用户缓冲区；`uaccess_*` | `anonymous`；5 项，含跨页文件/管道 I/O | 文件或终端系统调用校验路径变化时，加对应 `files` 或 `terminal-waits`；新的非法指针边界另加针对性探针 |
+| 用户缓冲区；`uaccess_*` | `anonymous`；7 项，含跨页文件/管道 I/O | 文件或终端系统调用校验路径变化时，加对应 `files` 或 `terminal-waits`；新的非法指针边界另加针对性探针 |
 | 调度、进程/线程退出、故障回收；`process_step / release / entry.asm` | `.\regression.ps1 -Suite process`；8 项 | 完成通知/等待器变化加 `completion-waits`；管道/终端唤醒变化只加相应等待专项 |
 | 系统调用策略、权限、句柄授权；`launch_policy / syscall / object` | `.\regression.ps1 -Suite policy`；2 项 | 对象生命周期变化加受影响对象的套件；线程/进程资源变化加 `process` |
 | 完成记录、取消、观察者 | `.\regression.ps1 -Suite completion`；5 项 | 阻塞/超时/唤醒变化加 `completion-waits`；8 项 |
@@ -43,6 +43,12 @@
 `dev.ps1 -VerifyOnly` 转入同一个 `process` 套件（8 项），不再通过窗口键盘输入或截图验证；`verify-system.js` 仅保留宿主键盘检查。GUI 测试与选择名称已删除，旧名称在构建前拒绝。
 
 共享调度器/内存等底层机制确实影响多个接口时，应按实际影响追加，不能为少跑而漏掉必要边界。表中没有给出小入口的解析器、语言资源或存储故障检查，应先找到对应宿主测试或建立小专项，不以 `-Full` 代替选测。
+
+## VM 配置基线
+
+开发、发行与普通/接口验收默认 4096 MiB RAM、单核；QMP 报告实际配置。64 MiB 运行兼容已撤销。仅定向内存边界专项允许显式 1024/2048 MiB，不恢复低内存验收。
+`node 'Source Code/tests/host/test-vm-config.js' --list` 预览，去掉 --list 执行 4 项配置宿主检查；仅 VM 参数/身份验证变化时运行，不默认追加全部基础设施测试。
+OOM 探针使用 ShellBridge 内限定只读节点与页目录的映像/页表/匿名页失败注入，退出或启动失败时清理；不耗尽整台 VM。
 
 ## 内存专项：只构建一次 ShellBridge 镜像
 

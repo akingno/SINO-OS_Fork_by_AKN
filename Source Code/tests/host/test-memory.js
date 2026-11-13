@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const {run} = require('../../tools/shell-test');
 const {RunSession} = require('../../tools/run-channel');
+const vm = require('../../tools/vm-config');
 
 const memoryCases = require('../support/memory-cases.json');
 const {assertCaseIds} = require('../support/regression-plan');
@@ -87,28 +88,64 @@ async function boot(source, label, memoryMiB, verify, seedDisk) {
             await until(async () => free(await command('mem')) === baseline - retained);
             assert.doesNotMatch(await command('ps'), new RegExp('^' + pid + '\\s', 'm'));
         }
-        await verify({channel, guestLog, command, until, free, baseline, check, probe});
+        await verify({channel, guestLog, command, until, free, baseline, check, probe, qmp:context.qmp, directory, report});
     }});
     if (code) throw Error('Failed gate: ' + directory);
     return path.join(directory, 'shell-data.img');
 }
 
+async function geometry(qmp, directory, log, baseline) {
+    const dump = path.join(directory, 'e820.bin');
+    await qmp.hmp(`pmemsave 0x4f00 1024 "${dump.replaceAll('\\', '/')}"`);
+    const bytes = fs.readFileSync(dump), count = bytes.readUInt16LE(0);
+    assert(count > 0 && count <= 32, 'E820 count');
+    const ranges = [], pages = new Uint8Array(0x100000), top = 0x100000000n;
+    let endPFN = 0;
+    for (let i = 0; i < count; i++) {
+        const offset = 0x100 + i * 24, base = bytes.readBigUInt64LE(offset);
+        const length = bytes.readBigUInt64LE(offset + 8), type = bytes.readUInt32LE(offset + 16);
+        if (!(bytes.readUInt32LE(offset + 20) & 1) || base >= top || !length) continue;
+        const end = base + length < top ? base + length : top;
+        const first = Number((base + (type === 1 ? 4095n : 0n)) / 4096n);
+        const last = Number((end + (type === 1 ? 0n : 4095n)) / 4096n);
+        if (first >= last) continue;
+        ranges.push({first, last, type});
+        if (type === 1) { pages.fill(1, first, last); endPFN = Math.max(endPFN, last); }
+    }
+    for (const range of ranges) if (range.type !== 1) pages.fill(0, range.first, range.last);
+    const extendedPages = pages.subarray(64 * 1024 * 1024 / 4096).reduce((sum, n) => sum + n, 0);
+    const actualEnd = Number(log.match(/nr_pages=(0x[0-9a-f]+)/i)?.[1]);
+    const actualPublished = Number(log.match(/PAGE extended pages=(0x[0-9a-f]+)/i)?.[1]);
+    assert.equal(actualEnd, endPFN, 'physical limit follows E820 below 4 GiB');
+    assert.equal(actualPublished, extendedPages, 'reserved overlaps and MMIO holes stay unpublished');
+    assert.match(log, /Direct mapping: \[0, 0x40000000\)/i);
+    assert(endPFN > 0x40000 && baseline > 0x40000, 'real pages above the direct map are available');
+    assert(baseline < endPFN, 'reserved and kernel-owned pages are not free');
+    return {e820Entries:count, endPFN, extendedPages, freePages:baseline};
+}
+
 async function imageContracts(source) {
-    await boot(source, 'images-64', 64, async ({baseline, free, command, check, channel, guestLog}) => {
-        await check('memory.images.64-mib-boots-with-its-existing-pool-and-16-mib-image-oom-rolls-back', ['64 MiB boots with its existing pool and 16 MiB image OOM rolls back'], async () => {
-            assert.match(guestLog(), /PAGE extended pages=0x00000000/);
+    const seed = await boot(source, 'images-4096', vm.memoryMiB, async ({baseline, free, check, probe, channel, command, guestLog, qmp, directory, report}) => {
+        await check('memory.images.4-gib-e820-pool-and-single-core-identity', ['4 GiB single-core VM publishes only eligible E820 pages below 4 GiB'], async () => {
+            report.memoryGeometry = await geometry(qmp, directory, guestLog(), baseline);
+        });
+        await check('memory.images.targeted-image-oom-rolls-back', ['partial SNX image allocation failure restores all resources'], async () => {
             const session = new RunSession(channel);
             await session.hello();
-            await assert.rejects(session.start('/boot/memv2.snx', ['wide']), e => e.guestStatus === -2);
+            const offset = guestLog().length;
+            await assert.rejects(session.start('/boot/memv2.snx', ['oom-image']), e => e.guestStatus === -2);
+            assert.match(guestLog().slice(offset), /MM PROBE injected stage=0x00000001/i);
+            assert.equal(free(await command('mem')), baseline);
+            assert.doesNotMatch(await command('ps'), /memv2/i);
+        });
+        await check('memory.images.targeted-table-oom-rolls-back', ['data page is reclaimed when its new page table allocation fails'], async () => {
+            const offset = guestLog().length;
+            await command('run -s /boot/poltest.snx paging-c-oom', 1);
+            assert.match(guestLog().slice(offset), /MM PROBE injected stage=0x00000002[\s\S]*PAGING probe table OOM rollback passed/i);
             assert.equal(free(await command('mem')), baseline);
         });
-    });
-    const seed = await boot(source, 'images-1024', 1024, async ({baseline, free, check, probe, channel, command, guestLog}) => {
-        await check('memory.images.1-gib-publishes-e820-high-pages-after-the-formal-cr3-switch', ['1 GiB publishes E820 high pages after the formal CR3 switch'], async () => {
-            assert(baseline > 240000, 'too few allocatable pages');
-            const match = guestLog().match(/PAGING enabled:[^\n]+\n[\s\S]*PAGE extended pages=(0x[0-9a-f]+)/i);
-            assert(Number(match?.[1]) > 240000, 'extended pool not published');
-        });
+        await check('memory.images.multi-pde-mappings-recover-after-injected-failure', ['multi-PDE mapping succeeds after the failed launch is reclaimed'], () =>
+            probe('run -s /boot/poltest.snx paging-c', /PAGING C WINDOW PASS/));
         await check('memory.images.current-v1-binary-preserves-argv-and-typed-completion', ['current v1 binary preserves argv and typed completion'], async () => {
             const current = bootFile(source, 'CLITEST.SNX');
             assert.equal(current.readUInt32LE(4), 1);
@@ -131,8 +168,8 @@ async function imageContracts(source) {
             assert.equal(header.readUInt32LE(4), 2);
             assert(header.readUInt32LE(20) > 15 * 1024 * 1024);
             await probe('run -s /boot/memv2.snx wide', /SNX V2 LARGE HEAP READY/, 0, async ({log}) => {
-                const allocated = Number(log().match(/PAGE first extended allocation=(0x[0-9a-f]+)/i)?.[1]);
-                assert(allocated >= 64 * 1024 * 1024);
+                const allocated = Number(guestLog().match(/PAGE first high allocation=(0x[0-9a-f]+)/i)?.[1]);
+                assert(allocated >= 1024 * 1024 * 1024);
                 assert(baseline - free(await command('mem')) > 7000, 'wide image and heap not resident together');
             });
             assert.match(guestLog(), /SNX V2 PASS/);
@@ -141,16 +178,16 @@ async function imageContracts(source) {
             probe('run /boot/fstest.snx anon-parent', /ANON I\/O PASS[\s\S]*ANON PARENT PASS/));
         await check('memory.images.real-headless-gsh-runs-a-strict-worker-and-restores-its-prompt', ['real headless gsh runs a strict worker and restores its prompt'], () =>
             probe('run /boot/brokerqa.snx shell-smoke', /SHELL PASS/));
-        await check('memory.images.private-disk-commits-binary-bytes-on-the-1-gib-image', ['private disk commits binary bytes on the 1 GiB image'], () =>
+        await check('memory.images.private-disk-commits-binary-bytes-on-the-4-gib-image', ['private disk commits binary bytes on the 4 GiB image'], () =>
             probe('run /boot/fstest.snx memory-save', /MEMORY SAVE PASS/, 1));
     });
-    await boot(source, 'images-cold', 1024, async ({check, probe}) =>
+    await boot(source, 'images-cold', vm.memoryMiB, async ({check, probe}) =>
         check('memory.images.cold-boot-on-the-same-iso-recovers-the-exact-binary-bytes', ['cold boot on the same ISO recovers the exact binary bytes'], () =>
             probe('run /boot/fstest.snx memory-read', /MEMORY READ PASS/)), seed);
 }
 
 async function anonymousContracts(source) {
-    await boot(source, 'anonymous', 64, async ({check, probe}) => {
+    await boot(source, 'anonymous', vm.memoryMiB, async ({check, probe, command, free, baseline}) => {
         await check('memory.anonymous.strict-feature-discovery', ['strict feature discovery', 'zero, overflow and reserved map arguments',
             'rounded aligned independent regions', 'zero-filled pages and independent writes',
             'malformed and interior unmap leave data intact', 'released address and double-unmap rejected',
@@ -163,8 +200,19 @@ async function anonymousContracts(source) {
             probe('run /boot/fstest.snx anon-parent', /ANON I\/O PASS[\s\S]*ANON PARENT PASS/));
         await check('memory.anonymous.released-address-faults-and-exit-reclaims-the-remaining-region', ['released address faults and exit reclaims the remaining region'], () =>
             probe('run -s /boot/fstest.snx anon-fault', /ANON EXPECT RELEASED PAGE FAULT[\s\S]*USER fault contained pid=.*vector=0x0000000e/i));
-        await check('memory.anonymous.physical-oom-leaves-output-intact', ['physical OOM leaves output intact', 'physical OOM preserves pending pipe bytes'], () =>
-            probe('run -s /boot/fstest.snx anon-oom', /ANON OOM PASS/));
+        await check('memory.anonymous.physical-oom-leaves-output-intact', ['injected anonymous allocation failure leaves output intact', 'injected anonymous allocation failure preserves pending pipe bytes'], () =>
+            probe('run -s /boot/fstest.snx anon-oom', /MM PROBE injected stage=0x00000003[\s\S]*ANON OOM PASS/i));
+        await check('memory.anonymous.injected-first-touch-oom-is-contained', ['first-touch anonymous allocation failure faults only the target process'], () =>
+            probe('run -s /boot/fstest.snx anon-fault-oom', /ANON EXPECT FIRST-TOUCH OOM FAULT[\s\S]*USER fault contained pid=.*vector=0x0000000e/i));
+        await check('memory.anonymous.writable-probe-copy-is-not-injected', ['a writable copy with the same argument cannot enable memory injection'], async () => {
+            await command('cp /boot/fstest.snx /home/user/probe-copy.snx');
+            const retained = baseline - free(await command('mem'));
+            try {
+                await probe('run -s /home/user/probe-copy.snx anon-oom', /ANON UNINJECTED PASS/, retained,
+                    async ({log}) => assert.doesNotMatch(log(), /MM PROBE injected/));
+            } finally { await command('rm /home/user/probe-copy.snx'); }
+            assert.equal(free(await command('mem')), baseline);
+        });
     });
 }
 

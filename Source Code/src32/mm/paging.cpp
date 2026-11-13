@@ -4,6 +4,7 @@
 #include "page.h"
 #include "paging.h"
 #include "kmap.h"
+#include "test_fault.h"
 #include "layout.h"
 #include "../lib/kstring.h"
 #include "../panic.h"
@@ -281,6 +282,11 @@ int paging_user_map(u32* pd, u32 va, phys_t page, int write) {
     if (pd[pde_index(va)] & PAGE_PRESENT) {
       return 0;
     }
+#ifdef SINO_SHELL_BRIDGE
+    if (mmtest::fail(pd, mmtest::Stage::Table)) {
+      return 0;
+    }
+#endif
     pt = (u32*)kpage_alloc();
     if (!pt) {
       return 0;

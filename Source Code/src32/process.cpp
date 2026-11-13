@@ -16,6 +16,7 @@
 #include "console.h"
 #include "lib/kstring.h"
 #include "mm/page.h"
+#include "mm/test_fault.h"
 #include "panic.h"
 /* 【简化实现：调度容量】进程和线程使用固定数组，当前上限为 8 x 4。
  * 替换方向：将执行实体的存储与就绪/等待队列分开，再按资源预算动态分配；
@@ -138,8 +139,12 @@ static void release(Process* p) {
       leases[i].pid = 0;
   handles_close(p->handles);
   if (p->interactive) kpage_free(p->interactive);
-  if (p->pd)
+  if (p->pd) {
+#ifdef SINO_SHELL_BRIDGE
+    mmtest::clear(p->pd);
+#endif
     paging_user_destroy(p->pd);
+  }
   if (p->kernel_stack) {
     if (p->stack_guard.id && paging_kernel_unguard(&p->stack_guard) != S_OK)
       panic("Kernel stack guard restore failed", p->pid, p->stack_guard.id);
@@ -161,6 +166,11 @@ static void release(Process* p) {
   memset(p, 0, sizeof(*p));
 }
 static phys_t alloc_user_page(Process* p, u32 va, int write) {
+#ifdef SINO_SHELL_BRIDGE
+  if (mmtest::fail(p->pd, mmtest::Stage::Image)) {
+    return PHYS_NULL;
+  }
+#endif
   phys_t page = page_alloc();
   if (page && !paging_user_map(p->pd, va, page, write)) {
     page_free(page);
@@ -240,6 +250,11 @@ int process_anon_page(u32* pd, u32 page, int populate) {
         return S_OK;
       if (paging_user_flags(pd, page) & PAGE_PRESENT)
         return S_INVALID;
+#ifdef SINO_SHELL_BRIDGE
+      if (mmtest::fail(current->pd, mmtest::Stage::Anonymous)) {
+        return S_NOMEM;
+      }
+#endif
       return alloc_user_page(current, page, 1) ? S_OK : S_NOMEM;
     }
   }
@@ -292,25 +307,13 @@ static int paging_probe_setup(Process* p, int exhaust) {
   if (!exhaust)
     return alloc_user_page(p, high, 0) ? S_OK : S_NOMEM;
 
-  /* Leave exactly one free page: the data allocation can succeed, but the
-     new page table cannot. Keep the earlier mappings for launch rollback. */
-  void** held = 0;
-  while (free_pages > 1) {
-    void** page = (void**)kpage_alloc();
-    if (!page)
-      break;
-    *page = held;
-    held = page;
-  }
-  int failed_cleanly = free_pages == 1 && !alloc_user_page(p, high, 0) &&
-                       free_pages == 1 && !paging_user_flags(p->pd, high);
-  while (held) {
-    void** next = (void**)*held;
-    kpage_free(held);
-    held = next;
-  }
-  if (!failed_cleanly || free_pages != before)
+  // 数据页实际分配成功，仅使此页目录的下一次页表分配失败，检查回滚。
+  mmtest::arm(p->pd, mmtest::Stage::Table, 0);
+  int failed_cleanly = !alloc_user_page(p, high, 0) &&
+                       !paging_user_flags(p->pd, high);
+  if (!failed_cleanly || free_pages != before) {
     return S_INVALID;
+  }
   pr_debug("PAGING probe table OOM rollback passed\n");
   return S_NOMEM;
 }
@@ -476,6 +479,22 @@ static int launch_policy(const char* path, u32 caps, const char* arguments,
     release(p);
     return S_NOMEM;
   }
+  RunData* run = completion >= 0 ? completions[objects[completion].value].run : 0;
+#ifdef SINO_SHELL_BRIDGE
+  // 仅按只读 /boot 节点身份和精确模式启用；可写副本、普通镜像无此能力。
+  const char* probe_mode = arguments;
+  if (run) {
+    probe_mode = run->cli.argc == 1 ? run->cli.bytes : "";
+  }
+  if (policy == PROCESS_STRICT && n == vfs_lookup("/boot/memv2.snx") &&
+      streq(probe_mode, "oom-image")) {
+    mmtest::arm(p->pd, mmtest::Stage::Image, 8);
+  }
+  if (policy == PROCESS_STRICT && n == vfs_lookup("/boot/fstest.snx") &&
+      (streq(probe_mode, "anon-oom") || streq(probe_mode, "anon-fault-oom"))) {
+    mmtest::arm(p->pd, mmtest::Stage::Anonymous, 1, true);
+  }
+#endif
   for (u32 offset = 0; offset < h->memory_bytes; offset += PAGE_SIZE) {
     phys_t page = alloc_user_page(p, USER_BASE + offset, offset >= h->data_offset);
     if (!page) {
@@ -517,7 +536,6 @@ static int launch_policy(const char* path, u32 caps, const char* arguments,
     }
   }
 #endif
-  RunData* run = completion >= 0 ? completions[objects[completion].value].run : 0;
   if (run) {
     if (run->pending_directory) {
       int h = handle_open(p->handles, (int)run->pending_directory - 1, run->directory_rights);

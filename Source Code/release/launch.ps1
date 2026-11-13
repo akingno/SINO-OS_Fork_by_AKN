@@ -1,4 +1,7 @@
 param()
+# Standalone release profile; kept in sync with tools/vm-config.js.
+$memoryMiB = 4096
+$cpuCount = 1
 $ErrorActionPreference = 'Stop'
 try {
     $packageRoot = $PSScriptRoot
@@ -117,7 +120,7 @@ public static class SinoWindow {
     $shareUri=New-Object Uri ([IO.Path]::GetFullPath($qemuShare)+'\')
     $sharePath=if($dataUri.Scheme-eq $shareUri.Scheme-and $dataUri.Host-eq $shareUri.Host-and $dataUri.Segments[1]-eq $shareUri.Segments[1]){[Uri]::UnescapeDataString($dataUri.MakeRelativeUri($shareUri).ToString())}else{$qemuShare}
     $arguments = @('-L',('"'+$sharePath+'"'),'-name',('"'+$vmName+'"'),
-        '-machine','pc,vmport=on','-accel','tcg','-m','64M','-vga','std','-nic','none',
+        '-machine','pc,vmport=on','-accel','tcg','-smp',([string]$cpuCount),'-m',($memoryMiB.ToString()+'M'),'-vga','std','-nic','none',
         '-drive','file=data.img,format=raw,if=ide,index=0',
         '-drive','file=../SINO.iso,format=raw,media=cdrom,if=ide,index=2,readonly=on')
     $arguments+=@('-boot','order=d','-rtc','base=localtime','-display','gtk,show-menubar=off,show-cursor=off,zoom-to-fit=off',
