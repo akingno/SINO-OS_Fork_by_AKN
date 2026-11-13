@@ -30,6 +30,11 @@ const apps = [
 for(const [name,source,mode,abi=1] of apps){
  command(path.join(tc,'g++.exe'),[...flags,'-I','user',`-DMODE=${mode}`,`-DSINO_SNX_ABI=${abi}`,'-c',source,'-o',path.join(out,`${name}.o`)]);
  const extra=[];
+ if(name==='probe'){
+  const obj=path.join(out,'probe-scheduler.o');
+  command(path.join(tc,'g++.exe'),[...flags,'-I','user','-c','tests/guest/scheduler_probe.cpp','-o',obj]);
+  extra.push(obj);
+ }
  if(name==='nettest'){const obj=path.join(out,`${name}-netlib.o`);command(path.join(tc,'g++.exe'),[...flags,'-c','user/netlib.cpp','-o',obj]);extra.push(obj);}
  const exe=path.join(out,`${name}.exe`),bin=path.join(out,`${name}.snx`);
  command(path.join(tc,'ld.exe'),['-m','i386pe','--image-base','0x3fff0000','--disable-reloc-section','--disable-dynamicbase','--no-insert-timestamp',`--defsym=snx_abi=${abi}`,'-T','user/linker.ld',path.join(out,'entry.o'),path.join(out,'runtime.o'),path.join(out,`${name}.o`),...extra,'-o',exe]);

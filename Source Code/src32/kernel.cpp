@@ -7,6 +7,8 @@
 #include "storage.h"
 #include "disk.h"
 #include "task/task.h"
+#include "task/schedule.h"
+#include "work.h"
 #include "sync/irq.h"
 #include "vfs.h"
 #include "net.h"
@@ -378,19 +380,29 @@ extern "C" void kmain(void) {
     panic("Console host launch failed", 0, 0);
 #endif
   pr_debug("SINO CLI ready\n");
-  /* 【简化实现：系统推进】RTC、ShellBridge、网络和用户调度串行推进，循环尾统一 halt；
-   * 就绪用户线程也需等主循环再次进入 process_step，延迟受其他工作影响。
-   * 替换方向：将调度/空闲决策独立出来，有可运行工作时继续调度，只有无工作
-   * 时休眠；后台处理需配套任务化，不能只删除 halt 造成忙等。 */
+  // 每轮推进一次有界后台工作、至多派发一个线程，然后依据当前状态决定空闲。
+  // PIT 保持周期运行，未来期限与轮询型设备仍可由后续 tick 推进。
   for (;;) {
     rtc_poll();
 #ifdef SINO_SHELL_BRIDGE
     shell_bridge_poll();
 #endif
     net_poll();
-    process_step();
+    task::step();
     cli();
-    sti();
-    halt();
+    const u32 now = ticks;
+    bool pending = task::hasWork(now) || rtc::hasWork(now) || net::hasWork(now);
+#ifdef SINO_SHELL_BRIDGE
+    pending = pending || shellbridge::hasWork(now);
+#endif
+    if (pending) {
+      task::continued();
+      sti();
+      continue;
+    }
+    task::beforeIdle();
+    __asm__ volatile("" ::: "memory");
+    idle_halt();
+    __asm__ volatile("" ::: "memory");
   }
 }

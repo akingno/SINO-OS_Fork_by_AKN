@@ -1,6 +1,7 @@
 #if defined(SINO_SHELL_BRIDGE) || defined(SELFTEST)
 #include "kernel.h"
 #include "klog.h"
+#include "work.h"
 #include "run_bridge.h"
 #include "rtc.h"
 /* SINO SH: project-specific shell, separate from the SINO32 kernel. */
@@ -1118,6 +1119,28 @@ static u8 bridge_output[PIPE_SIZE + 1];
 static u32 bridge_reply[5];
 static u32 bridge_received, bridge_needed, bridge_sent, bridge_size,
     bridge_updated;
+
+bool shellbridge::hasWork(u32 now) {
+  if (!bridge_request) {
+    return false;
+  }
+  if (bridge_rx_overflow || runbridge::hasWork(now)) {
+    return true;
+  }
+  // 回复未完成时只推进 TX；不能因积压 RX 而等待尚未就绪的 TX 忙转。
+  if (bridge_size) {
+    const u8 status = inb(BRIDGE_UART + 5);
+    if (status & 0x1e) {
+      // LSR 读取会清除错误位，不能让空闲检查吞掉原 IRQ 路径应报告的错误。
+      bridge_rx_overflow = 1;
+      return true;
+    }
+    return (status & 0x20) != 0;
+  }
+  // 未进入软件环的 RX 由 UART IRQ（或保留的周期轮询）推进。
+  return bridge_rx_tail != bridge_rx_head ||
+         (bridge_received && now - bridge_updated > 200);
+}
 
 void shell_bridge_init(void) {
   bridge_request = (u8*)kpage_alloc_run(2);

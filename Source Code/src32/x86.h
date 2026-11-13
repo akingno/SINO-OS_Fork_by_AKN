@@ -32,6 +32,10 @@ static inline void halt(void) {
   __asm__ volatile("hlt");
 }
 
+/* IF=0 and no immediate work, checked by the caller. Returns with IF=1.
+ * Assembly keeps STI immediately followed by HLT; not a general IRQ restore. */
+void idle_halt(void);
+
 #define CR0_WP (1u << 16) /* Supervisor writes also honour read-only pages. */
 #define CR0_NW (1u << 29)
 #define CR0_CD (1u << 30)

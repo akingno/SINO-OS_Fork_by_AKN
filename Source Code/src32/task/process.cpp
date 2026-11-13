@@ -69,7 +69,7 @@ namespace task {
   }
   Process processes[MaxProcesses];
   Process* current;
-  int currentThread;
+  int currentThread = -1;
   static u32 next_pid = 1;
   static struct {
     u32 pid;
@@ -82,6 +82,7 @@ namespace task {
     (limit & 0xf0000) | (flags << 20);
   }
   void init(void) {
+    initScheduler();
     KernelStack::selfTest();
     memset(gdt, 0, sizeof(gdt));
     descriptor(1, 0, 0xfffff, 0x9a, 12);
@@ -1808,6 +1809,22 @@ namespace task {
       }
     }
     return 0;
+  }
+
+  bool reapPending(u32 now) {
+    for (int i = 0; i < MaxProcesses; i++) {
+      const Process& p = processes[i];
+      if (p.state == 2) {
+        return true;
+      }
+      if (p.state == 1 && p.completion_object) {
+        const RunData* run = completions[objects[p.completion_object - 1].value].run;
+        if (run && run->timed && (i32)(now - run->deadline) >= 0) {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   void reapAndExpireRuns() {

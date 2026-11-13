@@ -4,6 +4,7 @@
    IPv4 validator and UDP/TCP/ICMP decoders; no socket-to-socket copy shortcut.
  */
 #include "net.h"
+#include "work.h"
 #include "lib/kstring.h"
 #include "mm/page.h"
 #include "panic.h"
@@ -537,6 +538,24 @@ static void input(u8* p, u32 size) {
     }
   }
   net_loop.stats.dropped++;
+}
+bool net::hasWork(u32 now) {
+  if (tail != head) {
+    return true;
+  }
+  for (int i = 0; i < NS; i++) {
+    const Socket* s = sockets[i];
+    if (!s) {
+      continue;
+    }
+    if ((s->pending && (i32)(now - s->deadline) >= 0) ||
+        (s->closing && !s->pending &&
+         (s->state == ESTABLISHED || s->state == CLOSE_WAIT || s->state == CLOSED ||
+          (i32)(now - s->deadline) > 500))) {
+      return true;
+    }
+  }
+  return false;
 }
 void net_poll(void) {
   for (int i = 0; i < 8 && tail != head; i++) {

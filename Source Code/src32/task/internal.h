@@ -3,6 +3,7 @@
 #include "task.h"
 #include "../mm/paging.h"
 #include "kernel_stack.h"
+#include "schedule.h"
 
 // 仅 task 实现使用；其他子系统通过 task.h 的窄接口访问。
 namespace task {
@@ -75,6 +76,8 @@ extern Process processes[MaxProcesses];
 extern Process* current;
 extern int currentThread;
 void reapAndExpireRuns();
+bool reapPending(u32 now);
+void initScheduler();
 void setEntryStack(const Process& process);
 void leave(Frame* frame);
 int retryWait(Thread* thread);
@@ -109,7 +112,6 @@ void runLimits(RunLimits * a0);
 int list(ProcessInfo * a0, u32 a1);
 int alive(u32 a0);
 int kill(u32 a0, i32 a1);
-void step();
 int interrupt(Frame * a0);
 int anonPage(u32* a0, u32 a1, int a2);
 u32 userLimit(const u32* a0, u32 a1);

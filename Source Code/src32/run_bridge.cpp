@@ -1,5 +1,6 @@
 /* Development-only v2 protocol; owns only tasks created by this session. */
 #include "run_bridge.h"
+#include "work.h"
 #ifdef SINO_SHELL_BRIDGE
 #include "task/task.h"
 #include "klog.h"
@@ -7,6 +8,9 @@
 static Handle owner[HANDLES];
 static u32 nonce[2], last_id, lease;
 static int active;
+bool runbridge::hasWork(u32 now) {
+  return active && (i32)(now - lease) >= 0;
+}
 static void close_session(void) {
   for (u32 i = 0; i < HANDLES; i++) if (owner[i].generation)
     process_cancel_owned(owner, (owner[i].cookie << 8) | (i + 1));
@@ -87,6 +91,7 @@ u32 run_bridge_request(const u8* bytes, u32 size, u32 id, u8* out, int* status) 
   return 8;
 }
 #else
+bool runbridge::hasWork(u32 now) { (void)now; return false; }
 void run_bridge_init(void) {}
 void run_bridge_abort(void) {}
 void run_bridge_tick(void) {}

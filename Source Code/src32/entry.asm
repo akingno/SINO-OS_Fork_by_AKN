@@ -24,6 +24,12 @@ _start:
     jmp .stop
 
 section .text
+global _idle_halt
+_idle_halt:
+    sti
+    hlt
+    ret
+
 extern _irq_dispatch, _fault_resume, _fault_expected
 %assign i 0
 %rep 256

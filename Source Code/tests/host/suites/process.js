@@ -1,11 +1,20 @@
 const assert = require('node:assert/strict');
 
 async function run(api) {
-    const {check, guestLog, processes, native, resources, report, value, launch, until, gone, command} = api;
+    const {check, guestLog, processes, native, resources, report, value, launch, until, gone, command, memory, symbols} = api;
+    async function scheduleStats() {
+        const bytes = await memory(symbols.task_schedule_stats, 40);
+        const fields = ['passes', 'dispatches', 'noDispatch', 'candidates', 'retriesBlocked',
+            'cleanups', 'continued', 'idleHalts', 'idleWithWork', 'maxCandidates'];
+        return Object.fromEntries(fields.map((name, index) => [name, bytes.readUInt32LE(index * 4)]));
+    }
     await check('boot and kernel object contracts', async () => {
         assert.match(guestLog(), /PAGE allocator self-check passed/);
         assert.match(guestLog(), /SYNC IRQ guard self-check passed/);
         assert.match(guestLog(), /TASK kernel stack self-check passed \(32 KiB usable \+ 4 KiB guard\)/);
+        assert.match(guestLog(), /TASK scheduler state self-check passed/);
+        assert((await memory(symbols.idle_halt, 3)).equals(Buffer.from([0xfb, 0xf4, 0xc3])),
+            'actual guest idle entry must be adjacent sti; hlt; ret');
         assert.match(guestLog(), /OBJECT handles rights\/stale\/release PASS/);
         assert.match(guestLog(), /CPL3 selectors 1B\/23, I\/O denied/);
         assert.equal((await processes()).length, 0);
@@ -35,6 +44,16 @@ async function run(api) {
         });
     }
     await check('user preemption permits a second process and Shell progress', async () => {
+        const before = await scheduleStats();
+        await native('probe', '/schedule', 'SCHEDULER PROBE PASS:');
+        const after = await scheduleStats();
+        assert(after.continued > before.continued, 'runnable work continues without HLT');
+        assert(after.idleHalts > before.idleHalts, 'all sleeping/blocked permits idle');
+        assert(after.retriesBlocked > before.retriesBlocked, 'stale notification reblocks after retry');
+        assert.equal(after.idleWithWork, 0, 'no idle with runnable/due/reap work');
+        assert(after.maxCandidates > 0 && after.maxCandidates <= 32, 'bounded candidate scan');
+        assert(after.cleanups >= after.dispatches, 'every dispatch restores kernel binding/CR3/IF');
+        report.scheduler = {before, after};
         const pid = await launch('spin');
         try {
             const ticks = await value('ticks');

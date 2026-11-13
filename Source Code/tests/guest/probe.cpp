@@ -1,4 +1,5 @@
 #include "sdk.h"
+#include "scheduler_probe.h"
 static volatile int worker_done;
 static int event_handle;
 static u32 time_buffer[4];
@@ -123,6 +124,9 @@ int main(void) {
   __asm__ volatile("ud2");
 #else
   const char *arg = Arguments();
+  if (streq(arg, "/schedule")) {
+    return schedulerprobe::run();
+  }
   if (streq(arg, "/boot-extent")) {
     int directory = GrantDirectory("/boot", FS_READ | FS_LOOKUP);
     check(directory > 0, "boot extent directory");

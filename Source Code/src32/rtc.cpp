@@ -1,6 +1,7 @@
 /* Bounded RTC sampling. The cache is shared by the desktop, Shell and SYS_TIME.
  */
 #include "rtc.h"
+#include "work.h"
 #ifdef SINO_RTC_HOST_TEST
 extern volatile u32 ticks;
 extern u8 rtc_test_read(u8);
@@ -91,6 +92,9 @@ static int sample(RtcDateTime *out) {
       return 1;
   }
   return 0;
+}
+bool rtc::hasWork(u32 now) {
+  return !attempted || now - last_attempt >= 100;
 }
 void rtc_poll(void) {
   u32 now = ticks;
