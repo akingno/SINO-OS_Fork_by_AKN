@@ -130,6 +130,7 @@ task 提取契约见 [task-subsystem.md](Source Code/docs/task-subsystem.md)。C
 - 用户栈 16 KiB，SNX v1 映像上限 192 KiB，v2 上限 16 MiB，基址 `0x40000000`
 - VFS 全局 128 节点，单文件 64 KiB（含磁盘 SNX）
 - 8 进程，每进程 4 线程，24 句柄
+- 每进程内核入口栈 32 KiB 可用 + 4 KiB 未映射保护页，当前分配 9 个连续页；KernelStack 统一管理生命周期。大小/回收变更选 process 8 项 + images 11 项 + 普通启动 1 项；布局/保护失败回滚自检并入原用例，不新增 ID。
 - 底层 Write 更新内存、Sync 提交用户目录快照；可写 gsh 的写入/创建/改名/删除命令成功后自动提交，再返回提示符，无需手动 sync；`/boot` 只读
 - 启动镜像 2.88 MB，布局入口 `src32/boot-layout.h`
 - Feature 掩码 32767（15 个已实现机制），详见 docs/os-interface.md

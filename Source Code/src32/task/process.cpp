@@ -82,6 +82,7 @@ namespace task {
     (limit & 0xf0000) | (flags << 20);
   }
   void init(void) {
+    KernelStack::selfTest();
     memset(gdt, 0, sizeof(gdt));
     descriptor(1, 0, 0xfffff, 0x9a, 12);
     descriptor(2, 0, 0xfffff, 0x92, 12);
@@ -116,12 +117,7 @@ namespace task {
 #endif
       paging_user_destroy(p->pd);
     }
-    if (p->kernel_stack) {
-      if (p->stack_guard.id && paging_kernel_unguard(&p->stack_guard) != S_OK) {
-        panic("Kernel stack guard restore failed", p->pid, p->stack_guard.id);
-      }
-      kpage_free_run(p->kernel_stack, 2);
-    }
+    p->kernelStack.release();
     /* Publish only after execution resources and owned handles are gone. */
     if (p->completion_object) {
       int object = (int)p->completion_object - 1;
@@ -136,7 +132,8 @@ namespace task {
       unblock(p->completion_object, WaitReason::COMPLETION);
       object_unref(object);
     }
-    memset(p, 0, sizeof(*p));
+    // 仅在所有资源释放后清零；不能复制或移动带活动 KernelGuard 的槽位。
+    memset((void*)p, 0, sizeof(*p));
   }
   static phys_t alloc_user_page(Process* p, u32 va, int write) {
 #ifdef SINO_SHELL_BRIDGE
@@ -450,16 +447,11 @@ namespace task {
     if (!p || next_pid >= 0x7fffffu || strlen(arguments) > 255) {
       return S_LIMIT;
     }
-    memset(p, 0, sizeof(*p));
+    memset((void*)p, 0, sizeof(*p));
     p->abi = h->abi;
     p->code_end = USER_BASE + h->data_offset;
     p->pd = paging_user_create();
-    p->kernel_stack = kpage_alloc_run(2);
-    if (!p->pd || !p->kernel_stack) {
-      release(p);
-      return S_NOMEM;
-    }
-    if (paging_kernel_guard(p->kernel_stack, &p->stack_guard) != S_OK) {
+    if (!p->pd || p->kernelStack.allocate() != S_OK) {
       release(p);
       return S_NOMEM;
     }
@@ -1836,7 +1828,7 @@ namespace task {
   }
 
   void setEntryStack(const Process& process) {
-    tss[1] = (u32)process.kernel_stack + 2 * PAGE_SIZE;
+    tss[1] = process.kernelStack.top();
   }
 
 }

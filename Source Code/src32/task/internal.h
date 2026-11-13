@@ -2,6 +2,7 @@
 #define SINO_TASK_INTERNAL_H
 #include "task.h"
 #include "../mm/paging.h"
+#include "kernel_stack.h"
 
 // 仅 task 实现使用；其他子系统通过 task.h 的窄接口访问。
 namespace task {
@@ -55,8 +56,7 @@ struct Process {
   int code;
   u32* pd;
   u32 abi, code_end;
-  void* kernel_stack;
-  KernelGuard stack_guard;
+  KernelStack kernelStack;
   Thread thread[MaxThreads];
   Handle handles[HANDLES];
   char name[32];
@@ -69,6 +69,7 @@ struct Process {
   u32 desktop_owner;
   AnonRegion anon[ANON_MAX_REGIONS];
 };
+static_assert(__is_trivially_copyable(Process), "released process slots can be zeroed");
 
 extern Process processes[MaxProcesses];
 extern Process* current;

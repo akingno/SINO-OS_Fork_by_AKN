@@ -46,6 +46,8 @@
 
 task 子系统提取按实际接口选测：process 8 项、policy 2 项；Thread 等待成员迁移追加 shell-waits 5 项，普通启动 1 项。IRQ 嵌套恢复自检并入原有启动/进程用例，不新增 ID；契约见 [task-subsystem.md](../docs/task-subsystem.md)。
 
+内核入口栈大小/生命周期变化选 process 8 项及 images 11 项，普通启动追加 1 项。KernelStack 的 9 页布局、共享内核 PTE 权限、边界读写、重复分配/释放、保护记录耗尽后的失败回滚与重试由启动自检覆盖，并在现有 process / boot 用例中断言标记，不新增 ID。编译器逐函数栈用量见 build32/*-normal.su；需要连同中断帧和实际调用链评估，不能当作整条调用链上界。
+
 ## VM 配置基线
 
 开发、发行与普通/接口验收默认 4096 MiB RAM、单核；QMP 报告实际配置。64 MiB 运行兼容已撤销。仅定向内存边界专项允许显式 1024/2048 MiB，不恢复低内存验收。

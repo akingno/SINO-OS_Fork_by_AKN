@@ -53,6 +53,8 @@ async function boot(executable, directory, buildId) {
                 assert(log.includes(`SINO BUILD ID: ${buildId}\n`), 'Guest build ID mismatch');
                 assert(log.includes('FAT12 RAM disk ready'), 'FAT12 volume did not mount');
                 assert(log.includes('TIMER IRQ0 delivered'), 'Timer interrupt did not arrive');
+                assert(log.includes('TASK kernel stack self-check passed (32 KiB usable + 4 KiB guard)'),
+                    'Kernel entry stack checks did not pass');
                 assert(!log.includes('SINO SHELL BRIDGE'), 'Expected an ordinary build without ShellBridge');
                 qmp = await new QMP(port).connect();
                 return await vm.verify(qmp);

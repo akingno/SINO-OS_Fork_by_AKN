@@ -37,9 +37,11 @@ if ($LASTEXITCODE -ne 0) { throw '32-bit entry assembly failed' }
 if ($LASTEXITCODE -ne 0) { throw 'User application build failed' }
 $variants = @('normal')
 if ($TestImage) { $variants += 'test' }
-$kernelSources = @('kernel','lib/kstring','panic','fs/boot_fat12','mm/page','mm/test_fault','mm/paging','mm/kmap','mm/uaccess','klog','locale','rtc','keyboard','object','task/process','task/thread','task/scheduler','task/entry','sync/irq','filesys','pipe','terminal','run_bridge','net','console','vfs','shell_bridge','storage','disk')
+$kernelSources = @('kernel','lib/kstring','panic','fs/boot_fat12','mm/page','mm/test_fault','mm/paging','mm/kmap','mm/uaccess','klog','locale','rtc','keyboard','object','task/process','task/thread','task/kernel_stack','task/scheduler','task/entry','sync/irq','filesys','pipe','terminal','run_bridge','net','console','vfs','shell_bridge','storage','disk')
 foreach ($variant in $variants) {
     # The kernel owns its mapped stack; Windows stack-guard probing is inapplicable.
+    # Emit per-function stack reports beside objects for entry-stack audits.
+    $stackFlags = @('-fstack-usage')
     $cflags = @('-m32','-march=i386','-std=c++17','-Os','-ffreestanding','-fno-builtin','-fno-exceptions','-fno-rtti','-fno-threadsafe-statics','-fno-pic','-fno-pie','-fno-stack-protector','-fno-asynchronous-unwind-tables','-mno-stack-arg-probe','-mno-sse','-mno-mmx','-msoft-float','-mpreferred-stack-boundary=2','-mincoming-stack-boundary=2','-Wall','-Wextra','-Werror','-Wno-misleading-indentation','-Wno-register','-Wno-missing-field-initializers')
     if ($variant -eq 'test') { $cflags += '-DSELFTEST=1' }
     if ($ShellBridge) { $cflags += '-DSINO_SHELL_BRIDGE=1' }
@@ -49,7 +51,7 @@ foreach ($variant in $variants) {
     foreach ($source in $kernelSources) {
         $object = ($source -replace '/', '-')
         $objectPath = Join-Path $buildPath "$object-$variant.o"
-        & $gcc @cflags -c (Join-Path $sourcePath "$source.cpp") -o $objectPath
+        & $gcc @cflags @stackFlags -c (Join-Path $sourcePath "$source.cpp") -o $objectPath
         if ($LASTEXITCODE -ne 0) { throw "C compilation failed: $source ($variant)" }
         $kernelObjects += $objectPath
     }
