@@ -1,0 +1,10 @@
+[
+  {"id":"process.pid.reuse-rejects-stale-kill","name":"reuse"},
+  {"id":"process.pid.live-capacity-and-malformed-tokens","name":"capacity"},
+  {"id":"process.pid.historical-completion-cannot-cancel-new-life","name":"history"},
+  {"id":"process.pid.failed-image-reservation-rollback","name":"rollback"},
+  {"id":"identifiers.workload.shell-and-file","name":"shell-file"},
+  {"id":"identifiers.workload.pipe","name":"pipe"},
+  {"id":"identifiers.workload.event-dup-and-failed-open","name":"event"},
+  {"id":"identifiers.workload.joinable-and-detached-thread","name":"thread"}
+]

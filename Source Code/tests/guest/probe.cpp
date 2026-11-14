@@ -2,6 +2,7 @@
 #include "scheduler_probe.h"
 #include "event_probe.h"
 #include "thread_probe.h"
+#include "pid_probe.h"
 static volatile int worker_done;
 static int event_handle;
 static u32 time_buffer[4];
@@ -126,6 +127,7 @@ int main(void) {
   __asm__ volatile("ud2");
 #else
   const char *arg = Arguments();
+  if (pidprobe::matches(arg)) { return pidprobe::run(arg); }
   if (threadprobe::matches(arg)) { return threadprobe::run(arg); }
   if (eventprobe::matches(arg)) {
     return eventprobe::run(arg);

@@ -41,6 +41,9 @@ for(const [name,source,mode,abi=1] of apps){
   const thread=path.join(out,'probe-thread.o');
   command(path.join(tc,'g++.exe'),[...flags,'-I','user','-c','tests/guest/thread_probe.cpp','-o',thread]);
   extra.push(thread);
+  const pid=path.join(out,'probe-pid.o');
+  command(path.join(tc,'g++.exe'),[...flags,'-I','user','-c','tests/guest/pid_probe.cpp','-o',pid]);
+  extra.push(pid);
  }
  if(name==='nettest'){const obj=path.join(out,`${name}-netlib.o`);command(path.join(tc,'g++.exe'),[...flags,'-c','user/netlib.cpp','-o',obj]);extra.push(obj);}
  const exe=path.join(out,`${name}.exe`),bin=path.join(out,`${name}.snx`);

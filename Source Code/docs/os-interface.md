@@ -334,6 +334,17 @@ Reserved flags return S_INVALID. Cancellation marks only the bound running
 child for termination; cleanup happens in process_step. Repeated cancellation
 and cancellation after completion return 0. The first terminal event wins:
 neither late cancellation nor old Kill overwrites a prior exit/fault/kill.
+PIDs remain opaque positive integers, now `(generation << 4) | (slot + 1)`:
+8 slots, a persistent nonwrapping 27-bit generation per slot, and zero reserved.
+A failed launch reservation does not consume a PID. A slot becomes reusable only
+after execution resources, wait nodes and ownership are released. Historical
+completion records retain their original full PID; they never rebind a reused slot.
+At the last generation the slot retires; unavailable slots return `S_LIMIT`.
+Object generations are independent 32-bit per-object-slot counters. Handles keep
+`(cookie << 8) | (slot + 1)`, with 23-bit cookies allocated globally per low-byte
+slot and balanced across eligible free slots. Neither table teardown nor PID reuse
+resets these counters. See [identifier lifetime](identifier-lifetime.md) for budgets.
+
 No CAP_MANAGE or arbitrary PID control is granted by this API.
 
 Publication of completion occurs after owned handles, image pages, page tables

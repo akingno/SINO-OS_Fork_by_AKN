@@ -1,6 +1,7 @@
 #include "../klog.h"
 /* Preemption only at user boundaries. Kernel remains non-preemptible. */
 #include "internal.h"
+#include "../identifiers.h"
 #include "../mm/paging.h"
 #include "../mm/kmap.h"
 #include "../mm/uaccess.h"
@@ -70,7 +71,13 @@ namespace task {
   Process processes[MaxProcesses];
   Process* current;
   int currentThread = -1;
-  static u32 next_pid = 1;
+  static ids::ProcessPool<MaxProcesses, 4, 0x07ffffffu> processIds;
+  static Process* findProcess(u32 pid) {
+    int slot = processIds.lookup(pid);
+    if (slot < 0) { return nullptr; }
+    Process& p = processes[slot];
+    return p.state && p.pid == pid ? &p : nullptr;
+  }
   static struct {
     u32 pid;
     char name[64];
@@ -134,8 +141,14 @@ namespace task {
       notify(p->completion_object, WaitReason::COMPLETION, true);
       object_unref(object);
     }
-    // 仅在所有资源释放后清零；不能复制或移动带活动 KernelGuard 的槽位。
+    // 资源、等待节点、归属与历史结果处理完，才允许复用编号槽位。
+    const u32 pid = p->pid;
+    const u32 slot = (u32)(p - processes);
     memset((void*)p, 0, sizeof(*p));
+    if (pid ? !processIds.release(pid) : !processIds.abort(slot)) {
+      panic("PID release state", pid, slot);
+    }
+    if (!pid) { identifier_stats.abortedProcesses++; }
   }
   static phys_t alloc_user_page(Process* p, u32 va, int write) {
 #ifdef SINO_SHELL_BRIDGE
@@ -347,12 +360,8 @@ namespace task {
     return launch_policy(path, 0, arguments, PROCESS_STRICT, -1);
   }
   int workspaceFrontend(u32 pid) {
-    for (int i = 0; i < MaxProcesses; i++) {
-      if (processes[i].state && processes[i].pid == pid) {
-        return processes[i].workspace_frontend;
-      }
-    }
-    return 0;
+    Process* p = findProcess(pid);
+    return p ? p->workspace_frontend : 0;
   }
   static int desktop_run(u32 operation, const DesktopRun* request) {
     if (request->path[sizeof(request->path) - 1] ||
@@ -394,23 +403,12 @@ namespace task {
     if (operation == DESKTOP_KILL) {
       u32 target;
       memcpy(&target, request->path, sizeof(target));
-      for (int i = 0; i < MaxProcesses; i++) {
-        if (processes[i].state && processes[i].pid == target) {
-          return processes[i].desktop_owner == shell
-          ? kill(target, 0) : S_DENIED;
-        }
-      }
-      return S_NOTFOUND;
+      Process* p = findProcess(target);
+      return p ? (p->desktop_owner == shell ? kill(target, 0) : S_DENIED) : S_NOTFOUND;
     }
     int pid = desktop_run(operation, request);
-    if (pid > 0) {
-      for (int i = 0; i < MaxProcesses; i++) {
-        if (processes[i].state && processes[i].pid == (u32)pid) {
-          processes[i].desktop_owner = shell;
-          break;
-        }
-      }
-    }
+    Process* p = findProcess((u32)pid);
+    if (p) { p->desktop_owner = shell; }
     return pid;
   }
   // SNX 加载工作区仅归创建路径所有。依赖单核、内核不可抢占、装载不挂起且不递归
@@ -435,16 +433,11 @@ namespace task {
     if (!native_header_valid(h, nodes[n].size)) {
       return S_INVALID;
     }
-    Process* p = 0;
-    for (int i = 0; i < MaxProcesses; i++) {
-      if (!processes[i].state) {
-        p = &processes[i];
-        break;
-      }
-    }
-    if (!p || next_pid >= 0x7fffffu || strlen(arguments) > 255) {
-      return S_LIMIT;
-    }
+    if (strlen(arguments) > 255) { return S_LIMIT; }
+    int reserved = processIds.reserve();
+    if (reserved < 0) { identifier_stats.processLimits++; return S_LIMIT; }
+    Process* p = &processes[reserved];
+    if (p->state) { panic("PID slot still owned", reserved, p->pid); }
     memset((void*)p, 0, sizeof(*p));
     p->abi = h->abi;
     p->code_end = USER_BASE + h->data_offset;
@@ -540,16 +533,16 @@ namespace task {
         *handles[i] = (u32)handle;
       }
     }
-    p->pid = next_pid++;
+    // 提交之后不再执行会失败的资源分配；完整 PID 先绑定完成记录，再进入就绪队列。
+    p->pid = processIds.commit((u32)reserved);
+    if (!p->pid) { panic("PID commit state", reserved, 0); }
+    identifier_stats.processes++;
     p->completion_object = (u32)(completion + 1);
     if (completion >= 0) {
       completions[objects[completion].value].result.pid = p->pid;
     }
     p->policy = policy;
     p->input_frontend = p->workspace_frontend = 0;
-    if (!next_pid) {
-      next_pid = 1;
-    }
     p->state = 1;
     p->caps = caps & 7; /* Boot utilities have no write, network or management
     grant, regardless of launcher. */
@@ -572,13 +565,8 @@ namespace task {
   /* Both old tracked launches and bounded runs use the same startup transaction. */
   int launchConsole(void) {
     int pid = launch_policy("/boot/conhost.snx", 0, "", PROCESS_COMPAT, -1);
-    if (pid > 0) {
-      for (u32 i = 0; i < MaxProcesses; i++) {
-        if (processes[i].pid == (u32)pid && processes[i].state == 1) {
-          processes[i].input_frontend = processes[i].workspace_frontend = 1;
-        }
-      }
-    }
+    Process* p = findProcess((u32)pid);
+    if (p && p->state == 1) { p->input_frontend = p->workspace_frontend = 1; }
     return pid;
   }
   static int tracked_launch(Handle* owner, const char* path, const char* args, RunData* run) {
@@ -891,32 +879,20 @@ namespace task {
     return 0;
   }
   Handle* interactiveHandles(u32 pid) {
-    for(int i=0;i<MaxProcesses;i++){
-      if(processes[i].state==1&&processes[i].pid==pid&&processes[i].interactive){
-        return processes[i].handles;
-      }
-    }
-    return 0;
+    Process* p = findProcess(pid);
+    return p && p->state == 1 && p->interactive ? p->handles : nullptr;
   }
   int terminalCancel(u32 pid) {
-    for(int i=0;i<MaxProcesses;i++){
-      if(pid&&processes[i].pid==pid&&processes[i].state){
-        processes[i].retire(PROCESS_CANCELED, 0);return 0;
-      }
-    }
-    return S_NOTFOUND;
+    Process* p = findProcess(pid);
+    if (!p) { return S_NOTFOUND; }
+    p->retire(PROCESS_CANCELED, 0);
+    return S_OK;
   }
   int kill(u32 pid, i32 code) {
-    for (int i = 0; i < MaxProcesses; i++) {
-      if (processes[i].state && processes[i].pid == pid) {
-        if (processes[i].state == 2) {
-          return 0;
-        } /* First terminal event wins. */
-        processes[i].retire(PROCESS_KILLED, code);
-        return 0;
-      }
-    }
-    return S_NOTFOUND;
+    Process* p = findProcess(pid);
+    if (!p) { return S_NOTFOUND; }
+    if (p->state != 2) { p->retire(PROCESS_KILLED, code); }
+    return S_OK; // First terminal event wins, including pending reaping.
   }
   static int homepath(u32 address, char* path, int writing) {
     char raw[VFS_PATH];
@@ -994,7 +970,7 @@ namespace task {
     memcpy((void*)f->ecx, &completions[object->value].result, bytes);
     return S_OK;
   }
-  static u32 threadGeneration;
+  static ids::Counter<0x0fffffffu> threadGeneration;
   static bool threadCode(u32 address) {
     return address >= USER_BASE + sizeof(NativeHeader) && address < current->code_end &&
            paging_user_flags(current->pd, address) == (PAGE_PRESENT | PAGE_USER);
@@ -1012,7 +988,7 @@ namespace task {
     if (spec.size != sizeof(spec) || spec.version != 1 || spec.flags > 1 ||
         !threadCode(spec.entry) || !threadCode(spec.trampoline)) { return S_INVALID; }
     // 28 位全局代数 + 3 位槽号；不回绕。提交前的失败不消耗 TID。
-    if (threadGeneration >= 0x0fffffffu) { return S_LIMIT; }
+    if (!threadGeneration.available()) { identifier_stats.threadLimits++; return S_LIMIT; }
     for (u32 slot = 1; slot < MaxThreads; slot++) {
       Thread& t = current->thread[slot];
       if (t.state != ThreadState::UNUSED) { continue; }
@@ -1029,7 +1005,8 @@ namespace task {
         free_user_pages(current, top - UserStackBytes, top);
         return result;
       }
-      const u32 tid = (++threadGeneration << 3) | (slot + 1);
+      const u32 tid = (threadGeneration.issue() << 3) | (slot + 1);
+      identifier_stats.threads++;
       t.initialize(current, slot, spec.trampoline, top - sizeof(initial), tid, (u32)(object + 1));
       return (int)tid;
     }
@@ -1916,12 +1893,8 @@ namespace task {
   }
 
   int alive(u32 pid) {
-    for (int i = 0; i < MaxProcesses; i++) {
-      if (processes[i].pid == pid && processes[i].state == 1) {
-        return 1;
-      }
-    }
-    return 0;
+    Process* p = findProcess(pid);
+    return p && p->state == 1;
   }
 
   void reapAndExpireRuns() {

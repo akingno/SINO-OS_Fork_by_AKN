@@ -17,6 +17,7 @@ async function run(api) {
         assert((await memory(symbols.idle_halt, 3)).equals(Buffer.from([0xfb, 0xf4, 0xc3])),
             'actual guest idle entry must be adjacent sti; hlt; ret');
         assert.match(guestLog(), /OBJECT handles rights\/stale\/release PASS/);
+        assert.match(guestLog(), /IDENTIFIERS object\/cookie exhaustion PASS/);
         assert.match(guestLog(), /CPL3 selectors 1B\/23, I\/O denied/);
         assert.equal((await processes()).length, 0);
     });

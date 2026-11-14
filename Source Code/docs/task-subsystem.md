@@ -149,3 +149,14 @@ IRQ 自检并入原有启动/进程用例，不新增独立固定 ID。不因仅
 队列共同迁移选择 process 8、completion-waits 8、pipe-waits 10、terminal-waits 11、shell-waits 5，加普通启动 1、集合宿主 4，共 47 项。新增 4 个独立宿主用例，不改变统一注册表 ID；原有启动/抢占用例追加重复通知、旧对象代数、到期优先、竞争重试和剩余字节交接断言。
 Event 接入选择独立 test-event-waits.js 8、process 8、policy 2、普通启动 1，共 19 项；Event 专项使用同次 ShellBridge 构建、共享 VM/内存观察工具和私有盘，固定行为 ID 见 tests/support/event-cases.json，不自动加入 core。
 线程参数/join 接入选择独立 test-thread-waits.js 8、process 8、policy 2、images 11、Event 8、completion-waits 8、普通启动 1，共 46 个选定用例。探针读取初始栈帧、验证 v1/v2 返回和负数退出码、立即栈回收、一次领取、超时/解除映射后的再领取、单消费者/自身/外进程拒绝、detach/复用、参数/配额回滚和取消/故障/最后线程清理。需要创建严格子进程的两项使用兼容父进程，不扩大严格委托权限。
+
+## PID 生命周期
+
+`identifiers.h` 的 ProcessPool 与进程数组一一对应，预留、提交、活动、退役状态与 Process 的内存分开保存。
+launch_policy 完成所有可失败资源分配后提交完整 PID、绑定完成记录，再发布 READY 主线程。
+launch_policy 内提交前的失败统一走 release：摘队列、关句柄、释放页表/入口栈之后撤销预留，不消耗代数。
+交互启动在此后绑定终端失败则清理已提交进程，消耗已签发的 PID，不能回退计数器。
+退出则先完成资源与归属清理、发布历史完成结果、清空 Process，最后释放编号槽。
+alive/kill、终端取消/交互句柄和启动者归属通过完整 token 查找，不接受裸槽号。
+完成对象取消还同时校验完整 PID 和 completion_object；租约、终端前后台与 Shell 保存的仍是完整 PID。
+内部 Object 32 位每槽代数、句柄全局每槽 cookie、TID 全局 28 位代数互相独立；参见 [寿命与实测](identifier-lifetime.md)。
