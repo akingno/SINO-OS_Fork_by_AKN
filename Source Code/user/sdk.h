@@ -267,6 +267,7 @@ static inline int Close(int h) {
 static inline int OpenPath(const char *p) { return api(SYS_OPEN_PATH,(u32)p,0,0); }
 void copy(char *, const char *);
 void Log(const char *);
+__attribute__((cdecl,noreturn)) void sino_thread_start(int (*entry)(void*), void* argument);
 #ifdef __cplusplus
 }
 namespace sino::event {
@@ -283,6 +284,31 @@ inline int wait(int handle, u32 timeout = 0) {
 inline bool available() {
   SystemInfo info;
   return QuerySystemInfo(&info) == S_OK && (info.features & FEATURE_EVENT_WAIT) != 0;
+}
+}
+namespace sino::thread {
+using Entry = int (*)(void*);
+inline bool available() {
+  SystemInfo info;
+  return QuerySystemInfo(&info) == S_OK && (info.features & FEATURE_THREAD_JOIN) != 0;
+}
+inline int create(Entry entry, void* argument = nullptr,
+                  ThreadCreateFlags flags = ThreadCreateFlags::Joinable) {
+  ThreadCreateSpec spec{sizeof(spec), 1, (u32)entry, (u32)argument,
+                        (u32)sino_thread_start, (u32)flags};
+  return api(SYS_THREAD_CREATE, (u32)&spec, sizeof(spec), 0);
+}
+inline int query(int tid, ThreadResult* out) {
+  return api(SYS_THREAD_JOIN, (u32)tid, (u32)out, sizeof(*out));
+}
+inline int join(int tid, ThreadResult* out, u32 timeout = 0) {
+  return api_wait(SYS_THREAD_JOIN, tid, out, THREAD_JOIN_BLOCK_FLAG, timeout);
+}
+inline int detach(int tid) { return api(SYS_THREAD_DETACH, (u32)tid, 0, 0); }
+[[noreturn]] inline void exit(int code) {
+  api(SYS_THREAD_EXIT_CODE, (u32)code, 0, 0);
+  Exit(S_INVALID); // 错误内核若意外返回，终止进程，禁止返回伪栈帧。
+  for (;;) {}
 }
 }
 #endif

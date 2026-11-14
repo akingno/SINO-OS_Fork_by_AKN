@@ -9,7 +9,7 @@
 | task/entry.cpp | 32 个旧入口的薄 C ABI 桥接；汇编/宿主观察所需的切出标志与统计符号 |
 | task/internal.h | 仅 task 内部共享的类型、状态声明及服务接口 |
 | task/process.cpp | 创建/回收、映像加载、权限与系统调用；耦合的完成记录和有限 CLI 暂留此处 |
-| task/thread.cpp | Thread 初始化和等待期限判断 |
+| task/thread.cpp | Thread 初始化、等待期限判断、join 占用和结果 Object 释放 |
 | task/collections.h | 不分配内存的侵入式 FIFO 与可撤销定时小根堆，内核/宿主检查共用 |
 | task/wait.h/.cpp | 就绪/对象等待/回收队列、通知交接、定时到期与 Thread/Process 状态转换 |
 | task/kernel_stack.h/.cpp | 每进程入口栈的大小、实际分配、保护页、栈顶和显式回收；启动自检 |
@@ -100,7 +100,7 @@ ShellBridge 命令执行函数另有 9528 B 报告，运行在启动/主循环�
 
 ## 就绪、等待、定时与回收队列
 
-Thread 状态区分 UNUSED、READY、RUNNING、SLEEPING、BLOCKED。schedLink 含前驱、后继和实际队列 owner 指针；一个节点只能属于就绪或某个对象等待 FIFO，运行中不在这两类链上。取消可直接 O(1) 摘除，不搜索前驱。
+Thread 状态区分 UNUSED、READY、RUNNING、SLEEPING、BLOCKED、EXITED。EXITED 是已释放用户栈、尚待 join/detach 的记录，不在就绪队列，也不计入活动线程。schedLink 含前驱、后继和实际队列 owner 指针；一个节点只能属于就绪或某个对象等待 FIFO，运行中不在这两类链上。取消可直接 O(1) 摘除，不搜索前驱。
 Thread 内嵌 TimerNode，slot 为 heap index + 1，零表示未登记；定时节点独立于 schedLink，因此有期限的对象阻塞/待重试就绪线程可以同时保留定时条目。
 定时堆插入/撤销为 O(log N)，统一处理 Yield 睡眠、等待超时及有限运行期限；保留有符号 tick 比较、零超时无限等待和到期优先语义。相同期限按登记次序处理。当前堆配额为 32 个线程条目加 8 个进程条目。
 Process 单独内嵌回收链和运行期限节点；retire 是唯一进入待回收状态的路径，先撤销线程的就绪/等待/定时资格，再入回收队列。回收在主循环栈执行，关闭句柄/释放内存时不持有 IrqGuard。
@@ -122,6 +122,16 @@ SYS_EVENT_WAIT_BLOCK=0x151 显式阻塞；旧 SYS_EVENT_WAIT=0x115 继续只查�
 SYS_CLOSE 通过保存现场的 EBX 匹配精确等待句柄，因此通知后关闭也返回 S_BADHANDLE，关闭其他重复句柄不误取消。取消、故障和退出沿用统一撤销路径。
 SDK 使用 sino::event::{create,set,query,wait,available}，FEATURE_EVENT_WAIT 独立标识该能力；严格策略只授权当前进程持有的本地事件句柄。
 
+### 新线程、退出记录与 join
+
+新 create 接收 worker、argument、SDK trampoline 和 flags，校验并准备完整的 T-12 cdecl 栈帧后才发布 TID/进入就绪队列。SDK trampoline 是独立 C ABI 入口，调用 int worker(void*)，把返回值提交给 THREAD_EXIT_CODE；意外返回时调用进程 Exit 错误路径，不从伪返回地址 ret。
+TID 使用不回绕的全局 28 位代数及 3 位 slot+1，只在当前进程查找；旧线程创建仍返回原始槽号，不能作为新 join token。主槽保留，三个 worker 槽含未领取退出记录，不扩大运行容量。
+
+joinable 线程持有一个私有 THREAD Object，其 value 指向稳定 Thread；用户不能通过新 API 把这个 Object 当成句柄授权给其他进程。joinObject 的执行/记录引用一直保留到成功领取、detach 或进程回收，不会因为等待登记而增加引用。线程退出立即释放四页用户栈，保留 EXITED/exitCode/TID；detached/legacy 退出直接复用槽位。
+只有一个阻塞 joiner 可以占用目标，目标保存 joiner，调用线程保存 joinTarget。该反向联系在统一 clearWait 中撤销，覆盖超时、无效输出、取消和退出；通知仍只允许在原地址空间重试。结果先校验并写入用户输出，成功后再清除占用、释放 Object 并使槽位可用。非阻塞 query 是 try-join，成功也消费结果。
+detach 在目标被其他 joiner 占用时返回 S_BUSY；活目标 detach 丢弃未来结果义务，已退出目标 detach 释放记录。退出记录不算活线程，最后一个活动线程退出即结束进程；主循环回收先取消全部节点/占用，再释放所有结果 Object 和进程资源。
+旧 ThreadExit 忽略参数并使用零退出码；新 ThreadExitCode 保留 signed int 结果。只检测自身 join，不额外检测用户构造的相互 join 环；超时范围和到期优先契约保持，包括 wait.cpp 的超时语义重审 TODO。
+
 ## 同步接口
 
 IrqGuard 保存原 IF、关闭可屏蔽中断，在析构时恢复原 IF，并提供编译器屏障；不回放其他 EFLAGS，也不屏蔽 NMI。
@@ -138,3 +148,4 @@ IRQ 自检并入原有启动/进程用例，不新增独立固定 ID。不因仅
 入口栈变更选择 process、内存 images 及普通启动。启动自检验证精确页数、保护/可用 PTE 在内核及用户页目录中的权限、首尾读写、重复操作、保护记录耗尽回滚及重试；不以真实触发内核栈溢出来测试恢复。
 队列共同迁移选择 process 8、completion-waits 8、pipe-waits 10、terminal-waits 11、shell-waits 5，加普通启动 1、集合宿主 4，共 47 项。新增 4 个独立宿主用例，不改变统一注册表 ID；原有启动/抢占用例追加重复通知、旧对象代数、到期优先、竞争重试和剩余字节交接断言。
 Event 接入选择独立 test-event-waits.js 8、process 8、policy 2、普通启动 1，共 19 项；Event 专项使用同次 ShellBridge 构建、共享 VM/内存观察工具和私有盘，固定行为 ID 见 tests/support/event-cases.json，不自动加入 core。
+线程参数/join 接入选择独立 test-thread-waits.js 8、process 8、policy 2、images 11、Event 8、completion-waits 8、普通启动 1，共 46 个选定用例。探针读取初始栈帧、验证 v1/v2 返回和负数退出码、立即栈回收、一次领取、超时/解除映射后的再领取、单消费者/自身/外进程拒绝、detach/复用、参数/配额回滚和取消/故障/最后线程清理。需要创建严格子进程的两项使用兼容父进程，不扩大严格委托权限。

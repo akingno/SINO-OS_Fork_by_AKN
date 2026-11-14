@@ -103,6 +103,7 @@ namespace task {
   }
   static void release(Process* p) {
     detachProcess(*p);
+    for (auto& t : p->thread) { t.dropJoinRecord(); }
     for (int i = 0; i < 8; i++) {
       if (leases[i].pid == p->pid) {
         leases[i].pid = 0;
@@ -993,6 +994,97 @@ namespace task {
     memcpy((void*)f->ecx, &completions[object->value].result, bytes);
     return S_OK;
   }
+  static u32 threadGeneration;
+  static bool threadCode(u32 address) {
+    return address >= USER_BASE + sizeof(NativeHeader) && address < current->code_end &&
+           paging_user_flags(current->pd, address) == (PAGE_PRESENT | PAGE_USER);
+  }
+  static Thread* threadTarget(u32 tid) {
+    u32 slot = (tid & 7u) - 1;
+    if (slot >= MaxThreads) { return nullptr; }
+    Thread& t = current->thread[slot];
+    return t.tid == tid && tid && t.state != ThreadState::UNUSED ? &t : nullptr;
+  }
+  static int createThread(u32 address, u32 bytes, u32 reserved) {
+    if (bytes != sizeof(ThreadCreateSpec) || reserved) { return S_INVALID; }
+    ThreadCreateSpec spec;
+    UACCESS_TRY(copy_from_user(current->pd, &spec, address, sizeof(spec)));
+    if (spec.size != sizeof(spec) || spec.version != 1 || spec.flags > 1 ||
+        !threadCode(spec.entry) || !threadCode(spec.trampoline)) { return S_INVALID; }
+    // 28 位全局代数 + 3 位槽号；不回绕。提交前的失败不消耗 TID。
+    if (threadGeneration >= 0x0fffffffu) { return S_LIMIT; }
+    for (u32 slot = 1; slot < MaxThreads; slot++) {
+      Thread& t = current->thread[slot];
+      if (t.state != ThreadState::UNUSED) { continue; }
+      if (!alloc_user_stack(current, (int)slot)) { return S_NOMEM; }
+      const u32 top = user_stack_top(current, (int)slot);
+      const u32 initial[] = {0, spec.entry, spec.argument};
+      int result = copy_to_user(current->pd, top - sizeof(initial), initial, sizeof(initial));
+      int object = -1;
+      if (result == S_OK && spec.flags == (u32)ThreadCreateFlags::Joinable) {
+        object = object_new(ObjType::THREAD, (int)&t);
+        if (object < 0) { result = object; }
+      }
+      if (result != S_OK) {
+        free_user_pages(current, top - UserStackBytes, top);
+        return result;
+      }
+      const u32 tid = (++threadGeneration << 3) | (slot + 1);
+      t.initialize(current, slot, spec.trampoline, top - sizeof(initial), tid, (u32)(object + 1));
+      return (int)tid;
+    }
+    return S_LIMIT;
+  }
+  int joinResult(Thread& caller, Frame& f) {
+    const bool blocking = f.edx == THREAD_JOIN_BLOCK_FLAG;
+    if (blocking ? f.esi > STREAM_WAIT_MAX : f.edx < sizeof(ThreadResult)) { return S_INVALID; }
+    Thread* target = threadTarget(f.ebx);
+    if (!target) { return S_BADHANDLE; }
+    if (target == &caller || !target->joinObject) { return S_INVALID; }
+    UACCESS_TRY(uaccess_prepare(current->pd, f.ecx, sizeof(ThreadResult), UserAccess::WRITE));
+    if (target->joiner && target->joiner != &caller) { return S_BUSY; }
+    if (target->state != ThreadState::EXITED) { return S_AGAIN; }
+    ThreadResult result{sizeof(result), 1, target->tid, target->exitCode};
+    UACCESS_TRY(copy_to_user(current->pd, f.ecx, &result, sizeof(result)));
+    // 结果完整写入后才消费记录；通知或超时都不会提前领取结果。
+    caller.releaseJoinClaim();
+    target->dropJoinRecord();
+    target->tid = 0;
+    target->state = ThreadState::UNUSED;
+    return S_OK;
+  }
+  static int detachThread(u32 tid, u32 reserved1, u32 reserved2) {
+    if (reserved1 || reserved2) { return S_INVALID; }
+    Thread* t = threadTarget(tid);
+    if (!t) { return S_BADHANDLE; }
+    if (!t->joinObject) { return S_INVALID; }
+    if (t->joiner) { return S_BUSY; }
+    t->dropJoinRecord();
+    if (t->state == ThreadState::EXITED) {
+      t->state = ThreadState::UNUSED;
+      t->tid = 0;
+    }
+    return S_OK;
+  }
+  static void exitThread(Frame* f, int code) {
+    Thread& t = current->thread[currentThread];
+    t.cancel();
+    const u32 top = user_stack_top(current, currentThread);
+    free_user_pages(current, top - UserStackBytes, top);
+    t.exitCode = code;
+    if (t.joinObject) {
+      t.state = ThreadState::EXITED;
+      notify(t.joinObject, WaitReason::JOIN, true);
+    } else {
+      t.tid = 0;
+    }
+    bool live = false;
+    for (const auto& thread : current->thread) {
+      if (thread.state != ThreadState::UNUSED && thread.state != ThreadState::EXITED) { live = true; }
+    }
+    if (!live) { current->retire(PROCESS_EXITED, code); }
+    leave(f);
+  }
   int retryWait(Thread* t) {
     u32 now = ticks;
     int result = S_TIMEOUT;
@@ -1002,6 +1094,8 @@ namespace task {
       if (t->waitOp == WaitReason::COMPLETION) {
         Object* object = handle_get(current->handles, f->ebx, ObjType::PROCESS, PROCESS_WAIT);
         result = user_completion_result(f, object);
+      } else if (t->waitOp == WaitReason::JOIN) {
+        result = joinResult(*t, *f);
       } else if (t->waitOp == WaitReason::EVENT) {
         Object* event = handle_get(current->handles, f->ebx, ObjType::EVENT, 1);
         result = !event ? S_BADHANDLE : event->value ? S_OK : S_AGAIN;
@@ -1031,6 +1125,7 @@ namespace task {
     switch (call) {
     case SYS_EXIT: case SYS_YIELD: case SYS_LOG: case SYS_TICKS:
     case SYS_CLOSE: case SYS_DUP: case SYS_THREAD: case SYS_THREAD_EXIT:
+    case SYS_THREAD_CREATE: case SYS_THREAD_JOIN: case SYS_THREAD_DETACH: case SYS_THREAD_EXIT_CODE:
     case SYS_EVENT_CREATE: case SYS_EVENT_SET: case SYS_EVENT_WAIT: case SYS_EVENT_WAIT_BLOCK:
     case SYS_DIRECTORY_COMMIT: case SYS_TIME: case SYS_CALENDAR: case SYS_UI_LANGUAGE:
     case SYS_SYSTEM_INFO: case SYS_START_INFO:
@@ -1727,22 +1822,29 @@ namespace task {
         }
       }
       return S_LIMIT;
-    case SYS_THREAD_EXIT: {
-        current->thread[currentThread].cancel();
-        int live = 0;
-        for (int i = 0; i < MaxThreads; i++) {
-          if (current->thread[i].state != ThreadState::UNUSED) {
-            live = 1;
-          }
-        }
-        if (!live) {
-          current->retire(PROCESS_EXITED, 0);
-        }
-        u32 top = user_stack_top(current, currentThread);
-        free_user_pages(current, top - UserStackBytes, top);
+    case SYS_THREAD_CREATE:
+      return createThread(a, b, c);
+    case SYS_THREAD_JOIN: {
+      Thread& caller = current->thread[currentThread];
+      int result = joinResult(caller, *f);
+      if (result == S_AGAIN && c == THREAD_JOIN_BLOCK_FLAG) {
+        Thread* target = threadTarget(a);
+        target->joiner = &caller;
+        caller.joinTarget = target;
+        caller.block(target->joinObject, WaitReason::JOIN, f->esi);
         leave(f);
-        return 0;
       }
+      return result;
+    }
+    case SYS_THREAD_DETACH:
+      return detachThread(a, b, c);
+    case SYS_THREAD_EXIT_CODE:
+      if (b || c) { return S_INVALID; }
+      exitThread(f, (int)a);
+      return S_OK;
+    case SYS_THREAD_EXIT:
+      exitThread(f, 0);
+      return S_OK;
     case SYS_EVENT_CREATE:
       n = object_new(ObjType::EVENT, 0);
       if (n < 0) {
@@ -1803,7 +1905,7 @@ namespace task {
         v->exit_code = p->code;
         memcpy(v->name, p->name, 32);
         for (int j = 0; j < MaxThreads; j++) {
-          if (p->thread[j].state != ThreadState::UNUSED) {
+          if (p->thread[j].state != ThreadState::UNUSED && p->thread[j].state != ThreadState::EXITED) {
             v->threads++;
           }
         }

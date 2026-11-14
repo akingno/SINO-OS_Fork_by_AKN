@@ -2,6 +2,9 @@
 /* GCC's MinGW C entry hook: no host CRT or C++ constructors in native ABI 1. */
 extern "C" void __main(void) {
 }
+extern "C" __attribute__((cdecl,noreturn)) void sino_thread_start(int (*entry)(void*), void* argument) {
+  sino::thread::exit(entry(argument));
+}
 /* 【简化实现：用户态堆】每次 malloc 都直接预留一个匿名区域，首次访问才分配
  * 物理页；小对象也按页占空间，并受每进程 32 个区域、合计 16 MiB 的限制。
  * TODO（用户态堆，后置）：以匿名映射作为堆的底层来源，在区域内按对齐的小块

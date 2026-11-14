@@ -8,7 +8,7 @@ extern "C" {
 #define HANDLES 24
 enum class ObjType : u32 { EVENT = 1, WINDOW, SOCKET, PROCESS, STREAM,
        DIRECTORY, FILE, STAGING, PIPE_READ, PIPE_WRITE,
-       TERM_CONTROL, TERM_CLIENT };
+       TERM_CONTROL, TERM_CLIENT, THREAD };
 typedef struct {
   u32 object, generation, rights, cookie;
 } Handle;

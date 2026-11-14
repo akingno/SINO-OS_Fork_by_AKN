@@ -20,6 +20,7 @@ const apps = [
  ['comptest', 'tests/guest/completion_tests.cpp', 0],
  ['poltest', 'tests/guest/policy_tests.cpp', 0],
  ['probe', 'tests/guest/probe.cpp', 0],
+ ['threadv2', 'tests/guest/thread_probe.cpp', 0, 2],
  ['fault', 'tests/guest/probe.cpp', 1],
  ['iofault', 'tests/guest/probe.cpp', 2],
  ['spin', 'tests/guest/probe.cpp', 3],
@@ -37,6 +38,9 @@ for(const [name,source,mode,abi=1] of apps){
   const event=path.join(out,'probe-event.o');
   command(path.join(tc,'g++.exe'),[...flags,'-I','user','-c','tests/guest/event_probe.cpp','-o',event]);
   extra.push(event);
+  const thread=path.join(out,'probe-thread.o');
+  command(path.join(tc,'g++.exe'),[...flags,'-I','user','-c','tests/guest/thread_probe.cpp','-o',thread]);
+  extra.push(thread);
  }
  if(name==='nettest'){const obj=path.join(out,`${name}-netlib.o`);command(path.join(tc,'g++.exe'),[...flags,'-c','user/netlib.cpp','-o',obj]);extra.push(obj);}
  const exe=path.join(out,`${name}.exe`),bin=path.join(out,`${name}.snx`);

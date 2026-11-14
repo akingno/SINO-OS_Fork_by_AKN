@@ -27,6 +27,7 @@
 | 调度、进程/线程退出、故障回收；`process_step / release / entry.asm` | `.\regression.ps1 -Suite process`；8 项 | 完成通知/等待器变化加 `completion-waits`；管道/终端唤醒变化只加相应等待专项 |
 | 系统调用策略、权限、句柄授权；`launch_policy / syscall / object` | `.\regression.ps1 -Suite policy`；2 项 | 对象生命周期变化加受影响对象的套件；线程/进程资源变化加 `process` |
 | 手动复位 Event、阻塞等待、Set/Reset/Close | `node 'Source Code/tests/host/test-event-waits.js' '<ShellBridge 构建目录>'`；8 项，先 `--list` | 调度/等待接入加 process 8；ABI/授权变化加 policy 2；SDK/启动能力位变化加普通启动 1。Event 独立专项不自动加入 core，复用同次构建、共享 VM 工具和私有盘 |
+| 线程传参、返回、join/detach 与 TID | `node 'Source Code/tests/host/test-thread-waits.js' '<ShellBridge 构建目录>'`；8 项，先 `--list` | 创建/退出接入加 process 8；用户栈变化加 images 11；新 ABI/授权加 policy 2；公共等待撤销增加 join 占用清理时加 Event 8、completion-waits 8；普通启动 1。本轮组合 46 项。V2 探针 threadv2.snx 仅打包到 ShellBridge，不自动加入 core |
 | 完成记录、取消、观察者 | `.\regression.ps1 -Suite completion`；5 项 | 阻塞/超时/唤醒变化加 `completion-waits`；8 项 |
 | 文件对象、目录授权、VFS 版本与发布 | `.\regression.ps1 -Suite files`；2 项，含自有冷启动 | 提交、Sync、磁盘快照或恢复变化加 `persistence`；4 项；故障注入路径另选针对性边界 |
 | 存储快照、磁盘持久化与恢复 | `.\regression.ps1 -Suite persistence`；4 项 | 发布/目录/文件语义变化加 `files`；额外存储故障检查按具体路径选择，不自动跑 50 项 infrastructure |

@@ -11,6 +11,7 @@
 namespace task {
 inline constexpr int MaxProcesses = 8;
 inline constexpr int MaxThreads = 4;
+static_assert(MaxThreads < 8, "TID ABI reserves three low bits for slot + 1");
 inline constexpr u32 UserStackBytes = 16384u;
 
 struct UserFrame {
@@ -21,7 +22,7 @@ static_assert(sizeof(UserFrame) == 60, "user_enter frame size");
 static_assert(__builtin_offsetof(UserFrame, useresp) == 52, "iret user ESP offset");
 static_assert(__builtin_offsetof(Frame, cs) == 44, "interrupt_common CS offset");
 
-enum class ThreadState : int { UNUSED, READY, RUNNING, SLEEPING, BLOCKED };
+enum class ThreadState : int { UNUSED, READY, RUNNING, SLEEPING, BLOCKED, EXITED };
 struct Process;
 
 struct Thread {
@@ -39,10 +40,16 @@ struct Thread {
   TimerNode timer;
   Process* process;
   u32 index;
+  u32 tid, joinObject;
+  int exitCode;
+  Thread* joiner;
+  Thread* joinTarget;
 
   QueueLink<Thread>& queueLink() { return schedLink; }
   WaitKey waitKey() const { return {waitObject, waitGeneration, waitOp}; }
-  void initialize(Process* owner, u32 slot, u32 entry, u32 stack);
+  void initialize(Process* owner, u32 slot, u32 entry, u32 stack, u32 token = 0, u32 record = 0);
+  void releaseJoinClaim();
+  void dropJoinRecord();
   void block(u32 object, WaitReason op, u32 timeout);
   void reblock();
   void sleep(u32 delay);
@@ -96,6 +103,7 @@ void setEntryStack(const Process& process);
 void leave(Frame* frame);
 int retryWait(Thread* thread);
 int dispatchSyscall(Frame* frame);
+int joinResult(Thread& caller, Frame& frame);
 extern "C" void user_enter(UserFrame*);
 
 // 仅供薄 C ABI 桥接与 task 内部调用。

@@ -46,7 +46,8 @@ BOUNDED_RUN=16, FILE_OBJECTS=32, PIPES=64, TERMINALS=128, CALENDAR=256,
 WORKSPACE=512, LINE_EDIT=1024, ANON_MEMORY=2048, ANON_LAZY=4096, SNX_V2=8192,
 THREAD_WAIT=16384.
 `FEATURE_EVENT_WAIT=32768` advertises explicit blocking manual-reset event waits.
-The current feature mask is 65535. Clients detect features by testing individual bits.
+`FEATURE_THREAD_JOIN=65536` advertises argument-bearing threads and join/detach.
+The current feature mask is 131071. Clients detect features by testing individual bits.
 These indicate implemented mechanisms, not grants to use every mechanism.
 Unknown feature bits must not be interpreted as authority. Unknown syscalls
 return S_INVALID. Add future syscall IDs before SYS_CALL_END; the sentinel is not
@@ -69,7 +70,7 @@ handles return S_BADHANDLE. A pre-set event returns S_OK immediately. Otherwise
 only the calling thread parks using the common generation-keyed wait queue.
 Strict and compatibility callers may use this local mechanism; no cross-process
 handle lookup or new delegation is provided. Old syscall numbers and query
-structure layouts are unchanged; SYS_CALL_END is now 0x152.
+structure layouts are unchanged; SYS_CALL_END is now 0x156 after the thread calls below.
 
 Notification permits a retry under the waiting process's address space. Reset
 before retry causes the wait to resume with its original deadline. Expiry is
@@ -97,6 +98,74 @@ that thread's address space. Finite waits retain their deadline across retries.
 See the [pipe](stream-pipes.md#opt-in-blocking-pipe-calls),
 [terminal](terminal-sessions.md#blocking-byte-reads), and
 [broker](interactive-runs.md) contracts for their selectors and wake conditions.
+
+## Argument-bearing threads and join/detach
+
+The old `SYS_THREAD=0x111` still creates a legacy worker and returns raw slot
+1..3. `SYS_THREAD_EXIT=0x112` still explicitly exits with code zero and ignores
+its arguments. These legacy slots, and the initial main thread, are not joinable
+TIDs. New calls are local mechanisms allowed by strict policy; they do not
+grant child-process delegation or cross-process thread access.
+
+| Call | Registers / result |
+| --- | --- |
+| THREAD_CREATE=0x152 | EBX=ThreadCreateSpec pointer, ECX=24, EDX=0; positive TID or S_* |
+| THREAD_JOIN=0x153 | EBX=TID, ECX=ThreadResult pointer; EDX>=16 for nonblocking join, or EDX=THREAD_JOIN_BLOCK_FLAG=1 and ESI=timeout for blocking join |
+| THREAD_DETACH=0x154 | EBX=TID, ECX=EDX=0 |
+| THREAD_EXIT_CODE=0x155 | EBX=signed 32-bit code, ECX=EDX=0; does not return on success |
+
+ThreadCreateSpec consists of six u32 fields: size=24, version=1, entry,
+argument, trampoline, flags. ThreadCreateFlags is a u32 enum class: Joinable=0,
+Detached=1; unknown flags are rejected. Entry and trampoline must point into
+the caller's readonly code region. Argument is opaque; the kernel does not
+dereference it. Invalid pointers, sizes, versions or reserved values fail
+before publishing a thread. Stack preparation or record-allocation failure
+rolls back pages and does not consume a TID.
+
+For exclusive stack top T, the kernel prepares `[T-12]=0`, `[T-8]=entry`,
+`[T-4]=argument`, then starts at the supplied trampoline with ESP=T-12. The
+current compiler contract requires 4-byte alignment. The SDK's C ABI
+`sino_thread_start` calls `int entry(void*)`, sends its return value to
+THREAD_EXIT_CODE, and terminates the process with an error if that syscall
+unexpectedly returns. User stacks retain 16 KiB mappings and unmapped spacing.
+
+ThreadResult consists of size=16, version=1, tid and signed code. Both blocking
+and nonblocking join consume a completed result exactly once, only after the
+entire output has been validated and copied. Live nonblocking join returns
+S_AGAIN without changing output or claiming the target. Blocking timeout
+is 0..60000 ticks, zero indefinite; timeout returns S_TIMEOUT without consuming
+the result. The existing timeout-before-retry rule and its review TODO remain.
+
+Only one blocked join consumer may claim a target. Other join attempts or
+detach return S_BUSY while that claim exists. A timed-out, canceled or failed
+join releases the claim; output is revalidated on retry, so unmapping it does
+not lose the target's result. Self-join and joining an active detached target
+return S_INVALID. Stale, foreign, consumed or invalid TIDs return S_BADHANDLE.
+Detaching a live joinable target discards its future join obligation; detaching
+an exited target consumes its record. Repeated detach of a live detached target
+is S_INVALID; after reclamation the old TID is stale.
+
+Joinable exit immediately unmaps the worker stack but retains an EXITED record
+in its thread slot, backed by one private THREAD Object. It retains no extra
+user handle. The record competes for the existing global Object quota and is
+freed by successful join, detach, or process reclamation. Detached/legacy exit
+reclaims the slot directly. Records count against the fixed slot quota but
+not as live execution: the last live thread ends the process even if records
+remain, with its explicit exit code (zero for the legacy exit call). SYS_EXIT
+still ends the whole process. Exit, kill and fault cleanup revoke all claims,
+queues, timers, records and mappings.
+
+TIDs are positive `(generation << 3) | (slot + 1)`, with a global nonwrapping
+28-bit generation and three low slot bits. Slot zero remains reserved for the
+main thread; the three worker slots are reusable after join/detach. Generation
+is assigned only at publication, and exhaustion returns S_LIMIT. The token
+is resolved only in the current process; this does not promise unlimited
+generation reuse or enlarge the 8-process / 4-thread limits.
+
+SDK namespace `sino::thread` provides `create`, `query`, `join`, `detach`, `exit`
+and `available`. `query` is a nonblocking join and consumes success, not a peek.
+`create` uses the SDK trampoline and defaults to Joinable; `join` defaults to
+an indefinite wait. No polling fallback or POSIX compatibility layer is added.
 
 ## Anonymous memory
 

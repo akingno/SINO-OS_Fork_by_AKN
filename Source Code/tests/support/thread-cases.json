@@ -1,0 +1,10 @@
+[
+  {"id":"thread.join.arguments-frame-and-return-v1-v2","name":"return"},
+  {"id":"thread.join.exited-record-stack-and-stale-tid","name":"record"},
+  {"id":"thread.join.timeout-unmap-and-retry","name":"timeout"},
+  {"id":"thread.join.detach-and-slot-reuse","name":"detach"},
+  {"id":"thread.join.single-consumer-self-and-foreign","name":"compete"},
+  {"id":"thread.join.wire-quota-and-create-rollback","name":"wire"},
+  {"id":"thread.join.cancel-fault-reclaims-all-records","name":"cancel-fault"},
+  {"id":"thread.join.last-live-exit-and-legacy-abi","name":"last"}
+]

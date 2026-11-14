@@ -48,6 +48,7 @@ WaitKey clearWait(Thread& t) {
   unlink(t);
   disarmTimer(t.timer);
   dropTicket(t);
+  t.releaseJoinClaim();
   t.waitObject = t.waitGeneration = t.waitDeadline = 0;
   t.waitTimed = 0;
   t.waitOp = WaitReason::NONE;

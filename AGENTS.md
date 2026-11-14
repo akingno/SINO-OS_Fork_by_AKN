@@ -134,7 +134,8 @@ task 提取契约见 [task-subsystem.md](Source Code/docs/task-subsystem.md)。C
 - task::step 按就绪 FIFO 长度快照限制候选，至多派发一个线程；对象等待按索引/代数/原因定位，Yield/等待/有限运行期限使用可撤销堆，退出进入独立回收队列，不在正常调度/唤醒中全扫线程。主循环 IF=0 复查后调用 idle_halt（sti/hlt/ret）。仅空闲策略变更选 process 8 + shell-waits 5 + 普通启动 1，网络/RTC 待办变化各加 1；三类等待共同迁移选 process 8 + 三类 waits 29 + shell-waits 5 + 普通启动 1 + test-task-queues.js 4（--list），合计 47。task_schedule_stats 为 60 字节宿主观察布局，不是用户 ABI。
 - 底层 Write 更新内存、Sync 提交用户目录快照；可写 gsh 的写入/创建/改名/删除命令成功后自动提交，再返回提示符，无需手动 sync；`/boot` 只读
 - 启动镜像 2.88 MB，布局入口 `src32/boot-layout.h`
-- Feature 掩码 65535（16 个已实现机制），含 FEATURE_EVENT_WAIT=32768；SYS_EVENT_WAIT_BLOCK=0x151，旧 Event 查询编号和行为保持。Event 专项 `node 'Source Code/tests/host/test-event-waits.js' '<ShellBridge 构建目录>'` 为 8 项（--list），ABI/等待接入加 policy 2 + process 8，SDK/启动能力位变化加普通启动 1。
+- Feature 掩码 131071（17 个已实现机制），含 FEATURE_EVENT_WAIT=32768、FEATURE_THREAD_JOIN=65536；SYS_EVENT_WAIT_BLOCK=0x151，THREAD_CREATE/JOIN/DETACH/EXIT_CODE=0x152..0x155，旧编号保持。Event 专项 `node 'Source Code/tests/host/test-event-waits.js' '<ShellBridge 构建目录>'` 为 8 项（--list）。线程专项 `test-thread-waits.js <ShellBridge 构建目录>` 8 项（--list）；含 v1/v2 参数/帧、结果/栈回收、超时/输出失效、单消费者与拒绝外进程 TID、detach/复用及退出清理，本轮加 process 8 + policy 2 + images 11 + Event 8 + completion-waits 8 + 普通启动 1，共 46 项，详见模块指南。
+- 新线程主槽保留，3 个 worker 槽含 joinable 退出记录；栈退出即回收，记录由成功 join（含非阻塞 query）或 detach 消费，最后活动线程不会被未领取记录保活。每条 joinable 记录占 1 个私有 THREAD Object，共用 64 对象预算；TID 为全局不回绕 28 位代数加 3 位槽号，耗尽返回 S_LIMIT。join 只允许同进程，一个阻塞消费者占用目标；旧 SYS_THREAD 仍返回原始槽号。
 - 网络仅回环；宿主桥接和服务器通道是规划
 - 严格策略（caps=0）默认拒绝，按白名单授权；兼容策略保留旧应用访问
 - 管道读写、完成记录查询、终端字节读取、交互命令结果和手动复位 Event 支持显式线程级阻塞，超时为 0 表示无限等待，有限等待最多 60000 tick；Event 查询保留非阻塞，SDK 为 sino::event

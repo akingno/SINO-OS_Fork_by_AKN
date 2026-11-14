@@ -19,7 +19,7 @@ if (bridge || variant === 'test') {
 // Keep the full project copyright and MIT terms with bootable distributions.
 entries.push(['LICENSE.TXT',fs.readFileSync(path.join(root,'LICENSE'))]);
 for(const name of ['conhost','writer','tview','rdtest','gsh','gcmd','termtest','pipetest','fstest','clitest','comptest','poltest','probe','fault','iofault','spin','udfault','nettest'])entries.push([name.toUpperCase()+'.SNX',fs.readFileSync(path.join(build,'user',name+'.snx'))]);
-if(bridge)for(const name of ['brokerqa','memv2'])entries.push([name.toUpperCase()+'.SNX',fs.readFileSync(path.join(build,'user',name+'.snx'))]);
+if(bridge)for(const name of ['brokerqa','memv2','threadv2'])entries.push([name.toUpperCase()+'.SNX',fs.readFileSync(path.join(build,'user',name+'.snx'))]);
 const directory=Buffer.alloc(layout.BOOT_ROOT_ENTRIES*32);directory.write('SINO       ',0,'ascii');directory[11]=8;
 let next=2;const manifest=[];
 for(let i=0;i<entries.length;i++){
