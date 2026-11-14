@@ -34,6 +34,9 @@ for(const [name,source,mode,abi=1] of apps){
   const obj=path.join(out,'probe-scheduler.o');
   command(path.join(tc,'g++.exe'),[...flags,'-I','user','-c','tests/guest/scheduler_probe.cpp','-o',obj]);
   extra.push(obj);
+  const event=path.join(out,'probe-event.o');
+  command(path.join(tc,'g++.exe'),[...flags,'-I','user','-c','tests/guest/event_probe.cpp','-o',event]);
+  extra.push(event);
  }
  if(name==='nettest'){const obj=path.join(out,`${name}-netlib.o`);command(path.join(tc,'g++.exe'),[...flags,'-c','user/netlib.cpp','-o',obj]);extra.push(obj);}
  const exe=path.join(out,`${name}.exe`),bin=path.join(out,`${name}.snx`);

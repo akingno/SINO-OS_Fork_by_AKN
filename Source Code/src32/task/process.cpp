@@ -552,9 +552,6 @@ namespace task {
     p->state = 1;
     p->caps = caps & 7; /* Boot utilities have no write, network or management
     grant, regardless of launcher. */
-    if (p->input_frontend) {
-      p->caps = 0;
-    }
     u32 j = 0;
     while (nodes[n].name[j] && j < 31) {
       p->name[j] = nodes[n].name[j];
@@ -999,11 +996,15 @@ namespace task {
   int retryWait(Thread* t) {
     u32 now = ticks;
     int result = S_TIMEOUT;
+    // 超时裁决的重审见 expireTimers() 中的 TODO；当前仍保持到期优先。
     if (!t->waitExpired(now)) {
       Frame* f = &t->saved.frame;
       if (t->waitOp == WaitReason::COMPLETION) {
         Object* object = handle_get(current->handles, f->ebx, ObjType::PROCESS, PROCESS_WAIT);
         result = user_completion_result(f, object);
+      } else if (t->waitOp == WaitReason::EVENT) {
+        Object* event = handle_get(current->handles, f->ebx, ObjType::EVENT, 1);
+        result = !event ? S_BADHANDLE : event->value ? S_OK : S_AGAIN;
       } else {
         if (t->waitOp == WaitReason::TERM_READ || t->waitOp == WaitReason::IX_RESULT) {
           result = terminal_call(current->handles, current->pid, current->policy,
@@ -1030,7 +1031,7 @@ namespace task {
     switch (call) {
     case SYS_EXIT: case SYS_YIELD: case SYS_LOG: case SYS_TICKS:
     case SYS_CLOSE: case SYS_DUP: case SYS_THREAD: case SYS_THREAD_EXIT:
-    case SYS_EVENT_CREATE: case SYS_EVENT_SET: case SYS_EVENT_WAIT:
+    case SYS_EVENT_CREATE: case SYS_EVENT_SET: case SYS_EVENT_WAIT: case SYS_EVENT_WAIT_BLOCK:
     case SYS_DIRECTORY_COMMIT: case SYS_TIME: case SYS_CALENDAR: case SYS_UI_LANGUAGE:
     case SYS_SYSTEM_INFO: case SYS_START_INFO:
     case SYS_PROCESS_RESULT: case SYS_PROCESS_CANCEL:
@@ -1758,10 +1759,24 @@ namespace task {
         return S_BADHANDLE;
       }
       o->value = !!b;
+      if (o->value) {
+        notify((u32)(o - objects) + 1, WaitReason::EVENT, true);
+      }
       return 0;
-      /* 【简化实现：事件等待】只读取事件值，未置位便返回 S_AGAIN，调用方需重试。
-      * 替换方向：接入公共线程等待机制，由 Set/关闭/超时唤醒，明确手动或自动
-      * 复位语义；不能仅将这里改成循环，否则会阻塞整个不可抢占内核。 */
+    case SYS_EVENT_WAIT_BLOCK:
+      if (b > STREAM_WAIT_MAX || c) {
+        return S_INVALID;
+      }
+      o = handle_get(current->handles, a, ObjType::EVENT, 1);
+      if (!o) {
+        return S_BADHANDLE;
+      }
+      if (o->value) {
+        return S_OK;
+      }
+      current->thread[currentThread].block((u32)(o - objects) + 1, WaitReason::EVENT, b);
+      leave(f);
+      return S_AGAIN;
     case SYS_EVENT_WAIT:
       o = handle_get(current->handles, a, ObjType::EVENT, 1);
       if (!o) {

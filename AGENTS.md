@@ -134,10 +134,10 @@ task 提取契约见 [task-subsystem.md](Source Code/docs/task-subsystem.md)。C
 - task::step 按就绪 FIFO 长度快照限制候选，至多派发一个线程；对象等待按索引/代数/原因定位，Yield/等待/有限运行期限使用可撤销堆，退出进入独立回收队列，不在正常调度/唤醒中全扫线程。主循环 IF=0 复查后调用 idle_halt（sti/hlt/ret）。仅空闲策略变更选 process 8 + shell-waits 5 + 普通启动 1，网络/RTC 待办变化各加 1；三类等待共同迁移选 process 8 + 三类 waits 29 + shell-waits 5 + 普通启动 1 + test-task-queues.js 4（--list），合计 47。task_schedule_stats 为 60 字节宿主观察布局，不是用户 ABI。
 - 底层 Write 更新内存、Sync 提交用户目录快照；可写 gsh 的写入/创建/改名/删除命令成功后自动提交，再返回提示符，无需手动 sync；`/boot` 只读
 - 启动镜像 2.88 MB，布局入口 `src32/boot-layout.h`
-- Feature 掩码 32767（15 个已实现机制），详见 docs/os-interface.md
+- Feature 掩码 65535（16 个已实现机制），含 FEATURE_EVENT_WAIT=32768；SYS_EVENT_WAIT_BLOCK=0x151，旧 Event 查询编号和行为保持。Event 专项 `node 'Source Code/tests/host/test-event-waits.js' '<ShellBridge 构建目录>'` 为 8 项（--list），ABI/等待接入加 policy 2 + process 8，SDK/启动能力位变化加普通启动 1。
 - 网络仅回环；宿主桥接和服务器通道是规划
 - 严格策略（caps=0）默认拒绝，按白名单授权；兼容策略保留旧应用访问
-- 管道读写、完成记录查询、终端字节读取和交互命令结果支持显式线程级阻塞，超时为 0 表示无限等待，有限等待最多 60000 tick
+- 管道读写、完成记录查询、终端字节读取、交互命令结果和手动复位 Event 支持显式线程级阻塞，超时为 0 表示无限等待，有限等待最多 60000 tick；Event 查询保留非阻塞，SDK 为 sino::event
 - 通用子进程委托、cwd/env 继承尚未实现
 
 独立 VM 配置宿主检查：`node 'Source Code/tests/host/test-vm-config.js'`，4 项，`--list` 预览。内存专项 images 11 项、anonymous 7 项；OOM 为 ShellBridge 只读探针绑定页目录的定向注入，普通镜像不含注入后端。

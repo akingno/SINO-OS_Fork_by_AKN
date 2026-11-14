@@ -1,0 +1,10 @@
+[
+  {"id":"event.wait.legacy-query-and-discovery","name":"legacy"},
+  {"id":"event.wait.preset-manual-reset","name":"preset"},
+  {"id":"event.wait.broadcast-and-park","name":"broadcast"},
+  {"id":"event.wait.reset-retains-deadline","name":"reset"},
+  {"id":"event.wait.timeout-and-wire-bounds","name":"timeout"},
+  {"id":"event.wait.close-notified-handle-and-reuse","name":"close"},
+  {"id":"event.wait.duplicate-lifetime-and-rights","name":"duplicates"},
+  {"id":"event.wait.cancel-fault-and-reclaim","name":"cancel-fault"}
+]

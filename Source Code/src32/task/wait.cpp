@@ -221,6 +221,12 @@ void expireTimers(u32 now) {
       ((Process*)node->target)->retire(PROCESS_TIMEOUT, 0);
     } else {
       Thread& t = *(Thread*)node->target;
+      // TODO(等待超时语义)：这里需要重新考虑并重写通知、条件满足与超时的裁决。
+      // 当前已通知进入就绪队列、尚未执行重试的线程也会被判为超时；即使数据
+      // 在期限前到达，调度延迟仍可能使用户收到 S_TIMEOUT，需要评估是否合理。
+      // 应区分“通知允许重试”和“成功结果已提交”，按对象语义评估条件优先或
+      // 记录已获胜结果；不能简单在通知时取消定时器，否则条件失效后可能无限等。
+      // 修改时同步 retryWait() 的到期检查、原期限保留、契约和回归；本轮不改语义。
       if (node->kind == TimerKind::Wait) { t.finishWait(S_TIMEOUT, now); }
       else { enqueueReady(t); }
     }

@@ -115,6 +115,13 @@ Process 单独内嵌回收链和运行期限节点；retire 是唯一进入待�
 队列和堆的关键更新使用 IrqGuard，仅包含登记、撤销和状态修改，不分配、不等待硬件、不切入用户态。普通非抢占内核路径仍负责序列化实际 I/O；未来将 I/O 状态更新移入 IRQ 时必须一起满足条件检查与登记的同步契约。
 生产 FIFO/堆由独立宿主检查使用 96 个合成节点验证；运行时容量仍是 8×4。所有入队对象地址必须稳定，不可复制/移动，清零或复用槽位前先撤销所有成员资格。
 
+### Event 阻塞等待
+
+WaitReason::EVENT 复用同一对象代数、通知后重试、到期优先及撤销协议，不另建等待器或轮询循环。
+SYS_EVENT_WAIT_BLOCK=0x151 显式阻塞；旧 SYS_EVENT_WAIT=0x115 继续只查询。Set(true) 保持置位并广播，Set(false) 只清除状态；通知不预先认定成功，Reset 先于重试时保留原期限重新挂起。
+SYS_CLOSE 通过保存现场的 EBX 匹配精确等待句柄，因此通知后关闭也返回 S_BADHANDLE，关闭其他重复句柄不误取消。取消、故障和退出沿用统一撤销路径。
+SDK 使用 sino::event::{create,set,query,wait,available}，FEATURE_EVENT_WAIT 独立标识该能力；严格策略只授权当前进程持有的本地事件句柄。
+
 ## 同步接口
 
 IrqGuard 保存原 IF、关闭可屏蔽中断，在析构时恢复原 IF，并提供编译器屏障；不回放其他 EFLAGS，也不屏蔽 NMI。
@@ -130,3 +137,4 @@ AtomicU32、单核 SpinLock 后端、Mutex 状态机及其使用上下文见 [sy
 IRQ 自检并入原有启动/进程用例，不新增独立固定 ID。不因仅移动共享实现就运行全部等待专项。
 入口栈变更选择 process、内存 images 及普通启动。启动自检验证精确页数、保护/可用 PTE 在内核及用户页目录中的权限、首尾读写、重复操作、保护记录耗尽回滚及重试；不以真实触发内核栈溢出来测试恢复。
 队列共同迁移选择 process 8、completion-waits 8、pipe-waits 10、terminal-waits 11、shell-waits 5，加普通启动 1、集合宿主 4，共 47 项。新增 4 个独立宿主用例，不改变统一注册表 ID；原有启动/抢占用例追加重复通知、旧对象代数、到期优先、竞争重试和剩余字节交接断言。
+Event 接入选择独立 test-event-waits.js 8、process 8、policy 2、普通启动 1，共 19 项；Event 专项使用同次 ShellBridge 构建、共享 VM/内存观察工具和私有盘，固定行为 ID 见 tests/support/event-cases.json，不自动加入 core。

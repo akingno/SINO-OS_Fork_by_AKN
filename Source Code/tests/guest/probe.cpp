@@ -1,5 +1,6 @@
 #include "sdk.h"
 #include "scheduler_probe.h"
+#include "event_probe.h"
 static volatile int worker_done;
 static int event_handle;
 static u32 time_buffer[4];
@@ -124,6 +125,9 @@ int main(void) {
   __asm__ volatile("ud2");
 #else
   const char *arg = Arguments();
+  if (eventprobe::matches(arg)) {
+    return eventprobe::run(arg);
+  }
   if (streq(arg, "/schedule")) {
     return schedulerprobe::run();
   }

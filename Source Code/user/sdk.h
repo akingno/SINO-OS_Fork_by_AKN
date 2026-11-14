@@ -269,5 +269,21 @@ void copy(char *, const char *);
 void Log(const char *);
 #ifdef __cplusplus
 }
+namespace sino::event {
+inline int create() { return api(SYS_EVENT_CREATE, 0, 0, 0); }
+inline int set(int handle, bool signaled) {
+  return api(SYS_EVENT_SET, (u32)handle, signaled ? 1u : 0u, 0);
+}
+// 保持旧查询语义；未置位为 S_AGAIN，不挂起线程。
+inline int query(int handle) { return api(SYS_EVENT_WAIT, (u32)handle, 0, 0); }
+// 手动复位事件；零为无限等待，有限等待最多 STREAM_WAIT_MAX 个 tick。
+inline int wait(int handle, u32 timeout = 0) {
+  return api(SYS_EVENT_WAIT_BLOCK, (u32)handle, timeout, 0);
+}
+inline bool available() {
+  SystemInfo info;
+  return QuerySystemInfo(&info) == S_OK && (info.features & FEATURE_EVENT_WAIT) != 0;
+}
+}
 #endif
 #endif

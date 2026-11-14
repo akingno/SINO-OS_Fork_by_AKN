@@ -45,13 +45,44 @@ Feature bits: SYSTEM_INFO=1, STRICT_POLICY=2, START_INFO=4, COMPLETION=8,
 BOUNDED_RUN=16, FILE_OBJECTS=32, PIPES=64, TERMINALS=128, CALENDAR=256,
 WORKSPACE=512, LINE_EDIT=1024, ANON_MEMORY=2048, ANON_LAZY=4096, SNX_V2=8192,
 THREAD_WAIT=16384.
-The current feature mask is 32767. Clients detect features by testing individual bits.
+`FEATURE_EVENT_WAIT=32768` advertises explicit blocking manual-reset event waits.
+The current feature mask is 65535. Clients detect features by testing individual bits.
 These indicate implemented mechanisms, not grants to use every mechanism.
 Unknown feature bits must not be interpreted as authority. Unknown syscalls
 return S_INVALID. Add future syscall IDs before SYS_CALL_END; the sentinel is not
 a callable interface. Strict policy remains a default-deny allowlist.
 
 ## Thread-level waiting
+
+### Manual-reset events
+
+Legacy `SYS_EVENT_WAIT=0x115` remains a nonblocking query: read right 1 is
+required; clear returns S_AGAIN and set returns S_OK. Its unused arguments
+retain their legacy behavior. `SYS_EVENT_SET` requires write right 2; a nonzero
+value sets the state and broadcasts queued event waiters, while zero resets it.
+Success does not consume or reset the event.
+
+`SYS_EVENT_WAIT_BLOCK=0x151` uses EBX=owned event handle, ECX=timeout in ticks
+(0..60000, zero means indefinite), EDX=0. Invalid timeout/reserved arguments
+return S_INVALID before handle lookup. Invalid, stale, wrong-type or non-readable
+handles return S_BADHANDLE. A pre-set event returns S_OK immediately. Otherwise
+only the calling thread parks using the common generation-keyed wait queue.
+Strict and compatibility callers may use this local mechanism; no cross-process
+handle lookup or new delegation is provided. Old syscall numbers and query
+structure layouts are unchanged; SYS_CALL_END is now 0x152.
+
+Notification permits a retry under the waiting process's address space. Reset
+before retry causes the wait to resume with its original deadline. Expiry is
+checked before retry, returns S_TIMEOUT and does not alter the event. Closing
+the exact local waiting handle completes that wait with S_BADHANDLE, including
+an already-notified wait; closing another duplicate does not cancel it.
+Exit, cancellation and faults revoke all associated queue/timer membership.
+
+The C++ SDK exposes `sino::event::create`, `set`, `query`, `wait(handle, timeout=0)`
+and `available` in sdk.h. `available` checks FEATURE_EVENT_WAIT; `wait` is one
+kernel call and has no polling fallback on older kernels.
+
+### Other blocking mechanisms
 
 `FEATURE_THREAD_WAIT` advertises opt-in blocking for pipe transfer, terminal
 byte reads, owned completion results and the interactive broker result. The
