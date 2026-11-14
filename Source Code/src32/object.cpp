@@ -1,5 +1,6 @@
 #include "klog.h"
 #include "object.h"
+#include "task/wait.h"
 #include "net.h"
 #include "task/task.h"
 #include "filesys.h"
@@ -16,6 +17,7 @@ int object_new(ObjType type, int value) {
         return S_LIMIT;
       u32 g = ++generation;
       objects[i] = (Object){g, 1, type, value};
+      task::objectCreated((u32)i + 1);
       return i;
     }
   return S_LIMIT;
@@ -49,6 +51,7 @@ void object_unref(int index) {
   if (index < 0 || index >= OBJECTS || !objects[index].refs) return;
   Object* o = &objects[index];
   if (!--o->refs) {
+    task::objectClosed((u32)index + 1);
     if (o->type == ObjType::SOCKET) net_close(o->value);
     else if (o->type == ObjType::PROCESS) process_completion_release(o->value);
     else if (o->type == ObjType::STREAM) process_stream_release(o->value);

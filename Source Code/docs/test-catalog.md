@@ -39,6 +39,8 @@
 
 ## 普通启动与内存
 
+`node 'Source Code/tests/host/test-task-queues.js'` 是 task 集合算法的 4 项独立宿主检查（`--list` 预览）：直接使用内核的侵入式 FIFO 和可撤销定时堆，验证 96 节点、所有权/重复登记、取消重插、容量、计时回绕及同期限次序。报告位于 `Build Output/dev/runs/task-queues-*/task-queues-report.json`，不自动加入 core，不改变统一注册表的 267 项。
+
 | 入口（tests/host/） | 用例数 | 范围 |
 | --- | ---: | --- |
 | `test-console.js <普通 BuildOnly 目录> --persistence` | 3 | 不调用 sync；创建、更新/改名、删除后跨 QEMU 重启验证，保留其他文件 |

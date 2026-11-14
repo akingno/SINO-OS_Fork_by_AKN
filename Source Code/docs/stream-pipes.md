@@ -135,6 +135,14 @@ pipes; use stream.h when waiting is intended.
 
 ### Opt-in blocking pipe calls
 
+Waiters use per-object-generation, per-operation FIFO queues. Data/space
+notifications select one waiter while that queue has no outstanding retry;
+successful transfer, cancellation or timeout hands the opportunity onward if
+resources remain. No bytes or space are reserved at notification time. EOF,
+peer closure and object destruction broadcast. Wait records add no endpoint
+references, so queue registration cannot suppress EOF. See
+[task scheduling contracts](task-subsystem.md) for node and timer ownership.
+
 The kernel supports a blocking mode to the pipe endpoints of SYS_STREAM_READ and
 SYS_STREAM_WRITE. EBX holds the handle and ECX holds the user buffer. Set
 `STREAM_BLOCK_FLAG` (bit 31) in EDX alongside the byte count (0..65536).

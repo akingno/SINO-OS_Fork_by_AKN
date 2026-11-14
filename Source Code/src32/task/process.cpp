@@ -101,8 +101,8 @@ namespace task {
     object_tests();
     pr_debug("USER GDT/TSS ready, CPL3 selectors 1B/23, I/O denied\n");
   }
-  static void unblock(u32 object, WaitReason op);
   static void release(Process* p) {
+    detachProcess(*p);
     for (int i = 0; i < 8; i++) {
       if (leases[i].pid == p->pid) {
         leases[i].pid = 0;
@@ -130,7 +130,7 @@ namespace task {
       if (completions[slot].run && p->reason != PROCESS_EXITED) {
         completions[slot].run->incomplete = 1;
       }
-      unblock(p->completion_object, WaitReason::COMPLETION);
+      notify(p->completion_object, WaitReason::COMPLETION, true);
       object_unref(object);
     }
     // 仅在所有资源释放后清零；不能复制或移动带活动 KernelGuard 的槽位。
@@ -308,36 +308,32 @@ namespace task {
     return S_NOMEM;
   }
 #endif
-  /* Readiness allows a retry. The wait record survives until the call finishes. */
-  /* 【简化实现：唤醒】每次扫描全部进程/线程，将匹配对象与操作的等待者全部
-  * 置为可重试；retryWait 再确认条件，因此唤醒不代表已获得数据或空间。
-  * 替换方向：对象等待队列配合统一登记/撤销机制，保留重检和原始截止时间；
-  * 进入可抢占内核后，还需保证检查条件与登记等待之间不会丢失唤醒。 */
-  static void unblock(u32 object, WaitReason op) {
-    u32 now = ticks;
-    for (int i = 0; i < MaxProcesses; i++) {
-      Process* p = &processes[i];
-      if (p->state != 1) {
-        continue;
-      }
-      for (int j = 0; j < MaxThreads; j++) {
-        Thread* t = &p->thread[j];
-        if (t->state == ThreadState::BLOCKED && t->waitObject == object && t->waitOp == op) {
-          t->wake = now;
-          t->state = ThreadState::ACTIVE;
-        }
+  void pipeWake(const Object* endpoint) {
+    const u32 object = (u32)(endpoint - objects) + 1;
+    const WaitReason reason = endpoint->type == ObjType::PIPE_WRITE
+      ? WaitReason::PIPE_READ : WaitReason::PIPE_WRITE;
+    if (!endpoint->refs) {
+      notify(object, reason, true);
+      return;
+    }
+    u32 peer = pipe_peer(endpoint);
+    if (peer) {
+      const u32 flags = (u32)pipe_ready(&objects[peer - 1]);
+      if (flags & (STREAM_READABLE | STREAM_WRITABLE)) {
+        notify(object, reason);
       }
     }
   }
-  void pipeWake(const Object* endpoint) {
-    unblock((u32)(endpoint - objects) + 1,
-      endpoint->type == ObjType::PIPE_WRITE ? WaitReason::PIPE_READ : WaitReason::PIPE_WRITE);
-  }
   void terminalWake(u32 object) {
-    unblock(object, WaitReason::TERM_READ);
+    u32 flags = terminal::readState(object);
+    if (flags & (STREAM_HANGUP | STREAM_EOF)) {
+      notify(object, WaitReason::TERM_READ, true);
+    } else if (flags & STREAM_READABLE) {
+      notify(object, WaitReason::TERM_READ);
+    }
   }
   void interactiveWake(u32 object) {
-    unblock(object, WaitReason::IX_RESULT);
+    notify(object, WaitReason::IX_RESULT, true);
   }
   int launch(const char* path, u32 caps) {
     return launchArgs(path, caps, "");
@@ -564,7 +560,10 @@ namespace task {
       p->name[j] = nodes[n].name[j];
       j++;
     }
-    p->thread[0].initialize(USER_BASE + h->entry, user_stack_top(p, 0));
+    p->thread[0].initialize(p, 0, USER_BASE + h->entry, user_stack_top(p, 0));
+    if (run && run->timed) {
+      armTimer(p->timer, run->deadline, TimerKind::Run, p);
+    }
     pr_debug("PROCESS start ");
     pr_debug(p->name);
     pr_debug(" pid=");
@@ -876,7 +875,7 @@ namespace task {
       Process* p = &processes[i];
       if (p->state && p->pid == completions[object->value].result.pid &&
         p->completion_object == (u32)(object - objects) + 1) {
-        if (p->state == 1) { p->state = 2; p->reason = PROCESS_CANCELED; p->code = 0; }
+        p->retire(PROCESS_CANCELED, 0);
         return 0;
       }
     }
@@ -904,7 +903,7 @@ namespace task {
   int terminalCancel(u32 pid) {
     for(int i=0;i<MaxProcesses;i++){
       if(pid&&processes[i].pid==pid&&processes[i].state){
-        if(processes[i].state==1){processes[i].state=2;processes[i].reason=PROCESS_CANCELED;processes[i].code=0;}return 0;
+        processes[i].retire(PROCESS_CANCELED, 0);return 0;
       }
     }
     return S_NOTFOUND;
@@ -915,9 +914,7 @@ namespace task {
         if (processes[i].state == 2) {
           return 0;
         } /* First terminal event wins. */
-        processes[i].state = 2;
-        processes[i].code = code;
-        processes[i].reason = PROCESS_KILLED;
+        processes[i].retire(PROCESS_KILLED, code);
         return 0;
       }
     }
@@ -967,6 +964,8 @@ namespace task {
     int result = pipe_transfer(endpoint, reading, (void*)buffer, bytes);
     if (result > 0) {
       pipeWake(endpoint);
+      u32 peer = pipe_peer(endpoint);
+      if (peer) { pipeWake(&objects[peer - 1]); }
     }
     return result;
   }
@@ -1019,7 +1018,7 @@ namespace task {
     }
     if (result == S_AGAIN) {
       /* Another waiter may have transferred first. Keep the original deadline. */
-      t->state = ThreadState::BLOCKED;
+      t->reblock();
       return 0;
     }
     t->finishWait(result, now);
@@ -1304,8 +1303,9 @@ namespace task {
           }
           run->length[role - 1] += bytes;
           if (bytes < c) {
-            run->incomplete = 1; current->state = 2;
-            current->reason = PROCESS_OUTPUT_LIMIT; current->code = 0; leave(f);
+            run->incomplete = 1;
+            current->retire(PROCESS_OUTPUT_LIMIT, 0);
+            leave(f);
             return bytes ? (int)bytes : S_LIMIT;
           }
         }
@@ -1559,14 +1559,12 @@ namespace task {
     case SYS_CLIP_SET:
       return 0;
     case SYS_EXIT:
-      current->state = 2;
-      current->reason = PROCESS_EXITED;
-      current->code = (int)a;
+      current->retire(PROCESS_EXITED, (int)a);
       process_exits++;
       leave(f);
       return 0;
     case SYS_YIELD:
-      current->thread[currentThread].wake = ticks + (a > 1000 ? 1000 : a);
+      current->thread[currentThread].sleep(a > 1000 ? 1000 : a);
       leave(f);
       return 0;
     case SYS_TICKS:
@@ -1723,13 +1721,13 @@ namespace task {
           if (!alloc_user_stack(current, i)) {
             return S_NOMEM;
           }
-          current->thread[i].initialize(a, user_stack_top(current, i));
+          current->thread[i].initialize(current, (u32)i, a, user_stack_top(current, i));
           return i;
         }
       }
       return S_LIMIT;
     case SYS_THREAD_EXIT: {
-        current->thread[currentThread].state = ThreadState::UNUSED;
+        current->thread[currentThread].cancel();
         int live = 0;
         for (int i = 0; i < MaxThreads; i++) {
           if (current->thread[i].state != ThreadState::UNUSED) {
@@ -1737,9 +1735,7 @@ namespace task {
           }
         }
         if (!live) {
-          current->state = 2;
-          current->reason = PROCESS_EXITED;
-          current->code = 0;
+          current->retire(PROCESS_EXITED, 0);
         }
         u32 top = user_stack_top(current, currentThread);
         free_user_pages(current, top - UserStackBytes, top);
@@ -1811,36 +1807,10 @@ namespace task {
     return 0;
   }
 
-  bool reapPending(u32 now) {
-    for (int i = 0; i < MaxProcesses; i++) {
-      const Process& p = processes[i];
-      if (p.state == 2) {
-        return true;
-      }
-      if (p.state == 1 && p.completion_object) {
-        const RunData* run = completions[objects[p.completion_object - 1].value].run;
-        if (run && run->timed && (i32)(now - run->deadline) >= 0) {
-          return true;
-        }
-      }
-    }
-    return false;
-  }
-
   void reapAndExpireRuns() {
-    for (int i = 0; i < MaxProcesses; i++) {
-      Process* p = &processes[i];
-      if (p->state == 1 && p->completion_object) {
-        RunData* run = completions[objects[p->completion_object - 1].value].run;
-        if (run && run->timed && (i32)(ticks - run->deadline) >= 0) {
-          p->state = 2; p->reason = PROCESS_TIMEOUT; p->code = 0;
-        }
-      }
-    }
-    for (int i = 0; i < MaxProcesses; i++) {
-      if (processes[i].state == 2) {
-        release(&processes[i]);
-      }
+    expireTimers(ticks);
+    while (Process* p = takeReap()) {
+      release(p);
     }
   }
 

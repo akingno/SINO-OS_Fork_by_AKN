@@ -7,6 +7,7 @@
 typedef struct {
   u8* data;
   u32 capacity, head, used, readers, writers, ends;
+  u32 readerObject, writerObject, readerGeneration, writerGeneration;
 } Pipe;
 static u32 pipe_count;
 static void destroy(Pipe* p) {
@@ -21,9 +22,13 @@ void pipe_release(Object* endpoint) {
 /* Both endpoints share the pipe address. S_AGAIN guarantees a live peer. */
 u32 pipe_peer(const Object* endpoint) {
   ObjType type = endpoint->type == ObjType::PIPE_READ ? ObjType::PIPE_WRITE : ObjType::PIPE_READ;
-  for (u32 i = 0; i < OBJECTS; i++)
-    if (objects[i].refs && objects[i].type == type && objects[i].value == endpoint->value)
-      return i + 1;
+  const Pipe* p = (const Pipe*)endpoint->value;
+  const u32 peer = type == ObjType::PIPE_READ ? p->readerObject : p->writerObject;
+  const u32 generation = type == ObjType::PIPE_READ ? p->readerGeneration : p->writerGeneration;
+  if (peer && objects[peer - 1].refs && objects[peer - 1].generation == generation &&
+      objects[peer - 1].type == type) {
+    return peer;
+  }
   return 0;
 }
 void pipe_limits(PipeLimits* out) {
@@ -43,9 +48,11 @@ int pipe_create(Handle* owner, u32 capacity, PipePair* out) {
   pipe_count++; p->capacity = capacity;
   int reader = object_new(ObjType::PIPE_READ, (int)p);
   if (reader < 0) { destroy(p); return reader; }
+  p->readerObject = (u32)reader + 1; p->readerGeneration = objects[reader].generation;
   p->ends = 1; p->readers = 1;
   int writer = object_new(ObjType::PIPE_WRITE, (int)p);
   if (writer < 0) { object_unref(reader); return writer; }
+  p->writerObject = (u32)writer + 1; p->writerGeneration = objects[writer].generation;
   p->ends = 2; p->writers = 1;
   int rh = handle_open(owner, reader, 1);
   if (rh < 0) { object_unref(reader); object_unref(writer); return rh; }

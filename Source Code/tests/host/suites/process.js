@@ -3,9 +3,10 @@ const assert = require('node:assert/strict');
 async function run(api) {
     const {check, guestLog, processes, native, resources, report, value, launch, until, gone, command, memory, symbols} = api;
     async function scheduleStats() {
-        const bytes = await memory(symbols.task_schedule_stats, 40);
+        const bytes = await memory(symbols.task_schedule_stats, 60);
         const fields = ['passes', 'dispatches', 'noDispatch', 'candidates', 'retriesBlocked',
-            'cleanups', 'continued', 'idleHalts', 'idleWithWork', 'maxCandidates'];
+            'cleanups', 'continued', 'idleHalts', 'idleWithWork', 'maxCandidates',
+            'notifications', 'wakeVisited', 'finiteWakes', 'broadcastWakes', 'timerExpirations'];
         return Object.fromEntries(fields.map((name, index) => [name, bytes.readUInt32LE(index * 4)]));
     }
     await check('boot and kernel object contracts', async () => {
@@ -50,8 +51,9 @@ async function run(api) {
         assert(after.continued > before.continued, 'runnable work continues without HLT');
         assert(after.idleHalts > before.idleHalts, 'all sleeping/blocked permits idle');
         assert(after.retriesBlocked > before.retriesBlocked, 'stale notification reblocks after retry');
+        assert(after.finiteWakes - before.finiteWakes >= 3, 'finite notification and remaining-byte handoff');
         assert.equal(after.idleWithWork, 0, 'no idle with runnable/due/reap work');
-        assert(after.maxCandidates > 0 && after.maxCandidates <= 32, 'bounded candidate scan');
+        assert(after.maxCandidates > 0 && after.maxCandidates <= 32, 'bounded ready snapshot');
         assert(after.cleanups >= after.dispatches, 'every dispatch restores kernel binding/CR3/IF');
         report.scheduler = {before, after};
         const pid = await launch('spin');

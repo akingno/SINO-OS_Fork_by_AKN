@@ -109,6 +109,12 @@ remain untouched. Nonblocking empty reads/event/drain return S_AGAIN while live.
 
 ### Blocking byte reads
 
+Committed bytes notify a FIFO reader, with remaining-input handoff after retry
+completion or cancellation. EOF, hangup and foreground changes broadcast.
+Notifications retain the original request and deadline; they do not copy bytes
+to a user's buffer. The queue key includes the client object's generation, and
+all queue/timer membership is revoked before thread or object-slot reuse.
+
 The kernel supports opt-in waiting to TERM_READ. Set value to `TERM_READ_BLOCK` (1) and
 extra to the timeout in guest ticks (0..60000). Zero selects indefinite waiting.
 An empty, live read suspends the calling thread. Committed TEXT, EOF and hangup

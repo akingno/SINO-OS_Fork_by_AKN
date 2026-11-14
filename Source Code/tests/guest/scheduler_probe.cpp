@@ -39,14 +39,17 @@ void waitFor(bool starting, u32 count) {
 }
 
 int run() {
-  require(PipeCreate(1, &pipe) == S_OK, "pipe create");
+  require(PipeCreate(2, &pipe) == S_OK, "pipe create");
   require(api(SYS_THREAD, (u32)firstReader, 0, 0) > 0 &&
           api(SYS_THREAD, (u32)secondReader, 0, 0) > 0, "reader threads");
   waitFor(true, 2);
-  // 两个读者均已挂起；一个字节通知二者，第二个重试 S_AGAIN 必须再次阻塞。
-  require(StreamWrite((int)pipe.write, "a", 1) == 1, "first byte");
-  waitFor(false, 1);
-  require(StreamWrite((int)pipe.write, "b", 1) == 1, "second byte");
+  // 故意让当前线程抢走通知后的数据，覆盖重试 S_AGAIN 和原期限保留。
+  require(StreamWrite((int)pipe.write, "x", 1) == 1, "stale notification byte");
+  u8 stolen;
+  require(StreamRead((int)pipe.read, &stolen, 1) == 1 && stolen == 'x', "consume before retry");
+  Yield(0);
+  // 一次提供两个字节，只通知一个读者；成功后交接剩余字节，不依赖新写入。
+  require(StreamWrite((int)pipe.write, "ab", 2) == 2, "handoff bytes");
   waitFor(false, 2);
   require((received[0] == 'a' && received[1] == 'b') ||
           (received[0] == 'b' && received[1] == 'a'), "exact once bytes");

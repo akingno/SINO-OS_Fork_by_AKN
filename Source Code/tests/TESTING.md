@@ -52,6 +52,8 @@ task 子系统提取按实际接口选测：process 8 项、policy 2 项；Threa
 
 ## VM 配置基线
 
+就绪/对象等待/定时队列共同迁移时，选 `process,completion-waits,pipe-waits,terminal-waits,shell-waits`，共 42 项；普通启动追加 1 项。真实集合算法另运行 `node 'Source Code/tests/host/test-task-queues.js'`（4 项，先 `--list`）：96 节点 FIFO/撤销、定时堆容量/取消、tick 回绕/同期限次序、移除重插；不扩大运行时 8×4 容量。启动自检覆盖对象代数复用、重复通知及到期优先；`probe.snx /schedule` 覆盖通知后条件失效重试和剩余数据交接。宿主统计布局为 60 字节，新增目标队列遍历/有限唤醒/广播/定时到期计数，不是用户 ABI。
+
 开发、发行与普通/接口验收默认 4096 MiB RAM、单核；QMP 报告实际配置。64 MiB 运行兼容已撤销。仅定向内存边界专项允许显式 1024/2048 MiB，不恢复低内存验收。
 `node 'Source Code/tests/host/test-vm-config.js' --list` 预览，去掉 --list 执行 4 项配置宿主检查；仅 VM 参数/身份验证变化时运行，不默认追加全部基础设施测试。
 OOM 探针使用 ShellBridge 内限定只读节点与页目录的映像/页表/匿名页失败注入，退出或启动失败时清理；不耗尽整台 VM。

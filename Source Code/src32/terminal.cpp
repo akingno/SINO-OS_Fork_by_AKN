@@ -4,6 +4,7 @@
 #include "terminal.h"
 #include "mm/uaccess.h"
 #include "task/task.h"
+#include "task/wait.h"
 #include "lib/kstring.h"
 #include "mm/page.h"
 typedef struct {
@@ -24,6 +25,14 @@ typedef struct {
 } Client;
 static_assert(sizeof(Terminal) <= 4096, "terminal metadata fits page");
 static u32 count;
+u32 terminal::readState(u32 object) {
+  if (!object || object > OBJECTS || !objects[object - 1].refs ||
+      objects[object - 1].type != ObjType::TERM_CLIENT) { return STREAM_HANGUP; }
+  const Client* c = (const Client*)objects[object - 1].value;
+  const Terminal* t = c->terminal;
+  if (t->closed || t->foreground_object != object) { return STREAM_HANGUP; }
+  return (t->input_size ? STREAM_READABLE : 0) | (t->eof ? STREAM_EOF : 0);
+}
 static void wake_readers(Terminal* t) {
   if (t->foreground_object)
     process_terminal_wake(t->foreground_object);
@@ -46,7 +55,9 @@ static void publish_result(Terminal* t) {
   wake_shell(t);
 }
 static void reset(Terminal* t) {
-  wake_readers(t);
+  if (t->foreground_object) {
+    task::notify(t->foreground_object, task::WaitReason::TERM_READ, true);
+  }
   t->edit_pending=t->editing=0;
   t->mode = TERM_LINE | TERM_ECHO;
   t->foreground = t->foreground_object = 0;
@@ -639,7 +650,10 @@ int terminal_call(Handle* owner, u32 pid, u32 policy, const TerminalRequest* r,
                ? pop(t->output, &t->output_size, (void*)r->buffer, r->bytes)
            : t->closed ? 0
                        : S_AGAIN;
-  if (t->input_size)
-    return pop(t->input, &t->input_size, (void*)r->buffer, r->bytes);
+  if (t->input_size) {
+    int result = pop(t->input, &t->input_size, (void*)r->buffer, r->bytes);
+    wake_readers(t);
+    return result;
+  }
   return t->closed ? S_CLOSED : t->eof ? 0 : S_AGAIN;
 }

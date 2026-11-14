@@ -37,7 +37,7 @@ if ($LASTEXITCODE -ne 0) { throw '32-bit entry assembly failed' }
 if ($LASTEXITCODE -ne 0) { throw 'User application build failed' }
 $variants = @('normal')
 if ($TestImage) { $variants += 'test' }
-$kernelSources = @('kernel','lib/kstring','panic','fs/boot_fat12','mm/page','mm/test_fault','mm/paging','mm/kmap','mm/uaccess','klog','locale','rtc','keyboard','object','task/process','task/thread','task/kernel_stack','task/scheduler','task/entry','sync/irq','filesys','pipe','terminal','run_bridge','net','console','vfs','shell_bridge','storage','disk')
+$kernelSources = @('kernel','lib/kstring','panic','fs/boot_fat12','mm/page','mm/test_fault','mm/paging','mm/kmap','mm/uaccess','klog','locale','rtc','keyboard','object','task/process','task/thread','task/wait','task/kernel_stack','task/scheduler','task/entry','sync/irq','filesys','pipe','terminal','run_bridge','net','console','vfs','shell_bridge','storage','disk')
 foreach ($variant in $variants) {
     # The kernel owns its mapped stack; Windows stack-guard probing is inapplicable.
     # Emit per-function stack reports beside objects for entry-stack audits.

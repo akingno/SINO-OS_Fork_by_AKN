@@ -13,8 +13,9 @@ void continued();
 struct ScheduleStats {
   u32 passes, dispatches, noDispatch, candidates, retriesBlocked, cleanups;
   u32 continued, idleHalts, idleWithWork, maxCandidates;
+  u32 notifications, wakeVisited, finiteWakes, broadcastWakes, timerExpirations;
 };
-static_assert(sizeof(ScheduleStats) == 40, "host scheduler inspection layout");
+static_assert(sizeof(ScheduleStats) == 60, "host scheduler inspection layout");
 }
 // 宿主验收观察用的内核符号，不是用户 ABI。
 extern "C" task::ScheduleStats task_schedule_stats;

@@ -4,6 +4,8 @@
 #include "../mm/paging.h"
 #include "kernel_stack.h"
 #include "schedule.h"
+#include "collections.h"
+#include "wait.h"
 
 // 仅 task 实现使用；其他子系统通过 task.h 的窄接口访问。
 namespace task {
@@ -19,33 +21,32 @@ static_assert(sizeof(UserFrame) == 60, "user_enter frame size");
 static_assert(__builtin_offsetof(UserFrame, useresp) == 52, "iret user ESP offset");
 static_assert(__builtin_offsetof(Frame, cs) == 44, "interrupt_common CS offset");
 
-enum class ThreadState : int { UNUSED, ACTIVE, BLOCKED };
-enum class WaitReason : u32 { NONE = 0, PIPE_READ = 1, PIPE_WRITE, COMPLETION, TERM_READ, IX_RESULT };
-enum class QueueOwner : u32 { None = 0, Ready, ObjectWait };
-struct Thread;
-struct ScheduleLink {
-  Thread* previous;
-  Thread* next;
-  QueueOwner owner;
-  bool linked() const { return owner != QueueOwner::None; }
-};
+enum class ThreadState : int { UNUSED, READY, RUNNING, SLEEPING, BLOCKED };
+struct Process;
 
 struct Thread {
   ThreadState state;
   u32 wake;
   u32 waitObject;
+  u32 waitGeneration;
+  bool waitNotified;
   WaitReason waitOp;
   u32 waitDeadline;
   int waitTimed;
   TerminalRequest waitTerminal;
   UserFrame saved;
-  // PR-03 接入：就绪/对象等待互斥使用此节点，不动态分配。
-  ScheduleLink schedLink;
-  // 0 表示不在定时堆中；接入时保存 heap index + 1，与链节点独立。
-  u32 timerSlot;
+  QueueLink<Thread> schedLink;
+  TimerNode timer;
+  Process* process;
+  u32 index;
 
-  void initialize(u32 entry, u32 stack);
+  QueueLink<Thread>& queueLink() { return schedLink; }
+  WaitKey waitKey() const { return {waitObject, waitGeneration, waitOp}; }
+  void initialize(Process* owner, u32 slot, u32 entry, u32 stack);
   void block(u32 object, WaitReason op, u32 timeout);
+  void reblock();
+  void sleep(u32 delay);
+  void cancel(bool pass = true);
   void finishWait(int result, u32 now);
   int waitExpired(u32 now) const;
 };
@@ -69,6 +70,10 @@ struct Process {
   u32 boot_directory;
   u32 desktop_owner;
   AnonRegion anon[ANON_MAX_REGIONS];
+  QueueLink<Process> reapLink;
+  TimerNode timer;
+  QueueLink<Process>& queueLink() { return reapLink; }
+  void retire(u32 why, int result, u32 vector = 0);
 };
 static_assert(__is_trivially_copyable(Process), "released process slots can be zeroed");
 
@@ -76,8 +81,17 @@ extern Process processes[MaxProcesses];
 extern Process* current;
 extern int currentThread;
 void reapAndExpireRuns();
-bool reapPending(u32 now);
 void initScheduler();
+void waitSelfTest();
+void enqueueReady(Thread& thread);
+Thread* takeReady();
+u32 readyCount();
+void armTimer(TimerNode& timer, u32 deadline, TimerKind kind, void* target);
+void disarmTimer(TimerNode& timer);
+void expireTimers(u32 now);
+bool queuedWork(u32 now);
+Process* takeReap();
+void detachProcess(Process& process);
 void setEntryStack(const Process& process);
 void leave(Frame* frame);
 int retryWait(Thread* thread);

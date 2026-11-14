@@ -131,7 +131,7 @@ task 提取契约见 [task-subsystem.md](Source Code/docs/task-subsystem.md)。C
 - VFS 全局 128 节点，单文件 64 KiB（含磁盘 SNX）
 - 8 进程，每进程 4 线程，24 句柄
 - 每进程内核入口栈 32 KiB 可用 + 4 KiB 未映射保护页，当前分配 9 个连续页；KernelStack 统一管理生命周期。大小/回收变更选 process 8 项 + images 11 项 + 普通启动 1 项；布局/保护失败回滚自检并入原用例，不新增 ID。
-- task::step 每轮最多检查 32 个候选槽并派发一个线程；主循环按就绪、到期、回收和后台待办决定空闲，IF=0 复查后调用独立 idle_halt（sti/hlt/ret）。调度/空闲改动选 process 8 + shell-waits 5 + 普通启动 1，网络/RTC 待办查询变化各追加 1；定向断言并入原用例，task_schedule_stats 仅供宿主观察。
+- task::step 按就绪 FIFO 长度快照限制候选，至多派发一个线程；对象等待按索引/代数/原因定位，Yield/等待/有限运行期限使用可撤销堆，退出进入独立回收队列，不在正常调度/唤醒中全扫线程。主循环 IF=0 复查后调用 idle_halt（sti/hlt/ret）。仅空闲策略变更选 process 8 + shell-waits 5 + 普通启动 1，网络/RTC 待办变化各加 1；三类等待共同迁移选 process 8 + 三类 waits 29 + shell-waits 5 + 普通启动 1 + test-task-queues.js 4（--list），合计 47。task_schedule_stats 为 60 字节宿主观察布局，不是用户 ABI。
 - 底层 Write 更新内存、Sync 提交用户目录快照；可写 gsh 的写入/创建/改名/删除命令成功后自动提交，再返回提示符，无需手动 sync；`/boot` 只读
 - 启动镜像 2.88 MB，布局入口 `src32/boot-layout.h`
 - Feature 掩码 32767（15 个已实现机制），详见 docs/os-interface.md

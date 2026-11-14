@@ -11,4 +11,5 @@ int terminal_call(Handle*, u32, u32, const TerminalRequest*, u32* user_pd);
 #ifdef __cplusplus
 }
 #endif
+namespace terminal { u32 readState(u32 object); }
 #endif
