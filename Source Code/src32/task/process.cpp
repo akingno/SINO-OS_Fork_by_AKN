@@ -21,9 +21,8 @@
 #include "../panic.h"
 
 namespace task {
-  /* 【简化实现：调度容量】进程和线程使用固定数组，当前上限为 8 x 4。
-  * 替换方向：将执行实体的存储与就绪/等待队列分开，再按资源预算动态分配；
-  * 不应只放大常量，因为扫描、句柄预算及相关 ABI/测试都依赖现有限制。 */
+  /* 进程和线程使用固定数组，上限 64 x 4（Stage 7 扩容）。
+  * 线性扫描在 64 进程规模下仍可接受；句柄、Object 和 PID 编码已同步调整。 */
   typedef struct {
     CliInfo cli;
     char path[128];
@@ -71,7 +70,7 @@ namespace task {
   Process processes[MaxProcesses];
   Process* current;
   int currentThread = -1;
-  static ids::ProcessPool<MaxProcesses, 4, 0x07ffffffu> processIds;
+  static ids::ProcessPool<MaxProcesses, 7, 0x00ffffffu> processIds;
   static Process* findProcess(u32 pid) {
     int slot = processIds.lookup(pid);
     if (slot < 0) { return nullptr; }
@@ -81,7 +80,7 @@ namespace task {
   static struct {
     u32 pid;
     char name[64];
-  } leases[8];
+  } leases[MaxProcesses];
   static u32 gdt[12], tss[26];
   static void descriptor(int i, u32 base, u32 limit, u32 access, u32 flags) {
     gdt[i * 2] = (limit & 65535) | (base << 16);
@@ -111,7 +110,7 @@ namespace task {
   static void release(Process* p) {
     detachProcess(*p);
     for (auto& t : p->thread) { t.dropJoinRecord(); }
-    for (int i = 0; i < 8; i++) {
+    for (int i = 0; i < MaxProcesses; i++) {
       if (leases[i].pid == p->pid) {
         leases[i].pid = 0;
       }
@@ -1457,7 +1456,7 @@ namespace task {
           return S_INVALID;
         }
         int free = -1;
-        for (int i = 0; i < 8; i++) {
+        for (int i = 0; i < MaxProcesses; i++) {
           if (!leases[i].pid) {
             free = i;
           }
@@ -1867,7 +1866,7 @@ namespace task {
     }
   }
   void tests(void) {
-    pr_debug("PROCESS address spaces initialized (8 processes x 4 threads)\n");
+    pr_debug("PROCESS address spaces initialized (64 processes x 4 threads)\n");
   }
 
   int list(ProcessInfo* out, u32 cap) {

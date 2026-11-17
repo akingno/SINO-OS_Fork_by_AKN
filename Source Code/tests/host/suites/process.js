@@ -68,10 +68,11 @@ async function run(api) {
         assert.deepEqual(await resources(), baseline);
     });
     await check('full process table rejects launch and cancellation releases every slot', async () => {
+        const fill = 64;
         const pids = [];
         try {
-            for (let i = 0; i < 8; i++) pids.push(await launch('spin'));
-            assert.equal((await processes()).length, 8);
+            for (let i = 0; i < fill; i++) pids.push(await launch('spin'));
+            assert.equal((await processes()).length, fill);
             assert.match(await command('run /boot/spin.snx', 1), /native launch failed/);
         } finally {
             for (const pid of pids) await command('kill ' + pid);

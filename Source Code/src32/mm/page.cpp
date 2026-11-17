@@ -9,7 +9,7 @@
 #include "../panic.h"
 
 // 一次性最大连续分配 64 页，最大区域条目 32
-enum { MAX_RUN = 64, E820_MAX = 32 };
+enum { MAX_RUN = 128, E820_MAX = 32 };
 // 每个物理页的状态
 enum { PAGE_FREE, PAGE_USED, PAGE_RESERVED, PAGE_KERNEL, PAGE_GUARDED };
 

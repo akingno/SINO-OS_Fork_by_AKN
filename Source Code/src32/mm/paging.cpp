@@ -173,9 +173,9 @@ void paging_activate_kernel(void) {
   paging_activate(kernel_pd);
 }
 
-/* Up to eight process stacks plus boot-time checks; no allocation in guard paths.
+/* Up to 64 process stacks plus boot-time checks; no allocation in guard paths.
  * The kernel is single-core and non-preemptible while these records change. */
-enum { KERNEL_GUARDS = 16 };
+enum { KERNEL_GUARDS = 72 };
 typedef struct { KernelGuard* owner; u32 id, va, saved; } GuardRecord;
 static GuardRecord guards[KERNEL_GUARDS];
 static u32 next_guard_id;

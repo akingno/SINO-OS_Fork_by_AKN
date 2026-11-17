@@ -100,8 +100,8 @@ void KernelStack::selfTest() {
     panic("Kernel stack reclaim", free_pages, before);
   }
 
-  // 32 是此自检的探测上界，不依赖页表模块私有的记录数量；当前上限为 16。
-  constexpr u32 ProbePages = 32;
+  // 96 是此自检的探测上界，不依赖页表模块私有的记录数量；当前上限为 72。
+  constexpr u32 ProbePages = 96;
   KernelGuard tokens[ProbePages]{};
   u8* pages = (u8*)kpage_alloc_run(ProbePages);
   if (!pages) {

@@ -850,8 +850,8 @@ static int command(Context* c, int argc, char** argv) {
     return 0;
   }
   if (streq(cmd, "ps")) {
-    ProcessInfo list[8];
-    int count = process_list(list, 8);
+    ProcessInfo list[64];
+    int count = process_list(list, 64);
     put(out, "PID  THREADS  PAGES  NATIVE APP\n");
     for (int i = 0; i < count; i++) {
       num(out, list[i].pid);

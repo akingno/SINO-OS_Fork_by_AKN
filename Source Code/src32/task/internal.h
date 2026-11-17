@@ -9,7 +9,7 @@
 
 // 仅 task 实现使用；其他子系统通过 task.h 的窄接口访问。
 namespace task {
-inline constexpr int MaxProcesses = 8;
+inline constexpr int MaxProcesses = 64;
 inline constexpr int MaxThreads = 4;
 static_assert(MaxThreads < 8, "TID ABI reserves three low bits for slot + 1");
 inline constexpr u32 UserStackBytes = 16384u;
