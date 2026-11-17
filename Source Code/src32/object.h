@@ -4,7 +4,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-#define OBJECTS 64
+#define OBJECTS 256
 #define HANDLES 24
 enum class ObjType : u32 { EVENT = 1, WINDOW, SOCKET, PROCESS, STREAM,
        DIRECTORY, FILE, STAGING, PIPE_READ, PIPE_WRITE,
