@@ -125,9 +125,9 @@ It returns min(capacity, captured_length-offset) bytes, 0 at EOF, and S_INVALID
 past EOF. Captures are immutable and can be read repeatedly at explicit offsets.
 
 Each retained run owns one metadata page and three buffer pages (16 KiB), plus
-ordinary process resources. The global two-run budget includes completed runs
-whose observation handles remain open. Completion records still share Stage B's
-16-record pool and existing object/handle limits. Child stream objects pin their
+ordinary process resources. The global eight-run budget includes completed runs
+whose observation handles remain open. Completion records share the
+64-record pool and existing 256-object/24-local-handle limits. Child stream objects pin their
 backing completion; cleanup releases streams, execution pages, then execution
 ownership, while observers retain results/captures until closed.
 
