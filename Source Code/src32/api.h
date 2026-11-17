@@ -156,7 +156,7 @@ typedef struct { u32 bytes,cursor,action,serial; char text[400]; } TerminalEdit;
 typedef struct { u32 op, handle, buffer, bytes, value, extra; } TerminalRequest;
 typedef struct { u32 size, version, width, height, mode, foreground, closed, reserved; } TerminalInfo;
 typedef struct { u32 type, value, width, height; } TerminalEvent;
-#define RUN_COUNT 2u
+#define RUN_COUNT 8u
 #define RUN_ARGC 16u
 #define RUN_ARGS 1024u
 #define RUN_BYTES 4096u
@@ -222,7 +222,7 @@ typedef struct {
   u32 size, version, runs, argc, argv_bytes, input_bytes, out_bytes, err_bytes;
   u32 io_bytes, timeout_ticks;
 } RunLimits;
-#define PROCESS_COMPLETIONS 16
+#define PROCESS_COMPLETIONS 64
 /* RESULT calls select blocking with EDX=RESULT_BLOCK_FLAG and ESI=timeout. */
 #define RESULT_BLOCK_FLAG 1u
 enum { PROCESS_EXITED = 1, PROCESS_FAULTED, PROCESS_CANCELED, PROCESS_KILLED,

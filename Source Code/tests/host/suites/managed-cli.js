@@ -7,7 +7,7 @@ async function run(api) {
     const baseline=await resources();
     let session=new RunSession(channel);
     await check('v2 handshake advertises bounded limits',async()=>{
-        const limits=await session.hello();assert.deepEqual(limits,[40,1,2,16,1024,4096,4096,4096,65536,60000]);
+        const limits=await session.hello();assert.deepEqual(limits,[40,1,8,16,1024,4096,4096,4096,65536,60000]);
     });
     await check('v2 preserves argv boundaries, empty values and UTF-8',async()=>{
         const args=['args','','a b','你好','one\ntwo'];
@@ -45,10 +45,12 @@ async function run(api) {
     await check('v2 two asynchronous runs, targeted cancellation and quota',async()=>{
         const first=await session.start('/boot/clitest.snx',['spin'],Buffer.alloc(0),0);
         const second=await session.start('/boot/clitest.snx',['spin'],Buffer.alloc(0),0);
+        const extra=[];for(let i=0;i<6;i++)extra.push(await session.start('/boot/clitest.snx',['spin'],Buffer.alloc(0),0));
         await assert.rejects(session.start('/boot/clitest.snx',['exit']),e=>e.guestStatus===-8);
         assert.equal(await session.poll(first),null);assert.equal(await command('echo responsive'),'responsive\n');
         await session.cancel(first);let r;await until(async()=>!!(r=await session.poll(first)),'cancel result');assert.equal(r.reason,3);
         assert.equal(await session.poll(second),null);await session.release(first);await session.release(second);
+        for(const t of extra)await session.release(t);
         await until(async()=>JSON.stringify(await resources())===JSON.stringify(baseline),'release reclaims runs');
     });
     await check('v2 malformed descriptors reject without retaining resources',async()=>{

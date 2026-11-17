@@ -278,8 +278,8 @@ strict policy when introduced, without silently changing old launch semantics.
 
 New IDs: SYS_SPAWN_TRACKED=0x131, SYS_PROCESS_RESULT=0x132,
 SYS_PROCESS_CANCEL=0x133. All prior IDs and v1 query sizes remain unchanged.
-The global completion pool is PROCESS_COMPLETIONS=16; it shares the existing
-64-object and 24-local-handle budgets. S_LIMIT reports full records, objects,
+The global completion pool is PROCESS_COMPLETIONS=64; it shares the existing
+256-object and 24-local-handle budgets. S_LIMIT reports full records, objects,
 handles or execution slots; S_NOMEM reports page allocation failure.
 
 `SpawnTracked(path, arguments)` is a narrow compatibility-launcher API, not

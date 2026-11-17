@@ -72,7 +72,7 @@ int main(void){
   }
   for(u32 i=0;i<4097;i++)data[i]=(u8)(i*37+11);
   int handle=start("echo",257);require(handle>0,"bounded run launch available");
-  require(api(RUN_LIMITS,(u32)limits,sizeof(limits),0)==0 && limits[0]==40 && limits[2]==2 &&
+  require(api(RUN_LIMITS,(u32)limits,sizeof(limits),0)==0 && limits[0]==40 && limits[2]==8 &&
           limits[3]==16 && limits[4]==1024 && limits[5]==4096,"discover bounded limits");
   limits[0]=0xccccccccu;
   require(api(RUN_LIMITS,(u32)limits,39,0)==S_INVALID && limits[0]==0xccccccccu &&
@@ -102,7 +102,8 @@ int main(void){
   require(result.out_bytes==4096 && result.incomplete,"truncated output marked");Close(handle);
   handle=start("fault",0);require(handle>0,"fault launch");wait_for(handle,2,0);
   require(result.completion.vector==6 && result.out_bytes==12 && result.incomplete,"fault output retained");Close(handle);
-  int first=start("spin",0),second=start("spin",0);require(first>0 && second>0,"two run quota");
+  int first=start("spin",0),second=start("spin",0);require(first>0 && second>0,"run quota base");
+  int extra[6];for(int i=0;i<6;i++){extra[i]=start("spin",0);require(extra[i]>0,"fill run quota");}
   result.input_bytes=0xccccccccu;
   require(api(RUN_RESULT,first,(u32)&result,sizeof(result))==S_AGAIN &&
           result.input_bytes==0xccccccccu,"pending run result untouched");
@@ -110,6 +111,7 @@ int main(void){
   require(start("echo",0)==S_LIMIT,"completed capture still owns quota");Close(first);
   handle=start("exit",0);require(handle>0,"quota release");wait_for(handle,1,-17);Close(handle);
   CancelProcess(second);wait_for(second,3,0);Close(second);
+  for(int i=0;i<6;i++){CancelProcess(extra[i]);wait_for(extra[i],3,0);Close(extra[i]);}
   Spec invalid={48,1,1,(u32)"/boot/clitest.snx",0,0,0,0,0,0,0,0};
   for(int i=0;i<40;i++)require(api(RUN_START,(u32)&invalid,48,0)==S_INVALID,"invalid start rollback");
   require(api(RUN_START,USER_STACK(0)-4,48,0)==S_INVALID &&
@@ -123,7 +125,7 @@ int main(void){
   invalid.input_bytes=0;invalid.path=0x100000;
   require(api(RUN_START,(u32)&invalid,48,0)==S_INVALID,"program path pointer");
   handle=start("exit",0);require(handle>0,"quota survives failed starts");wait_for(handle,1,-17);Close(handle);
-  RunLimits public_limits;require(QueryRunLimits(&public_limits)==0 && public_limits.runs==2,"SDK limits");
+  RunLimits public_limits;require(QueryRunLimits(&public_limits)==0 && public_limits.runs==8,"SDK limits");
   RunResult public_result;RunRead public_read={1,0,(u32)copy_data,4};
   RunSpec public_spec={48,1,0,(u32)"/boot/clitest.snx",1,5,(u32)"echo",(u32)offsets,0,0,0,0};
   handle=StartRun(&public_spec);require(handle>0,"SDK start");wait_for(handle,1,0);

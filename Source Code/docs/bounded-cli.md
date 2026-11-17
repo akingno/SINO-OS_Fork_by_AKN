@@ -57,7 +57,7 @@ The trusted development bridge uses the same launch transaction and limits.
 
 ### Discovery and standard streams
 
-RunLimits is ten words (40 bytes): size=40, version=1, runs=2, argc=16,
+RunLimits is ten words (40 bytes): size=40, version=1, runs=8, argc=16,
 argv_bytes=1024, input_bytes=4096, out_bytes=4096, err_bytes=4096,
 io_bytes=65536, timeout_ticks=60000. These are maxima, not allocation promises.
 
