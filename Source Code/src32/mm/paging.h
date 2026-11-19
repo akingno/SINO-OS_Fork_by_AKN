@@ -47,7 +47,7 @@ extern u32 direct_map_end;
  * Kernel PDEs are frozen after paging_kernel_init; only PTE-level changes
  * are visible through all page directories. */
 u32* paging_user_create(void);
-void paging_user_destroy(u32* pd);
+u32 paging_user_destroy(u32* pd);
 
 /* A successful map transfers ownership of page to pd. Unmap returns it. */
 int paging_user_map(u32* pd, u32 va, phys_t page, int write);

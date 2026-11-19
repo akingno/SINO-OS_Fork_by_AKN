@@ -76,6 +76,7 @@ struct Process {
   u32 directory;
   u32 boot_directory;
   u32 desktop_owner;
+  u32 pages_used;
   AnonRegion anon[ANON_MAX_REGIONS];
   QueueLink<Process> reapLink;
   TimerNode timer;

@@ -388,10 +388,11 @@ u32 paging_user_find_gap(const u32* pd, u32 start, u32 end, u32 bytes) {
 // 彻底销毁一个用户进程的分页结构，同时释放仍由这些映射拥有的数据物理页。
 // paging_user_unmap 只解除一个页面的映射，这个会释放整个进程的用户页表
 // TODO: 如果引入COW,这里逻辑就要改
-void paging_user_destroy(u32* pd) {
+u32 paging_user_destroy(u32* pd) {
   if (paging_is_active(pd)){
     panic("paging_user_destroy: Destroying active user page directory", virt_to_phys(pd), 0);
   }
+  u32 freed = 0;
   for (u32 pde = USER_FIRST_PDE; pde < USER_END_PDE; pde++) {
     u32* pt = user_table(pd, pde * TABLE_BYTES);
     if (!pt) {
@@ -401,11 +402,13 @@ void paging_user_destroy(u32* pd) {
     for (u32 i = 0; i < TABLE_ENTRIES; i++) {
       if (pt[i] & PAGE_PRESENT) {
         page_free(entry_address(pt[i]));
+        freed++;
       }
     }
     kpage_free(pt);
   }
   kpage_free(pd);
+  return freed;
 }
 
 void paging_protect_selftest(void) {

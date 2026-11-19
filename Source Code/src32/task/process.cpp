@@ -123,7 +123,10 @@ namespace task {
 #ifdef SINO_SHELL_BRIDGE
       mmtest::clear(p->pd);
 #endif
-      paging_user_destroy(p->pd);
+      u32 destroyed = paging_user_destroy(p->pd);
+      if (p->pages_used > destroyed) {
+        panic("release: pages_used exceeds destroyed pages", p->pages_used, destroyed);
+      }
     }
     p->kernelStack.release();
     /* Publish only after execution resources and owned handles are gone. */
@@ -162,13 +165,16 @@ namespace task {
     }
     return page;
   }
-  static void free_user_pages(Process* p, u32 start, u32 end) {
+  static u32 free_user_pages(Process* p, u32 start, u32 end) {
+    u32 freed = 0;
     for (u32 va = start; va < end; va += PAGE_SIZE) {
       phys_t page = paging_user_unmap(p->pd, va);
       if (page) {
         page_free(page);
+        freed++;
       }
     }
+    return freed;
   }
   /* 【简化实现：虚拟区间】用 32 项数组保存匿名预留区，线性避开已映射页和
   * 尚未落地的预留区，总量限制 16 MiB；物理页由缺页路径按需补齐。
@@ -222,7 +228,7 @@ namespace task {
     for (u32 i = 0; i < ANON_MAX_REGIONS; i++) {
       AnonRegion* region = &p->anon[i];
       if (region->base == base) {
-        free_user_pages(p, base, base + region->bytes);
+        p->pages_used -= free_user_pages(p, base, base + region->bytes);
         *region = (AnonRegion){0, 0};
         return S_OK;
       }
@@ -249,7 +255,11 @@ namespace task {
           return S_NOMEM;
         }
 #endif
-        return alloc_user_page(current, page, 1) ? S_OK : S_NOMEM;
+        if (alloc_user_page(current, page, 1)) {
+          current->pages_used++;
+          return S_OK;
+        }
+        return S_NOMEM;
       }
     }
     return S_INVALID;
@@ -1885,7 +1895,7 @@ namespace task {
             v->threads++;
           }
         }
-        v->pages = paging_user_count(p->pd);
+        v->pages = p->pages_used;
       }
     }
     return (int)count;
