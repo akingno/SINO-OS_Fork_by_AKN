@@ -1,16 +1,13 @@
-# G2 interactive tasks and session broker
+# Interactive tasks and session broker
 
-G2 provides an interactive launch transaction and a session-bound broker. The
-diagnostic frontend is `run /boot/termqa.snx /broker-test` in a ShellBridge test image. Its strict root probe accepts
-`go`, `fault` and `spin` to exercise worker completion, fault and cancellation.
-Ctrl+C at the root produces an interrupt event and clears pending canonical
-input. Ctrl+C during a worker cancels that worker. G3 supplies the application
-Shell parser and command policy.
+The session broker starts a strict root or worker with prebound terminal,
+streams and directory handles. The [console host](text-console.md) uses it to
+launch the Shell. ShellBridge images include `brokerqa.snx` for diagnostics.
 
 ## Startup and resource ownership
 
-The compatibility frontend has caps=0 and owns its window, terminal controller,
-read-only boot directory grant and process observers. A new interactive task
+The compatibility controller has caps=0 and owns its terminal controller,
+applicable directory grants and process observer handles. A new interactive task
 has PROCESS_STRICT and caps=0. Its private CliInfo, attenuated directory handle,
 terminal client and three role-specific stream handles exist before it can run.
 Startup is a non-yielding kernel transaction. The terminal bind prepares all
@@ -18,24 +15,14 @@ client handles before committing the foreground change. Failure closes partial
 resources while preserving the old foreground and input state.
 
 CliInfo is backed by one per-process metadata page, freed with execution
-resources. Interactive tasks use B completion records and consume zero C RunData
+resources. Interactive tasks use completion records and consume zero finite RunData
 slots or finite capture pages. GetProcessResult observes their final result.
-The C StartRun family, finite captures and host v2 protocol retain their contracts.
+See [bounded runs](bounded-cli.md) for finite capture and the host protocol.
 
-Each session has one root and at most one external task. Two complete sessions
-use six of eight process slots and four of sixteen completion records. Each
-frontend, root and worker uses at most five local handles in the G2 probe path.
-G3 adds one local handle and one directory object per Shell while its cwd is
-below the grant root; returning to the root closes that additional reference.
-With separate frontend directory grants, the two sessions use fourteen objects
-for windows, controllers, grants, clients and completions. Standard-stream
-handles share each process's client object through separate references. Metadata
-includes one terminal page (3664 bytes used), one CliInfo page per task and one
-client page per task, plus the directory grant object. Normal process address
-spaces, stacks, page tables and copied window scenes have their existing costs.
-Startup also uses one temporary specification page. Fixed global limits remain
-enforced. The native test keeps both C capture slots occupied while two session
-roots and their workers run.
+Each session has one root and at most one external task. Standard-stream
+handles reference each process's client object. Startup uses a temporary
+specification page, and each bound task retains a CliInfo page and a client page.
+The Shell also holds a directory reference while its cwd is below the grant root.
 
 ## Session protocol
 
@@ -47,7 +34,7 @@ session feature flag.
 InteractiveSpec is 1116 bytes. Its fields are size, version=1, program, id, argc,
 bytes, directory rights, sixteen contiguous string offsets, and 1024 argv bytes.
 Up to sixteen NUL-terminated arguments are copied and retain empty/UTF-8 values.
-Legacy probe workers and catalog5 accept only READ/LOOKUP/ENUM directory rights; G5b root catalog3 and writer catalog6 additionally accept explicit workspace write/commit rights without DELEGATE. The controller must own a
+Legacy probe workers and catalog5 accept only READ/LOOKUP/ENUM directory rights; root catalog3 and writer catalog6 additionally accept explicit workspace write/commit rights without DELEGATE. The controller must own a
 grant with those rights and DELEGATE. Children receive only requested rights.
 
 InteractiveResult is 48 bytes. It holds size, version=1, request id, signed
@@ -70,9 +57,9 @@ uses this path while an external command is outstanding. Each result remains
 single-consumer, and expiry leaves the result available for a later query.
 
 The boot catalog permits root ID1 and worker ID2, both resolved to the read-only
-boot brokerqa.snx probe. G3 adds root ID3 (gsh.snx) and worker ID4 (gcmd.snx).
-G4 adds worker ID5 (tview.snx) for ls/stat/cat/view, with read-only file grants.
-G5b adds worker ID6 (writer.snx); ID4 rejects any directory rights. Runtime writable files and caller-provided
+boot brokerqa.snx probe. ID3 is the Shell root (`gsh.snx`). Worker IDs 4, 5
+and 6 select `gcmd.snx`, `tview.snx` and `writer.snx` respectively. ID4 accepts
+no directory grant, and ID5 accepts read-only grants. Runtime writable files and caller-provided
 executable paths have no catalog entry. See [file-tools.md](file-tools.md).
 
 The first root has request id zero. Its subsequent intents use consecutive
@@ -100,20 +87,17 @@ change terminal mode, submit requests or read results. Readiness masks respect
 their directions. Closing or duplicating handles follows existing reference
 rules. All displayed output uses the shared terminal byte stream.
 
-G2 root Ctrl+C becomes TERM_INTERRUPT=7 after the event can be queued. A full
+Root Ctrl+C becomes TERM_INTERRUPT=7 after the event can be queued. A full
 queue returns S_AGAIN without clearing input. The frontend retains a pending
 cancel for retry. Worker Ctrl+C uses the existing owned foreground cancellation.
 Foreground transitions clear old input, canonical state and queued terminal
-events. The frontend also discards transition typeahead while honoring close
-requests. General desktop event overflow and controlled paste remain subsequent
-work after G3's canonical echo and Shell integration.
+events. The console host clears pending typeahead on foreground changes.
 
 The last controller reference cancels both registered interactive PIDs, including
 clients that ignore hangup and make no terminal I/O calls. This ownership policy
-applies to interactive starts. Ordinary observer Close and legacy F controller
-loss keep their prior contracts. Normal window close and frontend fault both
-release controls through the same kernel cleanup. Root exit causes the frontend
-to cancel any remaining worker.
+applies to interactive starts. Closing an observer alone does not cancel a task. Controller exit or fault
+releases its controls through the kernel cleanup path. The console host closes
+the session when the root exits.
 
 ## Verification
 
@@ -121,13 +105,10 @@ The native suite checks atomic first-instruction CliInfo/terminal/directory
 visibility, role rights and attenuation, empty and UTF-8 argv, denied strict
 spawn, two sessions, request tampering/replay, C quota independence, full process
 and controller handle tables, result delivery after startup failure, controller
-duplication and cancellation on last control close. QMP checks root Ctrl+C,
-successful return, worker fault recovery, two simultaneous foreground workers,
-directed cancellation, normal close and frontend #UD with noncooperative workers.
-The host compares exact page/object baselines after cleanup.
+duplication and cancellation on last control close. The host compares page and
+object baselines after cleanup. Run `regression.ps1 -Suite interactive` and
+inspect the report with `test-summary.ps1`.
 
-Headless broker contracts run through `regression.ps1 -Suite interactive`. QMP integration runs only through `regression.ps1 -Suite terminal-gui`; inspect either selection with `test-summary.ps1`.
-Per-allocation OOM injection, exhaustive malformed-wire tests, the complete GUI
-gate and physical hardware validation retain their separate verification scope.
-
-G5b explicit writable startup and trusted fixed-home grant are defined in [workspace-shell.md](workspace-shell.md). The default Shell and test diagnostics stay read-only.
+The [workspace contract](workspace-shell.md) describes the boot console's
+fixed-home grant. The [text console checks](text-console.md#验证) cover keyboard
+cancellation and session restart.

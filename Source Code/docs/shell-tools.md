@@ -1,17 +1,12 @@
-# G5a everyday Shell commands
+# Shell commands
 
-Press F2 for a writable session or F12 for a read-only session. The frontend starts at **120 by 25 cells**
-in an 872 by 522 pixel window (7-pixel ASCII cells plus margins). Resizing still
-maps to the actual available grid, up to 120 by 35. Non-ASCII glyphs occupy
-three cells under the existing font convention. See [desktop-shell.md](desktop-shell.md) for all routes.
+The [text console](text-console.md) opens the Shell on an 80×25 text display.
 
 ## Welcome, help and command discovery
 
-The plain-text SINO SH lettering is in **user/shell_banner.h**, derived from
-the archived Ring 0 banner lettering. gsh prints it once at startup when at
-least 56 columns are available, then the real version, current grid size and
-`/ = /home/user (read-only)` mapping. Narrow startup grids use the short welcome.
-No kernel drawing/color calls or ANSI parser are required for this banner.
+The Shell prints the banner from `user/shell_banner.h` at startup when
+at least 56 columns are available, then prints the version, terminal size
+and `/home/user` grant mode.
 
 user/shell_commands.h is the command catalog shared by help and which.
 `help` lists every catalog entry by category, including diagnostics and explicitly
@@ -23,8 +18,7 @@ and option descriptions; aliases resolve to their canonical command. For example
 Unavailable commands can be described with help but cannot be executed.
 `which command` distinguishes a builtin from an explicitly cataloged executable.
 It does not search a global PATH.
-DIR/dir/LS map to ls, TYPE/type/CAT to cat, VER to ver. Write-oriented DOS aliases
-are not advertised before their underlying commands exist. Diagnostic tools
+DIR/dir/LS map to ls, TYPE/type/CAT to cat, and VER to ver. Diagnostic tools
 args/exitcode/spin/fault appear in the Diagnostics category.
 
 ## Strict tools with no directory grant
@@ -71,7 +65,7 @@ Missing/extra arguments and unsupported options are errors rather than silently
 ignored. Line counts are checked unsigned32 values; negatives/overflow fail.
 
 Counts and matching operate on original bytes, before display sanitizing. Text
-output uses G4's UTF-8/control handling, so binary byte counts and hex output do
+output uses the [file viewer's UTF-8 and control-byte handling](file-tools.md), so binary byte counts and hex output do
 not depend on substituted display characters. grep uses a bounded prefix matcher
 and rereads matching ranges instead of allocating a whole line; tail uses two
 scans. Arbitrarily long lines within the existing 64KiB file limit are supported.
@@ -80,10 +74,8 @@ Ranges/scans retain generation/revision/length checks and stop on mutation.
 Traversal uses at most 128 pending paths in user BSS, and opens one enumeration
 directory at a time. Each directory has versioned enumeration, not an atomic
 whole-tree snapshot. Long paths, exhausted budgets and namespace changes fail
-explicitly. Output order follows a bounded DFS stack and may differ from the old
-kernel Shell's node order; tree prints logical paths rather than ASCII branches.
-Empty grep patterns match actual empty lines; unlike the old implementation,
-they are not silently skipped. No phantom line is synthesized after a final LF.
+explicitly. `tree` prints logical paths in depth-first order. Empty grep
+patterns match actual empty lines. A final LF does not create another line.
 
 ## Public calendar query
 
@@ -92,13 +84,8 @@ the output address, ECX capacity>=32 and EDX must be0. CalendarTime is eight u32
 size32, version1, year, month, day, hour, minute, second. Success writes exactly
 32 bytes. Invalid/short/nonwritable output, flags or stale RTC data leave output
 unchanged; stale data returns S_AGAIN. The cached RTC service supplies the value;
-there is no CMOS access from userspace. FEATURE_CALENDAR=256 made the G5a
-feature mask511; G5b adds WORKSPACE=512 for mask1023, and G5c adds LINE_EDIT=1024 for mask2047. Older clients must keep querying feature bits.
+userspace reads the cached result. `FEATURE_CALENDAR=256` advertises this query.
 
-policy_tests.c checks strict/compat access, layout, date ranges, invalid output,
-reserved flags and untouched output tails. test-text-scan.c exercises the same
-word counter, prefix matcher and checked integer helper used by the file tools.
-shell-tools-gui.js drives real QMP commands, 120-character rows, help/aliases,
-calendar/information output, long files and resource recovery. Run `regression.ps1 -Suite terminal-gui` explicitly and read its saved summary.
-
-G5b adds explicit `run /boot/term.snx /write` for touch/mkdir/rm/rmdir/write/append/cp/mv/sync using a granted home workspace. Read-only sessions and catalogs 4 and 5 keep their previous access scope. Writable-mode authority, publication versus persistence and intentional compatibility differences are in [workspace-shell.md](workspace-shell.md).
+`tests/guest/policy_tests.cpp` checks access, layout and output bounds.
+`tests/host/test-text-scan.cpp` exercises the shared scan helpers. See the
+[workspace contract](workspace-shell.md) for write commands.

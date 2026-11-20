@@ -1,35 +1,239 @@
-#include "../api.h"
-#include "../klog.h"
+#include "page_internal.h"
 #include "addr.h"
-#include "page.h"
 #include "e820.h"
-#include "paging.h"
 #include "kmap.h"
+#include "paging.h"
 #include "test_fault.h"
+#include "../klog.h"
 #include "../lib/kstring.h"
 #include "../panic.h"
 
-// 一次性最大连续分配 64 页，最大区域条目 32
-enum { MAX_RUN = 128, E820_MAX = 32 };
-// 每个物理页的状态
-enum { PAGE_FREE, PAGE_USED, PAGE_RESERVED, PAGE_KERNEL, PAGE_GUARDED };
+namespace mm {
+void BuddyZone::link(u32 pfn, u32 order) {
+  PageFrame& head = frame(pfn);
+  head.setFreeHead(order);
+  head.setNext(heads[order]);
+  if (heads[order]) {
+    frame(heads[order]).setPrev(pfn);
+  }
+  heads[order] = pfn;
+}
 
-// 最大 32 个 物理区域描述（一段，起始到结束，以及type，如上描述）
-static BootRange ranges[E820_MAX];
-static u32 range_count;  // ranges 的有效条目
+void BuddyZone::unlink(u32 pfn, u32 order) {
+  PageFrame& head = frame(pfn);
+  const u32 prev = head.prev(), next = head.next();
+  if (prev) {
+    frame(prev).setNext(next);
+  } else {
+    heads[order] = next;
+  }
+  if (next) {
+    frame(next).setPrev(prev);
+  }
+  head.reset(PageState::Free);
+}
 
-// u8数组, 每个元素是一个物理页的状态（其实只要两bit，这里剩下6bit的全冗余了）
-// 需要 mem_map[1048576] 页来存 4GB
-static u8* mem_map;
-// 需要 256 metadata_pages 来存 mem_map[1048576]
-static u32 metadata_pages;
+void BuddyZone::merge(u32 pfn, u32 order) {
+  while (order < MaxOrder) {
+    const u32 peer = pfn ^ (1u << order);
+    if (!contains(peer, 1u << order) || !frame(peer).isFreeHead(order)) {
+      break;
+    }
+    unlink(peer, order);
+    pfn = pfn < peer ? pfn : peer;
+    ++order;
+  }
+  link(pfn, order);
+}
 
-// 分配一个物理页则--，释放++
+// Cover an unlisted free interval with the largest aligned blocks that fit.
+void BuddyZone::addBlocks(u32 first, u32 last) {
+  while (first < last) {
+    u32 order = 0;
+    while (order < MaxOrder) {
+      const u32 nextSize = 2u << order;
+      if ((first & (nextSize - 1)) || nextSize > last - first) {
+        break;
+      }
+      ++order;
+    }
+    merge(first, order);
+    first += 1u << order;
+  }
+}
+
+void BuddyZone::addFreeRange(u32 first, u32 last) {
+  for (u32 pfn = first; pfn < last; ++pfn) {
+    frame(pfn).reset(PageState::Free);
+  }
+  addBlocks(first, last);
+  freeCount += last - first;
+}
+
+u32 BuddyZone::takeAligned(u32 order) {
+  for (u32 found = order; found <= MaxOrder; ++found) {
+    const u32 pfn = heads[found];
+    if (!pfn) {
+      continue;
+    }
+    unlink(pfn, found);
+    while (found > order) {
+      --found;
+      link(pfn + (1u << found), found);
+    }
+    return pfn;
+  }
+  return NoPfn;
+}
+
+u32 BuddyZone::findRun(u32 count) const {
+  u32 run = 0;
+  for (u32 pfn = start; pfn < end; ++pfn) {
+    if (frame(pfn).state() != PageState::Free) {
+      run = 0;
+    } else if (++run == count) {
+      return pfn + 1 - count;
+    }
+  }
+  return NoPfn;
+}
+
+// findRun starts at the first page of a free span, which is a block head.
+// Consume successive free blocks and return any tail of the last one.
+void BuddyZone::takeRun(u32 first, u32 last) {
+  while (first < last) {
+    const PageFrame& head = frame(first);
+    const u32 order = head.order();
+    if (order > MaxOrder || !head.isFreeHead(order)) {
+      panic("PAGE free interval without buddy head", first, last);
+    }
+    unlink(first, order);
+    first += 1u << order;
+  }
+  addBlocks(last, first);
+}
+
+u32 BuddyZone::allocate(u32 count, PageState state) {
+  if (!count || count > freeCount || count > (1u << MaxOrder)) {
+    return NoPfn;
+  }
+  u32 order = 0;
+  while ((1u << order) < count) {
+    ++order;
+  }
+  u32 first = takeAligned(order);
+  if (first) {
+    addBlocks(first + count, first + (1u << order));
+  } else if (count > 1) {
+    first = findRun(count);
+    if (first) {
+      takeRun(first, first + count);
+    }
+  }
+  if (!first) {
+    return NoPfn;
+  }
+
+  for (u32 pfn = first; pfn < first + count; ++pfn) {
+    frame(pfn).reset(state);
+  }
+  freeCount -= count;
+  return first;
+}
+
+bool BuddyZone::release(u32 first, u32 count, PageState state) {
+  if (!count || !contains(first, count)) {
+    return false;
+  }
+  const u32 last = first + count;
+  for (u32 pfn = first; pfn < last; ++pfn) {
+    if (frame(pfn).state() != state) {
+      return false;
+    }
+  }
+  addFreeRange(first, last);
+  return true;
+}
+
+// Count free blocks from the frame map before walking the lists. The two
+// views must agree on shape, membership and counts, including free interiors.
+u32 BuddyZone::check() const {
+  u32 blocks[MaxOrder + 1]{}, free = 0, published = 0;
+  for (u32 pfn = start; pfn < end;) {
+    const PageFrame& head = frame(pfn);
+    if (head.state() != PageState::Free) {
+      if (head.isHead()) {
+        panic("PAGE allocated buddy head", pfn, head.order());
+      }
+      if (head.state() != PageState::Reserved) {
+        ++published;
+      }
+      ++pfn;
+      continue;
+    }
+    const u32 order = head.order(), count = 1u << order;
+    if (!head.isHead() || order > MaxOrder || (pfn & (count - 1)) ||
+        !contains(pfn, count)) {
+      panic("PAGE invalid buddy block", pfn, order);
+    }
+    for (u32 offset = 1; offset < count; ++offset) {
+      const PageFrame& tail = frame(pfn + offset);
+      if (tail.state() != PageState::Free || tail.isHead()) {
+        panic("PAGE invalid buddy interior", pfn, offset);
+      }
+    }
+    const u32 peer = pfn ^ count;
+    if (order < MaxOrder && contains(peer, count) && frame(peer).isFreeHead(order)) {
+      panic("PAGE unmerged buddy blocks", pfn, peer);
+    }
+    ++blocks[order];
+    free += count;
+    published += count;
+    pfn += count;
+  }
+
+  for (u32 order = 0; order <= MaxOrder; ++order) {
+    u32 prev = NoPfn;
+    for (u32 pfn = heads[order]; pfn; pfn = frame(pfn).next()) {
+      if (!contains(pfn, 1u << order) || !frame(pfn).isFreeHead(order) ||
+          frame(pfn).prev() != prev || !blocks[order]) {
+        panic("PAGE invalid buddy list", pfn, order);
+      }
+      --blocks[order];
+      prev = pfn;
+    }
+    if (blocks[order]) {
+      panic("PAGE incomplete buddy list", order, blocks[order]);
+    }
+  }
+  if (free != freeCount) {
+    panic("PAGE buddy zone count", free, freeCount);
+  }
+  return published;
+}
+}
+
 u32 free_pages;
-// 可用 E820 区域中的最大的结束 PFN，但中间可能有被保留的 PFN
 u32 nr_pages;
-static u32 published_pages;
+
 namespace {
+using mm::BuddyZone;
+using mm::PageFrame;
+using mm::PageState;
+
+constexpr u32 MaxRun = 128;
+constexpr u32 E820Max = 32;
+constexpr u32 LowStart = BOOT_POOL_START / PAGE_SIZE;
+constexpr u32 BootEnd = BOOT_IDENTITY_BYTES / PAGE_SIZE;
+static_assert(LowStart > BuddyZone::NoPfn, "PFN zero is not a managed page");
+
+BootRange ranges[E820Max];
+u32 range_count;
+PageFrame* page_frames;
+u32 metadata_pfn, metadata_pages, published_pages;
+BuddyZone low, high;
+bool logged_extended_allocation, logged_high_allocation;
+
 struct Watermarks {
   u32 criticalBelow, normalAbove;
 
@@ -44,6 +248,86 @@ bool watermarks_ready;
 Watermarks test_watermarks;
 bool test_watermarks_active;
 #endif
+
+void read_boot_memory_map() {
+  const u32 count = *static_cast<volatile u16*>(phys_to_virt(E820_COUNT_ADDRESS));
+  const auto* map = static_cast<const E820Entry*>(phys_to_virt(E820_TABLE_ADDRESS));
+  if (!count || count > E820Max) {
+    panic("Invalid E820 memory map", count, 0);
+  }
+  for (u32 i = 0; i < count; ++i) {
+    BootRange range;
+    if (e820_range(&map[i], &range)) {
+      ranges[range_count++] = range;
+      if (range.type == 1 && range.end_pfn > nr_pages) {
+        nr_pages = range.end_pfn;
+      }
+    }
+  }
+}
+
+/* The metadata must fit in one usable span inside the bootstrap mapping. */
+u32 find_boot_metadata(u32 boot_end) {
+  u32 run = 0;
+  for (u32 pfn = LowStart; pfn < boot_end; ++pfn) {
+    if (!e820_page_usable(ranges, range_count, pfn)) {
+      run = 0;
+    } else if (++run == metadata_pages) {
+      return pfn + 1 - run;
+    }
+  }
+  panic("page_init: No boot space for page metadata", nr_pages, metadata_pages);
+  return 0;
+}
+
+bool is_pool_page(u32 pfn) {
+  return (pfn < metadata_pfn || pfn >= metadata_pfn + metadata_pages) &&
+         e820_page_usable(ranges, range_count, pfn);
+}
+
+void publish_pages(BuddyZone& zone, u32 first) {
+  const u32 before = zone.freeCount;
+  while (first < zone.end) {
+    if (!is_pool_page(first)) {
+      ++first;
+      continue;
+    }
+    u32 last = first + 1;
+    while (last < zone.end && is_pool_page(last)) {
+      ++last;
+    }
+    zone.addFreeRange(first, last);
+    first = last;
+  }
+  const u32 added = zone.freeCount - before;
+  free_pages += added;
+  published_pages += added;
+}
+
+void zero_run(phys_t page, u32 count) {
+  if (!direct_map_end || page / PAGE_SIZE + count <= direct_map_end / PAGE_SIZE) {
+    memset(phys_to_virt(page), 0, count * PAGE_SIZE);
+  } else {
+    for (u32 i = 0; i < count; ++i) {
+      void* mapped = kmap(page + i * PAGE_SIZE);
+      memset(mapped, 0, PAGE_SIZE);
+      kunmap(mapped);
+    }
+  }
+}
+
+bool free_run(phys_t page, u32 count, PageState state) {
+  if (!count || count > MaxRun || !page_aligned(page)) {
+    return false;
+  }
+  const u32 pfn = page / PAGE_SIZE;
+  BuddyZone& zone = pfn < low.end ? low : high;
+  if (!zone.release(pfn, count, state)) {
+    return false;
+  }
+  free_pages += count;
+  return true;
+}
 }
 
 PageWatermark page_watermark() {
@@ -65,89 +349,29 @@ bool mmtest::overrideWatermarks(u32 criticalBelow, u32 normalAbove) {
 void mmtest::restoreWatermarks() { test_watermarks_active = false; }
 #endif
 
-// 通用物理页分配池允许使用的最低 PFN
-#define LOW_START_PFN (BOOT_POOL_START / PAGE_SIZE)
-
-// 类似 next fit的搜索游标，下次分配从这开始找
-static u32 low_hint = LOW_START_PFN;
-static u32 high_hint;
-
-// 调试用: 是否已经打印过首次从启动恒等映射范围之外分配物理页的消息
-// 调试用: 是否已经打印过首次从直接映射范围之外分配物理页的消息
-// 本质是两个 bool
-static int logged_extended_allocation, logged_high_allocation;
-
-// 遍历 ranges 看start 所在 FPN 其所在范围内是否可用
-// 因为 ranges 内条目并不是顺序放的，所以要遍历所有条目才行
-int page_boot_usable(phys_t start) {
-  return e820_page_usable(ranges, range_count, start / PAGE_SIZE);
+int page_boot_usable(phys_t address) {
+  return e820_page_usable(ranges, range_count, address / PAGE_SIZE);
 }
 
-// 把一段物理页正式标为分配器的可分配资源
-// 可用性规则已统一到 e820_page_usable。
-// TODO(MM-07): 测量启动开销后，考虑规范化区间以减少逐页重复遍历。
-static void publish_pages(u32 start_pfn, u32 end_pfn) {
-  u32 metadata_pfn = virt_to_phys(mem_map) / PAGE_SIZE;
-  // 把这个 pfn 范围内的、没有存放mem map metadata 且可用的页面标为FREE
-  for (u32 pfn = start_pfn; pfn < end_pfn; pfn++) {
-    if ((pfn < metadata_pfn || pfn >= metadata_pfn + metadata_pages) &&
-        page_boot_usable(pfn * PAGE_SIZE)) {
-      mem_map[pfn] = PAGE_FREE;
-      free_pages++;
-      published_pages++;
-    }
+void page_init(void) {
+  read_boot_memory_map();
+  metadata_pages = (nr_pages * sizeof(PageFrame) + PAGE_SIZE - 1) / PAGE_SIZE;
+  const u32 boot_end = nr_pages < BootEnd ? nr_pages : BootEnd;
+  metadata_pfn = find_boot_metadata(boot_end);
+  page_frames = static_cast<PageFrame*>(phys_to_virt(metadata_pfn * PAGE_SIZE));
+  for (u32 pfn = 0; pfn < nr_pages; ++pfn) {
+    page_frames[pfn].reset(PageState::Reserved);
   }
-}
 
-/* Only the loader's E820 handoff is read here. No page allocation is allowed
- * until the metadata has been placed and the initial pool published. */
-static void read_boot_memory_map(void) {
-  u32 count = *(volatile u16*)phys_to_virt(E820_COUNT_ADDRESS);
-  const E820Entry* map = (const E820Entry*)phys_to_virt(E820_TABLE_ADDRESS);
-  if (!count || count > E820_MAX) {
-    panic("Invalid E820 memory map", count, 0);
+  low = {page_frames + LowStart, LowStart, boot_end, 0, {}};
+  publish_pages(low, LowStart);
+  const u32 paging_pages = paging_bootstrap_page_budget(nr_pages);
+  if (low.freeCount < paging_pages) {
+    panic("page_init: Not enough boot pages for permanent paging", low.freeCount, paging_pages);
   }
-  for (u32 i = 0; i < count; i++) {
-    BootRange range;
-    if (!e820_range(&map[i], &range)) continue;
-    ranges[range_count++] = range;
-    if (range.type == 1 && range.end_pfn > nr_pages)
-      nr_pages = range.end_pfn;
-  }
-}
 
-/* Metadata must fit in complete usable pages inside the bootstrap mapping.
- * Return a physical address; no access to unpublished/high pages is needed. */
-static phys_t find_boot_metadata(u32 boot_end_pfn) {
-  u32 run = 0;
-  for (u32 pfn = LOW_START_PFN; pfn < boot_end_pfn; pfn++) {
-    if (!page_boot_usable(pfn * PAGE_SIZE)) {
-      run = 0;
-      continue;
-    }
-    if (++run == metadata_pages)
-      return (pfn + 1 - run) * PAGE_SIZE;
-  }
-  panic("page_init: No boot space for page metadata", nr_pages, metadata_pages);
-  return PHYS_NULL;
-}
-
-static void init_page_metadata(u32 boot_end_pfn) {
-  phys_t base = find_boot_metadata(boot_end_pfn);
-  mem_map = (u8*)phys_to_virt(base);
-  /* All pages start reserved, including the metadata itself. */
-  memset(mem_map, PAGE_RESERVED, metadata_pages * PAGE_SIZE);
-}
-
-static void publish_boot_pages(u32 boot_end_pfn) {
-  publish_pages(LOW_START_PFN, boot_end_pfn);
-  if (!free_pages)
-    panic("page_init: No allocatable physical pages", nr_pages, metadata_pages);
-}
-
-static void log_page_metadata(void) {
   pr_debug("PAGE metadata base=");
-  pr_debug_hex(virt_to_phys(mem_map));
+  pr_debug_hex(metadata_pfn * PAGE_SIZE);
   pr_debug(" pages=");
   pr_debug_hex(metadata_pages);
   pr_debug(" nr_pages=");
@@ -155,25 +379,17 @@ static void log_page_metadata(void) {
   pr_debug("\n");
 }
 
-/* Called once: parse -> size -> place/reserve metadata -> publish boot pool.
- * Extended pages are still published separately after paging_kernel_init. */
-void page_init(void) {
-  read_boot_memory_map();
-  metadata_pages = (nr_pages + PAGE_SIZE - 1) / PAGE_SIZE;
-  u32 boot_end_pfn = nr_pages < BOOT_IDENTITY_BYTES / PAGE_SIZE
-                         ? nr_pages : BOOT_IDENTITY_BYTES / PAGE_SIZE;
-  init_page_metadata(boot_end_pfn);
-  publish_boot_pages(boot_end_pfn);
-  log_page_metadata();
-}
-
-// 发布启动映射范围以外的物理页
 void page_publish_extended(void) {
-  u32 before = free_pages;
-  publish_pages(BOOT_IDENTITY_BYTES / PAGE_SIZE, nr_pages);
+  const u32 before = free_pages, boot_end = low.end;
+  const u32 direct_end = direct_map_end / PAGE_SIZE;
+  low.end = nr_pages < direct_end ? nr_pages : direct_end;
+  high = {page_frames + low.end, low.end, nr_pages, 0, {}};
+  publish_pages(low, boot_end);
+  publish_pages(high, high.start);
   pr_debug("PAGE extended pages=");
   pr_debug_hex(free_pages - before);
   pr_debug("\n");
+
   // Non-PAE 4 GiB bounds published_pages to 1 Mi pages, so these products fit u32.
   watermarks = {(published_pages * 5 + 99) / 100, published_pages * 15 / 100};
   watermarks_ready = true;
@@ -186,95 +402,19 @@ void page_publish_extended(void) {
   pr_debug("\n");
 }
 
-// 清零物理页
-// page: 要清零的起始物理地址
-// count: 清零连续多少个物理页
-static void zero_run(phys_t page, u32 count) {
-  u32 dm_end_pfn = direct_map_end / PAGE_SIZE;
-
-  if (!dm_end_pfn || page / PAGE_SIZE + count <= dm_end_pfn) {  // 在直接映射区
-    memset(phys_to_virt(page), 0, count * PAGE_SIZE);
-  } else {  // 高内存，地址不能直接当指针用，需要kmap
-    for (u32 k = 0; k < count; k++) {
-      void* mapped = kmap(page + k * PAGE_SIZE);
-      memset(mapped, 0, PAGE_SIZE);
-      kunmap(mapped);
-    }
-  }
-}
-
-// 在指定范围内寻找 count
-// 个物理地址连续且全部空闲的页面，标记为已使用并返回起始地址
-static phys_t alloc_from(u32 start_pfn, u32 end_pfn, u32 count, u32* hint) {
-  if (start_pfn >= end_pfn || !count || count > MAX_RUN ||
-      count > end_pfn - start_pfn || count > free_pages) {
-    return PHYS_NULL;
-  }
-  u32 h = *hint;  // 上次从哪开始，并更新位下次从哪开始
-  if (h < start_pfn || h >= end_pfn) {
-    h = start_pfn;
-  }
-  // 两轮按候选起点搜索：先 [hint, end)，再 [start, hint)。
-  // 连续块可以跨 hint，但不能跨物理池末端；hint 不限制块的终点。
-  // next-fit 使用游标减少重复搜索，最坏仍为 O(N) 页状态扫描。
-  for (int pass = 0; pass < 2; pass++) {
-    u32 from = pass ? start_pfn : h;
-    u32 to = pass ? h : end_pfn;
-    for (u32 i = from; i < to && count <= end_pfn - i; i++) {
-      u32 j = 0;
-      while (j < count && mem_map[i + j] == PAGE_FREE)
-        j++;
-      if (j == count) {
-        memset(mem_map + i, PAGE_USED, count);
-        free_pages -= count;
-        *hint = i + count;
-        return (phys_t)(i * PAGE_SIZE);
-      }
-      i += j;
-    }
-  }
-  return PHYS_NULL;
-}
-
-// 物理地址和页数，尝试释放对应的连续页面。
-static int free_run(phys_t page, u32 count, u8 state) {
-  u32 pfn = page / PAGE_SIZE;
-  // 此处检查分配器释放是否是完整物理页，因为不能从页中间释放
-  if (!count || count > MAX_RUN || !page_aligned(page) ||
-      page < BOOT_POOL_START || pfn >= nr_pages || count > nr_pages - pfn) {
-    return 0;
-  }
-  for (u32 i = 0; i < count; i++) {  // 防重复释放
-    if (mem_map[pfn + i] != state) {
-      return 0;
-    }
-  }
-  // 只标为不占用，但没清零，再次分配时才用 zero_run 清零
-  memset(mem_map + pfn, PAGE_FREE, count);
-  free_pages += count;
-  return 1;
-}
-
-/**
- *内核页面分配路径：
- *kpage_alloc()(申请一个内核页面) -> kpage_alloc_run(1) (确定low mem 范围)
- *  -> zero_run (清零) -> 返回内核指针
- *
- *内核一页释放路径：
- *kpage_free(ptr) -> kpage_free_run(ptr, 1)（转回物理地址） -> free_run()
- *(验证并标为 FREE)
- */
-// 封装，分配内核可直接访问的连续物理页
 void* kpage_alloc_run(u32 count) {
-  u32 low_end = direct_map_end ? direct_map_end / PAGE_SIZE : nr_pages;
-  phys_t page = alloc_from(LOW_START_PFN, low_end, count, &low_hint);
-  if (!page) {
-    return 0;
+  if (count > MaxRun) {
+    return nullptr;
   }
-  memset(mem_map + page / PAGE_SIZE, PAGE_KERNEL, count);
+  const u32 pfn = low.allocate(count, PageState::Kernel);
+  if (!pfn) {
+    return nullptr;
+  }
+  free_pages -= count;
+  const phys_t page = pfn * PAGE_SIZE;
   zero_run(page, count);
   if (page >= BOOT_IDENTITY_BYTES && !logged_extended_allocation) {
-    logged_extended_allocation = 1;
+    logged_extended_allocation = true;
     pr_debug("PAGE first extended allocation=");
     pr_debug_hex(page);
     pr_debug("\n");
@@ -282,61 +422,58 @@ void* kpage_alloc_run(u32 count) {
   return phys_to_virt(page);
 }
 
-// 分配一页的接口
-// 分配一页也许可以单独优化，避免冗余检查
 void* kpage_alloc(void) {
   return kpage_alloc_run(1);
 }
 
-// 释放连续的内核页面
 int kpage_free_run(void* page, u32 count) {
-  return free_run(virt_to_phys(page), count, PAGE_KERNEL);
+  const phys_t address = virt_to_phys(page);
+  if (address / PAGE_SIZE >= low.end) {
+    return 0;
+  }
+  return free_run(address, count, PageState::Kernel);
 }
 
-// 释放某一页
-// TODO: 释放一页可以单独优化，避免冗余检查
 int kpage_free(void* page) {
   return kpage_free_run(page, 1);
 }
 
-/* Paging alone changes a live kernel allocation into a guard. Guarded pages
- * cannot be freed through either allocator until their PTE has been restored. */
+/* Guard transitions preserve ownership. Paging restores the PTE before
+ * changing Guarded back to Kernel so the owner can free the original run. */
 int kpage_guard_claim(void* page) {
-  u32 address = (u32)page, pfn = address / PAGE_SIZE;
-  if (!page_aligned(address) || address < BOOT_POOL_START ||
-      address >= direct_map_end || pfn >= nr_pages || mem_map[pfn] != PAGE_KERNEL)
+  const phys_t address = virt_to_phys(page);
+  const u32 pfn = address / PAGE_SIZE;
+  if (!page_aligned(address) || !direct_map_end || !low.contains(pfn, 1) ||
+      page_frames[pfn].state() != PageState::Kernel) {
     return 0;
-  mem_map[pfn] = PAGE_GUARDED;
+  }
+  page_frames[pfn].reset(PageState::Guarded);
   return 1;
 }
+
 void kpage_guard_release(void* page) {
-  u32 pfn = virt_to_phys(page) / PAGE_SIZE;
-  if (pfn >= nr_pages || mem_map[pfn] != PAGE_GUARDED)
-    panic("Invalid guarded page release", (u32)page, pfn);
-  mem_map[pfn] = PAGE_KERNEL;
+  const phys_t address = virt_to_phys(page);
+  const u32 pfn = address / PAGE_SIZE;
+  if (!page_aligned(address) || !low.contains(pfn, 1) ||
+      page_frames[pfn].state() != PageState::Guarded) {
+    panic("Invalid guarded page release", address, pfn);
+  }
+  page_frames[pfn].reset(PageState::Kernel);
 }
 
-// 分配用户进程的物理页
-// page_alloc() 的物理内存选择顺序
-// 0–52 MiB: 保留区，不参与分配
-// 52 MiB–1 GiB: Low Memory，第二选择：High Memory 分配失败才尝试
-// 1–4 GiB: High Memory，第一选择：优先从这里分配
-// （假设 direct_map_end 为 1 GiB）
 phys_t page_alloc(void) {
-  u32 low_end = direct_map_end ? direct_map_end / PAGE_SIZE : nr_pages;
-  phys_t page = PHYS_NULL;
-  if (low_end < nr_pages) {  // 尝试分配 High Memory
-    page = alloc_from(low_end, nr_pages, 1, &high_hint);
+  u32 pfn = high.allocate(1, PageState::Used);
+  if (!pfn) {
+    pfn = low.allocate(1, PageState::Used);
   }
-  if (!page) {
-    page = alloc_from(LOW_START_PFN, low_end, 1, &low_hint);
-  }
-  if (!page) {
+  if (!pfn) {
     return PHYS_NULL;
   }
+  --free_pages;
+  const phys_t page = pfn * PAGE_SIZE;
   zero_run(page, 1);
   if (direct_map_end && page >= direct_map_end && !logged_high_allocation) {
-    logged_high_allocation = 1;
+    logged_high_allocation = true;
     pr_debug("PAGE first high allocation=");
     pr_debug_hex(page);
     pr_debug("\n");
@@ -345,100 +482,157 @@ phys_t page_alloc(void) {
 }
 
 int page_free(phys_t page) {
-  return free_run(page, 1, PAGE_USED);
+  return free_run(page, 1, PageState::Used);
 }
 
-/* Isolate the search in an allocator-owned window so other free memory cannot
- * hide a missed run. No pointer is accessed after its backing page is freed. */
-static void page_run_search_test(void) {
-  u32 before = free_pages;
-  u8* window = (u8*)kpage_alloc_run(8);
-  if (!window)
-    panic("page_run_search_test: Window allocation", free_pages, before);
-  phys_t base = virt_to_phys(window);
-  u32 first = base / PAGE_SIZE, end = first + 8;
-  if (!kpage_free_run(window + 2 * PAGE_SIZE, 4))
-    panic("page_run_search_test: Middle release", base, free_pages);
-
-  // The only four-page run straddles hint; both old half-range scans missed it.
-  u32 hint = first + 4;
-  phys_t run = alloc_from(first, end, 4, &hint);
-  if (run != base + 2 * PAGE_SIZE || hint != first + 6 ||
-      free_pages + 8 != before)
-    panic("page_run_search_test: Run across hint", run, hint);
-
-  // Two free pages at each end are not a physically contiguous four-page run.
-  if (!kpage_free_run(window, 2) ||
-      !kpage_free_run(window + 6 * PAGE_SIZE, 2))
-    panic("page_run_search_test: Edge release", base, free_pages);
-  u32 fragmented = free_pages;
-  if (alloc_from(first, end, 4, &hint) ||
-      alloc_from(first, end, 9, &hint) ||
-      free_pages != fragmented || hint != first + 6)
-    panic("page_run_search_test: Pool boundary", free_pages, hint);
-
-  // A hint at the exclusive end must wrap; the released head is reusable.
-  hint = end;
-  run = alloc_from(first, end, 2, &hint);
-  if (run != base || hint != first + 2 || free_pages + 2 != fragmented)
-    panic("page_run_search_test: Hint wrap", run, hint);
-  for (u32 i = 0; i < 6; i++) {
-    if (!page_free(base + i * PAGE_SIZE))
-      panic("page_run_search_test: Release", base, i);
+namespace {
+void page_frame_test() {
+  PageFrame frame;
+  frame.reset(PageState::Guarded);
+  frame.setPrev(PageFrame::PfnMask);
+  frame.setNext(0xabcdeu);
+  if (frame.state() != PageState::Guarded || frame.isHead() ||
+      frame.prev() != PageFrame::PfnMask || frame.next() != 0xabcdeu) {
+    panic("PAGE frame state and links", frame.prev(), frame.next());
   }
-  if (free_pages != before)
-    panic("page_run_search_test: Page count", free_pages, before);
+  frame.reset(PageState::Free);
+  frame.setFreeHead(BuddyZone::MaxOrder);
+  frame.setPrev(0x54321u);
+  frame.setNext(PageFrame::PfnMask);
+  if (!frame.isFreeHead(BuddyZone::MaxOrder) || frame.prev() != 0x54321u ||
+      frame.next() != PageFrame::PfnMask) {
+    panic("PAGE frame order and links", frame.prev(), frame.next());
+  }
+  frame.reset(PageState::Used);
+  if (frame.state() != PageState::Used || frame.isHead() || frame.order() ||
+      frame.prev() != BuddyZone::NoPfn || frame.next() != BuddyZone::NoPfn) {
+    panic("PAGE frame reset", frame.prev(), frame.next());
+  }
 }
 
-// 物理页分配器自检，每次启动运行
+void buddy_run_test() {
+  constexpr u32 base = 16, count = 16;
+  PageFrame frames[count];
+  BuddyZone zone{frames, base, base + count, 0, {}};
+  zone.addFreeRange(base, base + count);
+
+  if (zone.allocate(9, PageState::Kernel) != base || zone.freeCount != 7 ||
+      zone.check() != count || !zone.release(base, 9, PageState::Kernel) ||
+      !zone.frame(base).isFreeHead(4) || zone.freeCount != count) {
+    panic("PAGE exact 9-page buddy run", zone.freeCount, zone.heads[4]);
+  }
+
+  // Isolate the free span so an aligned block elsewhere cannot mask fallback.
+  if (zone.allocate(count, PageState::Kernel) != base ||
+      !zone.release(base + 1, 2, PageState::Kernel) || zone.heads[1] ||
+      zone.allocate(2, PageState::Kernel) != base + 1 || zone.freeCount) {
+    panic("PAGE unaligned 2-page buddy run", zone.freeCount, zone.heads[1]);
+  }
+  if (!zone.release(base + 1, 5, PageState::Kernel) ||
+      zone.allocate(4, PageState::Kernel) != base + 1 ||
+      zone.freeCount != 1 || !zone.frame(base + 5).isFreeHead(0) ||
+      zone.check() != count || zone.allocate(2, PageState::Kernel) ||
+      !zone.release(base + 1, 4, PageState::Kernel) ||
+      !zone.release(base, 1, PageState::Kernel) ||
+      !zone.release(base + 6, 10, PageState::Kernel) ||
+      !zone.frame(base).isFreeHead(4) || zone.freeCount != count) {
+    panic("PAGE cross-block buddy run", zone.freeCount, zone.heads[4]);
+  }
+
+  // Merge with a buddy in the middle of a list, exercising both link updates.
+  if (zone.allocate(count, PageState::Kernel) != base ||
+      !zone.release(base, 1, PageState::Kernel) ||
+      !zone.release(base + 2, 1, PageState::Kernel) ||
+      !zone.release(base + 4, 1, PageState::Kernel) ||
+      !zone.release(base + 3, 1, PageState::Kernel) ||
+      zone.frame(base + 4).next() != base ||
+      zone.frame(base).prev() != base + 4 ||
+      !zone.frame(base + 2).isFreeHead(1) ||
+      !zone.release(base + 1, 1, PageState::Kernel) ||
+      !zone.release(base + 5, 11, PageState::Kernel) ||
+      !zone.frame(base).isFreeHead(4) || zone.freeCount != count ||
+      zone.check() != count) {
+    panic("PAGE buddy unlink and merge", zone.freeCount, zone.heads[4]);
+  }
+}
+
+void buddy_boundary_test() {
+  constexpr u32 base = 16;
+  PageFrame frames[4];
+  for (PageFrame& frame : frames) {
+    frame.reset(PageState::Reserved);
+  }
+  BuddyZone lower{frames, base, base + 1, 0, {}};
+  BuddyZone upper{frames + 1, base + 1, base + 4, 0, {}};
+  lower.addFreeRange(base, base + 1);
+  upper.addFreeRange(base + 1, base + 2);
+  upper.addFreeRange(base + 3, base + 4);
+
+  if (!lower.frame(base).isFreeHead(0) || !upper.frame(base + 1).isFreeHead(0) ||
+      upper.frame(base + 2).state() != PageState::Reserved ||
+      lower.allocate(2, PageState::Kernel) || upper.allocate(2, PageState::Kernel) ||
+      lower.release(base, 2, PageState::Free) || lower.check() != 1 ||
+      upper.check() != 2) {
+    panic("PAGE buddy zone and hole isolation", lower.freeCount, upper.freeCount);
+  }
+}
+}
+
 void page_allocator_test(void) {
-  u32 before = free_pages;
-  for (u32 i = 0; i < metadata_pages; i++)
-    if (mem_map[virt_to_phys(mem_map) / PAGE_SIZE + i] != PAGE_RESERVED) {
-      panic("page_allocator_test: Page metadata reservation", virt_to_phys(mem_map), i);
+  const u32 before = free_pages;
+  const PageWatermark before_watermark = page_watermark();
+  for (u32 offset = 0; offset < metadata_pages; ++offset) {
+    if (page_frames[metadata_pfn + offset].state() != PageState::Reserved) {
+      panic("PAGE metadata reservation", metadata_pfn, offset);
     }
-  if (kpage_free(mem_map) || page_free(0x200000u) || free_pages != before) {
-    panic("page_allocator_test: Reserved page free validation", free_pages, before);
+  }
+  if (kpage_free(page_frames) || page_free(0x200000u) || kpage_alloc_run(0) ||
+      kpage_alloc_run(MaxRun + 1) || free_pages != before) {
+    panic("PAGE reserved page and invalid run validation", free_pages, before);
   }
 
-  u32* a = (u32*)kpage_alloc();
-  u32* b = (u32*)kpage_alloc();
-  if (!a || !b || a == b || ((u32)a | (u32)b) % PAGE_SIZE) {
-    panic("page_allocator_test: Page allocation", (u32)a, (u32)b);
+  auto* a = static_cast<u32*>(kpage_alloc());
+  auto* b = static_cast<u32*>(kpage_alloc());
+  if (!a || !b || a == b || !page_aligned(virt_to_phys(a)) ||
+      !page_aligned(virt_to_phys(b)) || free_pages + 2 != before) {
+    panic("PAGE one-page kernel allocation", virt_to_phys(a), virt_to_phys(b));
   }
   *a = 0x46454c49;
   *b = 0x58333221;
-  if (*a != 0x46454c49 || *b != 0x58333221) {
-    panic("page_allocator_test: Memory read/write", 0, 0);
-  }
-  if (!kpage_free(a) || !kpage_free(b) || kpage_free(a) ||
-      free_pages != before) {
-    panic("page_allocator_test: Page free validation", free_pages, before);
+  if (*a != 0x46454c49 || *b != 0x58333221 || page_free(virt_to_phys(a)) ||
+      !kpage_free(a) || !kpage_free(b) || kpage_free(a) || free_pages != before) {
+    panic("PAGE kernel page validation", free_pages, before);
   }
 
-  phys_t user = page_alloc();
+  const phys_t user = page_alloc();
   if (!user || !page_aligned(user) || user < BOOT_POOL_START ||
-      free_pages + 1 != before) {
-    panic("page_allocator_test: User page allocation", user, free_pages);
-  }
-  if (!page_free(user) || page_free(user) || free_pages != before) {
-    panic("page_allocator_test: User page release", user, free_pages);
+      (high.freeCount && user < direct_map_end) || free_pages + 1 != before ||
+      kpage_free(reinterpret_cast<void*>(user)) || !page_free(user) ||
+      page_free(user) || free_pages != before) {
+    panic("PAGE user page validation", user, free_pages);
   }
 
-  u8* block = (u8*)kpage_alloc_run(2);
-  if (!block || (u32)block % PAGE_SIZE || free_pages + 2 != before) {
-    panic("page_allocator_test: Page run allocation", (u32)block, free_pages);
+  auto* run = static_cast<u8*>(kpage_alloc_run(2));
+  if (!run || !page_aligned(virt_to_phys(run)) || free_pages + 2 != before) {
+    panic("PAGE two-page allocation", virt_to_phys(run), free_pages);
   }
-  for (u32 i = 0; i < 2 * PAGE_SIZE; i++) {
-    if (block[i]) {
-      panic("page_allocator_test: Page run zeroing", (u32)block, i);
+  for (u32 i = 0; i < 2 * PAGE_SIZE; ++i) {
+    if (run[i]) {
+      panic("PAGE run zeroing", virt_to_phys(run), i);
     }
   }
-  block[PAGE_SIZE] = 1;
-  if (!kpage_free_run(block, 2) || kpage_free_run(block, 2) ||
-      free_pages != before) {
-    panic("page_allocator_test: Page run release", (u32)block, free_pages);
+  run[PAGE_SIZE] = 1;
+  if (!kpage_free_run(run, 2) || kpage_free_run(run, 2)) {
+    panic("PAGE two-page release", virt_to_phys(run), free_pages);
   }
-  page_run_search_test();
+
+  page_frame_test();
+  buddy_run_test();
+  buddy_boundary_test();
+  const u32 checked = low.check() + high.check();
+  if (checked != published_pages || low.freeCount + high.freeCount != free_pages ||
+      free_pages != before || page_watermark() != before_watermark) {
+    panic("PAGE allocator totals", checked, free_pages);
+  }
   pr_debug("PAGE allocator self-check passed\n");
 }

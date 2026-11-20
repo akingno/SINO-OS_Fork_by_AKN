@@ -3,47 +3,38 @@ SINO 0.10 / AKN Fork Development Preview
 1. Start SINO
 
 On Windows, place SINO.iso, Start SINO.cmd and launch.ps1 in the same folder,
-then double-click Start SINO.cmd. Extract any ZIP completely before starting.
-Install QEMU for Windows separately, or set SINO_QEMU_DIR to its directory.
-The launcher also searches Program Files\qemu and PATH.
-Official download: https://www.qemu.org/download/#windows
+then double-click Start SINO.cmd. Install QEMU for Windows or set
+SINO_QEMU_DIR to its directory. The launcher also searches PATH and
+Program Files\qemu.
 
-Every session boots from the read-only ISO. On first launch, the launcher
-creates a 16 MiB Data/data.img for personal files. Keep this file between
-sessions and run sync in the Shell before closing the VM to save changes.
-Close the VM before replacing the ISO or backing up the data disk.
-Repeated launches restore the existing window. Ctrl+Alt+G releases the mouse.
+The VM uses 4096 MiB RAM and one virtual CPU. It boots from the read-only
+ISO and creates a 16 MiB Data/data.img for personal files on first launch.
+Close the VM before replacing the ISO or backing up the disk.
 
-2. Desktop and Shell
+2. Use the Shell
 
-F1 opens File Manager; F2 opens the writable SI-SHELL; F3 opens the built-in
-text editor; F4 opens Calculator; F6 opens Clock; F7 opens system settings.
-F12 opens a read-only Shell session. Ctrl+Space switches English/Pinyin input.
-Ctrl+S saves a document and Ctrl+W closes a window. Alt+Tab switches windows.
+SINO opens an 80 by 25 text console. Type help for commands. The US keyboard
+layout supplies ASCII input. Use arrow keys to edit or recall commands, Tab
+to complete names, and Shift+PageUp or Shift+PageDown to browse output.
+Ctrl+C cancels the foreground command. Ctrl+D ends input.
 
-Native .snx programs run directly. .app entries and .lnk shortcuts provide
-application launch routes. The writable Shell supports run, file operations,
-pipes and sync. Type help for commands. /boot is read-only, /tmp is temporary,
-and /home/user is saved to the data disk when committed with sync.
+The Shell workspace maps to /home/user. Successful file changes are saved
+before the next prompt. If saving fails, use sync to retry. /boot is read-only
+and /tmp is temporary. File contents and UTF-8 filenames are preserved.
 
 3. Build from source
 
-Requirements: Windows, Node.js, Python and GCC/GNU Binutils capable of i386
-output. NASM 3.02 and routine font resources are included in Source Code.
-Set SINO_TOOLCHAIN to your GCC bin directory if it is not already on PATH.
+Install Node.js, Python and GCC/GNU Binutils with i386 output. NASM 3.02 is
+included in Source Code. Set SINO_TOOLCHAIN to the GCC bin directory if
+needed. From the repository root, run:
 
-From the repository root:
   powershell -NoProfile -ExecutionPolicy Bypass -File dev.ps1 -BuildOnly
 
-The command prints the new ISO's directory under Build Output/dev/runs.
-To assemble a runnable folder, copy that ISO and the two launch files into it.
-Use the root Start development command (启动开发版.cmd) for local development.
-From Source Code, build-release.ps1 -OutputDirectory PATH writes an ISO to PATH.
-See Source Code/docs/testing.md for focused validation commands.
+The script prints the ISO's directory under Build Output/dev/runs.
+Copy that ISO alongside the two launcher files to run the release.
+See Source Code/docs/testing.md for targeted validation commands.
 
-4. Status and licenses
+4. Licenses
 
-This is a 32-bit x86 BIOS operating-system prototype, validated in QEMU.
-Read Release Notes.md for capabilities and limitations. Project code is MIT;
-fonts, input data and NASM retain their own licenses. Keep Documentation/Licenses
-and Source Code/SOURCES.md when redistributing. QEMU is not bundled.
+Project code is MIT. Bundled NASM uses BSD-2-Clause. See Documentation/Licenses
+and Source Code/SOURCES.md for the notices and source information.

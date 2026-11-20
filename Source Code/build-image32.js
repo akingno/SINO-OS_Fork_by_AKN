@@ -11,7 +11,7 @@ boot.copy(image);loader.copy(image,512);kernel.copy(image,512+4096);
 const fat=Buffer.alloc(layout.BOOT_FAT_SECTORS*512);fat.set([0xf0,0xff,0xff]);
 function setFat(c,v){const n=c+(c>>1);if(c&1){fat[n]=(fat[n]&15)|((v&15)<<4);fat[n+1]=v>>4;}else{fat[n]=v&255;fat[n+1]=(fat[n+1]&240)|(v>>8);}}
 const bridge = (process.argv[3] || '').toLowerCase() === 'true';
-const entries=['README.TXT','ABOUT.TXT','KERNEL.TXT','SOURCES.TXT','FONT_OFL.TXT'].map(name=>[name,fs.readFileSync(path.join(root,'disk32',name))]);entries.push(['MBR.BIN',fs.readFileSync(path.join(build,'mbr.bin'))]);
+const entries=['README.TXT','ABOUT.TXT','KERNEL.TXT','SOURCES.TXT'].map(name=>[name,fs.readFileSync(path.join(root,'disk32',name))]);entries.push(['MBR.BIN',fs.readFileSync(path.join(build,'mbr.bin'))]);
 if (bridge || variant === 'test') {
     entries.push(['DEMO.SH', fs.readFileSync(path.join(root, 'disk32', 'DEMO.SH'))]);
     entries.push(['HELLO.F32', fs.readFileSync(path.join(build, 'hello.bin'))]);

@@ -429,45 +429,10 @@
     "parameters": []
   },
   {
-    "key": "SETTINGS_LABEL_CHINESE_INPUT_CTRL_SPACE_TOGGLES_PINYIN",
-    "module": "SETTINGS",
-    "type": "LABEL",
-    "meaning": "Chinese input: Ctrl+Space toggles Pinyin.",
-    "parameters": []
-  },
-  {
-    "key": "SETTINGS_LABEL_SPACE_SELECTS_1_7_CHOOSE_PAGE",
-    "module": "SETTINGS",
-    "type": "LABEL",
-    "meaning": "Space selects; 1-7 choose; [ ] page.",
-    "parameters": []
-  },
-  {
-    "key": "SETTINGS_LABEL_CHARACTERS_AND_COMMON_PHRASES_NO_SENTENCE_PREDICTION",
-    "module": "SETTINGS",
-    "type": "LABEL",
-    "meaning": "Characters and common phrases; no sentence prediction.",
-    "parameters": []
-  },
-  {
     "key": "SETTINGS_LABEL_KERNEL_DESKTOP_CUSTOM_C_ASSEMBLY",
     "module": "SETTINGS",
     "type": "LABEL",
     "meaning": "Kernel, desktop, installer: custom C / assembly.",
-    "parameters": []
-  },
-  {
-    "key": "SETTINGS_LABEL_OPEN_SOURCE_QEMU_UNIFONT_AND_CLASSIC_FONTS",
-    "module": "SETTINGS",
-    "type": "LABEL",
-    "meaning": "Open source: QEMU, Unifont and classic fonts.",
-    "parameters": []
-  },
-  {
-    "key": "SETTINGS_LABEL_PINYIN_CHARACTER_DATA_PINYIN_DATA_MIT",
-    "module": "SETTINGS",
-    "type": "LABEL",
-    "meaning": "Pinyin character data: pinyin-data (MIT).",
     "parameters": []
   },
   {

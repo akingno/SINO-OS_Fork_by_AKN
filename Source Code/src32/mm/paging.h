@@ -67,6 +67,9 @@ void paging_protect_selftest(void);
 
 #ifdef __cplusplus
 }
+/* Pages needed from the published boot pool to build the permanent mappings. */
+u32 paging_bootstrap_page_budget(u32 pageLimit);
+
 enum class UserMapResult : u8 { Ok, TableNoMemory, Invalid };
 /* Success transfers the data page to pd. Failure leaves it with the caller. */
 UserMapResult paging_user_map(u32* pd, u32 va, phys_t page, int write);

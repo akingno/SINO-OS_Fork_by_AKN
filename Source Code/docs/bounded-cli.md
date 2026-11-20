@@ -134,7 +134,7 @@ ownership, while observers retain results/captures until closed.
 Public StartRun retains Stage B close semantics: closing an observer, or observer
 exit/fault, does not cancel a running child. The supervised host layer below
 explicitly cancels its own tasks on release/session expiry. It never grants global
-PID management or changes unrelated desktop tasks.
+PID management.
 
 ## Host entry
 
@@ -222,6 +222,4 @@ exact/max sizes, NUL/UTF-8, short reads and EOF, pointer/role/rights failures,
 separate stderr, output limits, retained fault output, negative exits, quotas,
 deadline/cancel, failed descriptors, replay/session isolation, truncated/oversize
 frames, and disconnect cleanup while an unrelated user process remains runnable.
-Old Shell/app/storage/network/cold-boot checks remain. This is not full POSIX,
-hardware UART validation, exhaustive page-allocation fault injection, or the
-excluded GUI editor/visual regression gate.
+The checks use the virtual UART and scoped guest failures.

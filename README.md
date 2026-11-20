@@ -1,8 +1,8 @@
 # SINO OS Fork by Akingno
 
-当前分支专注内核、内存管理和用户态 CLI，启动后直接进入单色文字 Shell。桌面、窗口系统和图形应用已暂时移除（最后有gui的版本在 old_gui 分支）。
+SINO 是一个 32 位 x86 操作系统，专注内核、内存管理和用户态 CLI，启动后直接进入单色文字 Shell。
 
-> Fork 于 [SkysoftStudio-Felix/SINO-OS](https://github.com/SkysoftStudio-Felix/SINO-OS) (`bf0cad1`) 的独立衍生版本。原版是一个用 GPT-6 辅助开发的 32 位 x86 桌面操作系统原型；本 fork 重写内核与子系统，重点放在底层完善与 CLI 应用开发。
+> Fork 于 [SkysoftStudio-Felix/SINO-OS](https://github.com/SkysoftStudio-Felix/SINO-OS) (`bf0cad1`) 的独立衍生版本。本 fork 独立维护内核与用户态 CLI。
 
 ## SI-SHELL — 用户态 Shell
 
@@ -19,7 +19,7 @@ Shell 支持以下命令：
 
 支持 255 字节行编辑、16 条历史（上下方向键）、命令和路径的 Tab 补全、Ctrl+C 取消、Ctrl+D EOF。Shift+PageUp / Shift+PageDown 浏览最多 128 行历史；浏览时新输出保持视口，当前输入行固定显示在最底行。
 
-文件命令由用户态 `tview.snx` 和 `writer.snx` 等工具执行。Shell 的逻辑根目录对应 `/home/user`，成功修改文件后自动提交用户快照；保存失败时可用 `sync` 重试。当前显示与键盘输入仅支持 ASCII，文件中的 UTF-8 数据保留。控制台交互详见 [文字控制台契约](Source Code/docs/text-console.md)。
+文件命令由用户态 `tview.snx` 和 `writer.snx` 等工具执行。Shell 的逻辑根目录对应 `/home/user`，成功修改文件后自动提交用户快照；保存失败时可用 `sync` 重试。当前显示与键盘输入仅支持 ASCII，文件中的 UTF-8 数据保留。控制台交互详见 [文字控制台契约](<Source Code/docs/text-console.md>)。
 
 ## 内存管理
 
@@ -35,7 +35,7 @@ Shell 支持以下命令：
 - 内存压力时按回收优先级自动终止进程，每轮最多一个受害者，负分进程受保护
 - 可丢弃匿名内存（purgeable），用户程序可标记缓存区为可回收；内存压力时内核优先丢弃未锁定的缓存页，避免终止进程
 
-计划实现：buddy / slab 分配器、共享页引用计数、COW、小对象堆复用。详见 [内存访问契约](Source Code/docs/mm-access.md)。
+计划实现：buddy / slab 分配器、共享页引用计数、COW、小对象堆复用。详见 [内存访问契约](<Source Code/docs/mm-access.md>)。
 
 ## 进程与线程
 
@@ -49,9 +49,9 @@ Shell 支持以下命令：
 - 手动复位 Event 支持显式阻塞与广播唤醒
 - 回收优先级评分（−1000 ~ 400），按前后台状态动态调整；进程组共享回收命运
 
-权限模型：严格策略（`caps=0`）默认拒绝，仅白名单授权——新程序均在此策略下运行；兼容策略保留旧应用访问，已删除的 GUI 接口返回错误。
+权限模型：严格策略（`caps=0`）默认拒绝，仅白名单授权——新程序均在此策略下运行；兼容策略按启动时授予的能力访问兼容接口。
 
-计划实现：内核 mutex / futex / 用户态同步库、优先级调度、SMP、cwd/env 继承。详见 [任务子系统契约](Source Code/docs/task-subsystem.md) 与 [编号生命周期](Source Code/docs/identifier-lifetime.md)。
+计划实现：内核 mutex / futex / 用户态同步库、优先级调度、SMP、cwd/env 继承。详见 [任务子系统契约](<Source Code/docs/task-subsystem.md>) 与 [编号生命周期](<Source Code/docs/identifier-lifetime.md>)。
 
 ## 当前限制
 
@@ -74,7 +74,7 @@ Source Code/          唯一的开发源码目录
   tools/              构建、发布与共享开发工具
   tests/              宿主测试、客户机探针与测试辅助代码
   docs/               技术契约文档
-Documentation/        项目文档、许可与历史截图
+Documentation/        项目文档与许可
 Build Output/         构建产物（不提交）
 ```
 
@@ -88,7 +88,7 @@ Windows 下运行 `启动开发版.cmd`，重新构建并启动 QEMU；仅构建
 powershell -NoProfile -ExecutionPolicy Bypass -File .\dev.ps1 -BuildOnly
 ```
 
-源码使用 freestanding C++17，关闭异常和 RTTI。构建需要 Node.js、支持 i386 目标的 G++ / GNU Binutils、QEMU 和仓库内的 NASM。环境与目录说明见 [源码 README](Source Code/README.md)；验证按 [模块选测指南](Source Code/tests/TESTING.md) 选择相关专项。
+源码使用 freestanding C++17，关闭异常和 RTTI。构建需要 Node.js、Python、支持 i386 目标的 G++ / GNU Binutils 和仓库内的 NASM，运行需要 QEMU。环境与目录说明见 [源码 README](<Source Code/README.md>)；验证按 [模块选测指南](<Source Code/tests/TESTING.md>) 选择相关专项。
 
 ## 参与开发
 
@@ -105,10 +105,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\dev.ps1 -BuildOnly
 
 ## 许可
 
-项目代码采用 [MIT](LICENSE)，保留上游版权。字体（SIL OFL）、拼音数据（MIT）、NASM（BSD-2-Clause）各自保留原许可，详见 [Documentation/Licenses](Documentation/Licenses) 和 [Source Code/SOURCES.md](Source Code/SOURCES.md)。
+项目代码采用 [MIT](LICENSE)，保留上游版权。随源码提供的 NASM 采用 BSD-2-Clause，详见 [Documentation/Licenses](Documentation/Licenses) 和 [Source Code/SOURCES.md](<Source Code/SOURCES.md>)。
 
 ## 致谢
 
 - 原项目：[SkysoftStudio-Felix/SINO-OS](https://github.com/SkysoftStudio-Felix/SINO-OS)（SINO OS 0.10 / SysBASIC 0.3.0）
 - 本 fork 的开发借助了 Claude 和 Codex
-

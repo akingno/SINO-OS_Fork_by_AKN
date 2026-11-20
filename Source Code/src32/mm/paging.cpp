@@ -83,11 +83,11 @@ void paging_bootstrap(void) {
   pr_debug("\n");
 }
 
-void paging_kernel_init(void) {
+static u32 direct_map_page_count(u32 page_limit) {
   // dm = direct mapping,不等同于identity mapping
   // dm_pages = ceil(nr_pages / 1024) * 1024
   // 按 1024 页对齐，这样就不用处理最后一个不完整的 4 MiB 区间
-  u32 dm_pages = (nr_pages + TABLE_ENTRIES - 1) & ~(TABLE_ENTRIES - 1);
+  u32 dm_pages = (page_limit + TABLE_ENTRIES - 1) & ~(TABLE_ENTRIES - 1);
   // 保证直接映射范围至少覆盖启动阶段所需的地址上界
   if (dm_pages < BOOT_IDENTITY_BYTES / PAGE_SIZE) {
     dm_pages = BOOT_IDENTITY_BYTES / PAGE_SIZE;
@@ -96,10 +96,19 @@ void paging_kernel_init(void) {
   if (dm_pages > USER_BASE / PAGE_SIZE) {
     dm_pages = USER_BASE / PAGE_SIZE;
   }
-  // 上面得到了数量，现在得到实际映射终点
+  return dm_pages;
+}
+
+u32 paging_bootstrap_page_budget(u32 pageLimit) {
+  // Direct-map tables, page directory, and the KMAP table.
+  return direct_map_page_count(pageLimit) / TABLE_ENTRIES + 2;
+}
+
+void paging_kernel_init(void) {
+  const u32 dm_pages = direct_map_page_count(nr_pages);
   u32 dm_end = dm_pages * PAGE_SIZE;
   // 页表数量，如 1GiB / 4MiB = 256
-  u32 identity_count = dm_end / TABLE_BYTES;
+  u32 identity_count = dm_pages / TABLE_ENTRIES;
 
   // page.c 的分配一页
   u32* pd = (u32*)kpage_alloc();

@@ -118,8 +118,17 @@ async function geometry(qmp, directory, log, baseline) {
     const actualPublished = Number(log.match(/PAGE extended pages=(0x[0-9a-f]+)/i)?.[1]);
     assert.equal(actualEnd, endPFN, 'physical limit follows E820 below 4 GiB');
     assert.equal(actualPublished, extendedPages, 'reserved overlaps and MMIO holes stay unpublished');
-    const metadataPages = Math.ceil(endPFN / 4096);
-    const publishedPages = pages.subarray(52 * 1024 * 1024 / 4096).reduce((sum, n) => sum + n, 0) - metadataPages;
+    const bootStart = 52 * 1024 * 1024 / 4096, bootEnd = 64 * 1024 * 1024 / 4096;
+    const metadataPages = Math.ceil(endPFN * 8 / 4096);
+    const metadata = log.match(/PAGE metadata base=(0x[0-9a-f]+) pages=(0x[0-9a-f]+)/i);
+    assert(metadata, 'boot metadata placement');
+    assert.equal(Number(metadata[2]), metadataPages, 'eight bytes of metadata per PFN');
+    const metadataStart = Number(metadata[1]) / 4096;
+    assert(Number.isInteger(metadataStart) && metadataStart >= bootStart &&
+        metadataStart + metadataPages <= bootEnd, 'metadata fits inside the boot pool');
+    assert(pages.subarray(metadataStart, metadataStart + metadataPages).every(page => page === 1),
+        'metadata occupies one usable E820 span');
+    const publishedPages = pages.subarray(bootStart).reduce((sum, n) => sum + n, 0) - metadataPages;
     const watermarks = log.match(/PAGE watermarks total=(0x[0-9a-f]+) criticalBelow=(0x[0-9a-f]+) normalAbove=(0x[0-9a-f]+)/i);
     assert(watermarks, 'watermarks were finalized after publishing the full pool');
     assert.deepEqual(watermarks.slice(1).map(Number), [publishedPages, Math.ceil(publishedPages * 5 / 100),

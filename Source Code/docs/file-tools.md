@@ -1,10 +1,8 @@
-# G4 read-only terminal file tools
+# Read-only Shell file tools
 
-The G3 Shell entry `run /boot/term.snx` now recognizes `ls`, `stat`, `cat`
-and `view`. These commands are dispatched to the strict `/boot/tview.snx`
-program, catalog ID5. Listing, metadata formatting, text decoding and paging
-are user-space policy, implemented in user/tview.c and user/file_text.h.
-No old kernel Shell command is invoked to implement them.
+The Shell dispatches `ls`, `stat`, `cat` and `view` to strict `/boot/tview.snx`
+through catalog ID5. `user/tview.cpp` and `user/file_text.h` implement listing,
+metadata formatting, text decoding and paging.
 
 ## Authority and paths
 
@@ -18,10 +16,8 @@ root is represented by `.`. There are no implicit mounts, global cwd or symlinks
 The trusted frontend delegates only READ|LOOKUP, plus ENUM for ls. These are
 attenuated from the same pinned directory object as the Shell root. Strict
 caps=0 policy and the catalog's read-only boot identity checks remain in force.
-The existing ID4 gcmd tools receive zero directory rights; the kernel now also
-rejects nonzero directory rights for that catalog entry. The G2 diagnostic IDs
-retain their existing behavior. No write, create, remove, commit or delegation
-rights are added to this interactive path.
+Catalog ID4 (`gcmd.snx`) accepts no directory grant. Catalog ID5 accepts only
+read rights.
 
 ## Command contracts
 
@@ -66,13 +62,12 @@ helpers; errors are not silently treated as successful truncation.
 
 The maximum file remains 64KiB. Interactive output is not the C 4KiB finite
 capture backend. These tools require atomic interactive terminal startup and do
-not add a noninteractive host run.ps1/v2 mode. Arbitrary pipelines, redirections,
-file writes and default desktop entry switching belong to subsequent work.
+use the host `run.ps1` protocol. See [workspace writes](workspace-shell.md)
+for file modification commands.
 
 ## Tests
 
-`tests/host/test-file-text.c` covers the actual decoder/layout helpers. The text console uses
-`tests/host/test-console.js` with PS/2 keyboard input and VGA text memory; GUI acceptance
-and its old entry points have been removed. Shift+PageUp/PageDown scrollback belongs to conhost.
+`tests/host/test-file-text.cpp` covers the decoder and layout helpers.
+`tests/host/test-console.js` checks interaction through PS/2 input and VGA text memory.
 
-G5a adds head/tail/wc/grep/hexdump/tree/find using the same catalog and file identity checks; see [shell-tools.md](shell-tools.md) for syntax, raw-byte counting versus text display and traversal bounds. tree/find also receive ENUM. The ordinary VGA console is 80 columns wide.
+head/tail/wc/grep/hexdump/tree/find use the same catalog and file identity checks. See [shell-tools.md](shell-tools.md) for syntax, raw-byte counting versus text display and traversal bounds. tree/find also receive ENUM. The ordinary VGA console is 80 columns wide.

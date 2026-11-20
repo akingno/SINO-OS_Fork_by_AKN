@@ -2,7 +2,7 @@
 
 日常按 [模块选测指南](../tests/TESTING.md) 选择命令；本文是完整目录，无需每次通读。临时开发项独立登记在 [development/INDEX.md](../tests/development/INDEX.md)，不计入下面稳定回归。
 
-统一入口登记 **24 个功能组、267 个固定用例 ID**：`core` 23 组/258 项，`stress` 1 组/9 项。GUI 的 9 组/32 项及旧独立 GUI 入口已删除。此数不包括下面独立列出的启动、内存、测试器单元检查和原有系统专项。组合按固定 ID 去重，重复入口不产生新覆盖；内部断言、夹具、兼容转发和辅助文件不额外计数。
+统一入口登记 **24 个功能组、267 个固定用例 ID**：`core` 23 组/258 项，`stress` 1 组/9 项。此数不包括下面独立列出的启动、内存、测试器单元检查和原有系统专项。组合按固定 ID 去重，重复入口不产生新覆盖；内部断言、夹具、兼容转发和辅助文件不额外计数。
 
 ## 统一入口：命令与接口
 
@@ -44,7 +44,7 @@
 | 入口（tests/host/） | 用例数 | 范围 |
 | --- | ---: | --- |
 | `test-console.js <普通 BuildOnly 目录> --persistence` | 3 | 不调用 sync；创建、更新/改名、删除后跨 QEMU 重启验证，保留其他文件 |
-| `test-console.js <普通 BuildOnly 目录>` | 9 | 开机提示、编辑/历史、工作区、取消、ASCII 输入、退出重启、滚屏与输入固定；QMP 键盘和 VGA 文字内存，不读取 GUI 场景或截图 |
+| `test-console.js <普通 BuildOnly 目录>` | 9 | 开机提示、编辑/历史、工作区、取消、ASCII 输入、退出重启、滚屏与输入固定；QMP 键盘和 VGA 文字内存 |
 | `test-boot.js <普通 BuildOnly 目录>` | 1 | ISO 身份、El Torito、FAT12、计时器、普通启动隔离；ID 为 boot.ordinary |
 | `test-event-waits.js <ShellBridge 目录>` | 8 | 严格策略能力发现、旧查询兼容、预置位/手动复位、广播/阻塞、重试保留原期限、超时/参数边界、关闭/复用、重复句柄权限、取消/故障回收；支持 --list，不自动加入 core |
 | `test-thread-waits.js <ShellBridge 目录>` | 8 | SNX v1/v2 参数/初始栈帧/正常返回、退出记录与栈回收、超时/输出解除映射、detach/TID 复用、单消费者/自身/外进程拒绝、参数/配额回滚、取消/故障、最后活动线程与旧 ABI；支持 --list，不自动加入 core |
@@ -55,11 +55,11 @@
 | `test-memory.js reclaim <ShellBridge 目录>` | 5 | 水位精确边界、预留准入、按评分和驻留页排序、回收后补页、失败语义、进程组继承与回收 |
 | `test-memory.js purgeable <ShellBridge 目录>` | 5 | 可丢弃 ABI、锁计数、LOW 丢弃和重建、CRITICAL 回收顺序及最后解锁重启丢弃 |
 
-上述入口均支持 `--list`（内存入口为 `test-memory.js images --list`）。内存用例按实际探针/配置契约执行计数，详细断言列在报告 conditions 中。默认配置为 4096 MiB、单核，并用 QMP 核对。旧 64 MiB 兼容例已移除，映像、页表和匿名页的失败回滚改由限定目标的注入保留覆盖，不再依赖耗尽全局物理池。
+上述入口均支持 `--list`（内存入口为 `test-memory.js images --list`）。内存用例按实际探针/配置契约执行计数，详细断言列在报告 conditions 中。默认配置为 4096 MiB、单核，并用 QMP 核对。定向注入覆盖映像、页表和匿名页的分配失败与回滚。
 
-`node 'Source Code/tests/host/test-vm-config.js' --list` 预览 4 项独立宿主检查：默认/专项参数、拒绝旧低内存及非法参数、QMP 身份、开发/发行/测试入口一致性。报告为 Build Output/phase00a/vm-config-report.json，不计入统一注册表的 267 项。
+`node 'Source Code/tests/host/test-vm-config.js' --list` 预览 4 项独立宿主检查：默认/专项参数、拒绝超出支持范围的参数、QMP 身份、开发/发行/测试入口一致性。报告为 Build Output/phase00a/vm-config-report.json，不计入统一注册表的 267 项。
 
-四个 `test-*-waits.js <ShellBridge 目录>` 现仅转入同一统一注册表：管道 10、完成记录 8、终端 11、Shell/SDK 5。它们与 `-Suite *-waits` 共用完全相同的用例，不额外计数；支持 `--list`。
+四个 `test-*-waits.js <ShellBridge 目录>` 使用统一注册表：管道 10、完成记录 8、终端 11、Shell/SDK 5。它们与 `-Suite *-waits` 共用完全相同的用例，不额外计数；支持 `--list`。
 
 ## 测试器与宿主检查
 
@@ -69,14 +69,14 @@
 | `test-report-summary.js --group contracts` | 18 | 报告契约与失败状态 |
 | `test-report-summary.js --group selections` | 4 | 功能选择与范围校验 |
 | `test-report-summary.js --group io` | 4 | 报告读取、损坏/缺失报告与失败详情 |
-| `test-src32-refactor.js` | 43 | 存储 25、klog 3、locale 14、源码未变 1；是 infrastructure 的组成部分 |
-| `test-keyboard.js` | 1 个宿主程序 | 实际 keyboard.c 的逻辑检查，不计为 GUI 自动操作 |
+| `test-src32-refactor.js` | 41 | 存储、日志、语言资源和源码完整性，纳入 infrastructure |
+| `test-keyboard.js` | 1 个宿主程序 | 编译 `keyboard.cpp` 检查扫描码解码 |
 
-infrastructure 还编译 6 个宿主模型：`test-terminal-model.c`、`test-gsh.c`、`test-file-text.c`、`test-text-scan.c`、`test-line-edit.c`、`test-line-model.c`。`test-src32-storage.c`、`test-klog.c`、`test-locale.c` 由基础设施入口编译。`test-rtc.c` 由 rtc-driver 编译；其中的多次断言不是独立运行用例。
+infrastructure 还编译 6 个宿主模型：`test-terminal-model.cpp`、`test-gsh.cpp`、`test-file-text.cpp`、`test-text-scan.cpp`、`test-line-edit.cpp`、`test-line-model.cpp`。`test-src32-storage.cpp`、`test-klog.cpp`、`test-locale.cpp` 由基础设施入口编译。`test-rtc.cpp` 由 rtc-driver 编译；其中的多次断言不是独立运行用例。
 
-## 保留的独立宿主入口
+## 独立宿主入口
 
-`node 'Source Code/verify-system.js'` 仅运行 `test-keyboard.js`（1 个宿主程序），不读取 ISO、不启动 VM、不生成截图。原来的桌面、启动器和 GUI 自测入口及转发已删除。系统功能验收使用上面的统一入口。
+`node 'Source Code/verify-system.js'` 仅运行 `test-keyboard.js`（1 个宿主程序）。系统功能验收使用 `regression.ps1`。
 
 ## 客户机探针与辅助模块
 

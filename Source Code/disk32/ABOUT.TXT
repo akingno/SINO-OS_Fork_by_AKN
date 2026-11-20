@@ -1,18 +1,9 @@
-SINO 0.10 / Platinum Desktop / SINO SH
+SINO 0.10 / AKN Fork
 
-Project-specific 32-bit kernel, desktop, window manager and native apps.
-Classic Platinum-inspired appearance, native-size bitmap text and alpha pointer.
-QEMU with absolute pointer input is the active emulator.
-Home data uses an ATA PIO disk with CRC32 and two committed snapshot banks.
+SINO is a 32-bit x86 BIOS operating system. It boots to an 80x25 VGA text
+console and starts the user-mode Shell automatically. Type help for commands.
 
-Kernel and applications were generated and written for this project by the
-assistant. This is not a FreeDOS, Linux, macOS or Codex source fork.
-Tools, firmware and fonts are third-party components with their own licenses.
-See /boot/sources.txt for details.
+The Shell workspace is /home/user. Successful file changes save before the
+next prompt. If saving fails, use sync to retry.
 
-Native SNX1 applications use isolated preemptible ring-3 processes.
-Legacy built-in applications still share the kernel during migration.
-1024 x 768 x 32-bit VBE; 64 MB RAM; up to eight windows.
-
-F1 files / F2 writable Shell / F3 text editor / F12 read-only Shell.
-Run nettest for local ICMP, UDP, TCP, DNS and HTTP checks.
+See /boot/kernel.txt for system details and /boot/sources.txt for licensing.

@@ -1,11 +1,8 @@
-# Stage D: directory grants and versioned file saves
+# Directory grants and versioned file saves
 
-This extends the existing VFS without replacing legacy application APIs. Strict
-processes still cannot use ambient Read/Write/List/Sync, Spawn, the clipboard or
-desktop proxies. FEATURE_FILE_OBJECTS=32 advertises these mechanisms; features
-totaled 63 at Stage D (A-F now total 255). A feature bit never grants access. New IDs are appended after
-Stage C's 0x13a; old syscall numbers, query sizes and RunSpec v1 remain stable.
-S_CHANGED=-11 is appended to the existing errors.
+`FEATURE_FILE_OBJECTS=32` advertises explicit file and directory objects.
+Strict processes use granted handles for file access. A feature bit does not
+grant authority. `S_CHANGED=-11` reports a conflicting file or directory revision.
 
 ## Directory authority and startup
 
@@ -186,7 +183,7 @@ expected_revision. No kernel pointer or node index crosses the API.
 
 ## Validation and remaining boundaries
 
-fstest.snx suite is registered in the independent non-GUI files group. It exercises real
+`fstest.snx suite` runs in the `files` group. It exercises real
 CPL3 grants/attenuation, path escape rejection, EOF/holes/cross-page/64 KiB I/O,
 old/new reference protection, enumeration versions, private stages, Busy and
 revision conflicts, handle exhaustion, child launch rollback and child fault
@@ -201,4 +198,5 @@ failure injection, node/counter exhaustion, forged headers/pointers and output
 canaries, cancellation/timeout while holding file objects, all commit failure
 points and private-stage invisibility across a forced reboot. The core regression alone does not prove every such failure case or unchanged old binaries.
 
-G5b adds explicit `run /boot/term.snx /write` for touch/mkdir/rm/rmdir/write/append/cp/mv/sync using a granted home workspace. Read-only sessions and catalogs 4 and 5 keep their previous access scope. Writable-mode authority, publication versus persistence and intentional compatibility differences are in [workspace-shell.md](workspace-shell.md).
+See the [Shell workspace contract](workspace-shell.md) for write commands,
+directory rights and when changes reach the data disk.

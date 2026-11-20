@@ -20,14 +20,13 @@
 | `Source Code/disk32/` | 启动盘内容与字体资源 |
 | `Documentation/` | 项目文档、许可与截图 |
 | `Build Output/` | 构建产物（不提交） |
-| `abandoned/` | 已归档的旧代码（如旧 Ring 0 终端） |
 | `akn_learning/` | 本地个人教材，干净 clone 中没有它 |
 
 解压发行包（`SINO-*-SysBASIC-*-Chinese/`）是参考副本，不是开发源码。
 
 ## 当前测试约定
 
-日常验收范围：启动、严格进程、文件与持久化、流与会话、Shell。GUI 及其测试、截图辅助与旧转发入口已删除；文字控制台专项允许仅针对其 PS/2 输入发送 QMP 按键并读取 VGA 文字内存，不再提供 GUI 验收。键盘扫描码、终端和编辑器的宿主逻辑测试保留。
+日常验收范围：启动、严格进程、文件与持久化、流与会话、Shell。文字控制台专项允许仅针对其 PS/2 输入发送 QMP 按键并读取 VGA 文字内存。键盘扫描码、终端和编辑器的宿主逻辑测试保留。
 
 每个开发步骤只自动运行与改动直接相关的命令和接口测试，合计最多 50 项（含选跑的旧用例）。每个专项的自动验收可执行最多 20 个相关用例。运行前确认用例数，优先通过摘要脚本查看结果，只在失败时查看对应日志片段。
 
@@ -37,7 +36,7 @@
 - 通过后停止。仅因新的修改、失败或明确的未验证影响扩大或重跑；50/20 是上限，不是目标。测试器检查仅在测试框架变化时运行，纯文档/目录说明修改不启动系统回归。
 - `-Full` 仅供用户显式全量验收，AI 不以此绕过本步限制。压力和全量 core 不自动追加。同一轮共用构建与摘要；源码/测试身份变化后遵守重建检查，不强行复用旧镜像。
 
-历史阶段测试和 GUI 入口已移除，不保留转发。稳定业务用例在 tests/host/suites/，不互相调用；固定 ID 在 tests/support/regression-cases.json，组合仅放在 regression-suites.js / regression-catalog.js。统一入口保留 24 个功能组 / 267 个固定 ID（core 23 组 / 258 项，stress 1 组 / 9 项）。新增或修改入口时同步更新模块指南；全部数量和其他专项见 [当前测试目录](Source Code/docs/test-catalog.md)。
+稳定业务用例在 tests/host/suites/，不互相调用；固定 ID 在 tests/support/regression-cases.json，组合仅放在 regression-suites.js / regression-catalog.js。统一入口保留 24 个功能组 / 267 个固定 ID（core 23 组 / 258 项，stress 1 组 / 9 项）。新增或修改入口时同步更新模块指南；全部数量和其他专项见 [当前测试目录](Source Code/docs/test-catalog.md)。
 
 常用测试选择（仓库根目录，PowerShell）：
 
@@ -76,20 +75,20 @@ $env:SINO_QEMU_DIR = 'C:\Program Files\qemu'
 
 `node 'Source Code/verify-system.js'` 仅保留 1 个宿主键盘逻辑检查，不需要 ISO；系统功能验收使用 regression.ps1。注册表变更运行 tests/host/test-regression-plan.js（12 项），报告选择变更运行 tests/host/test-report-summary.js --group selections（4 项）；路径相对 Source Code/。
 
-发行启动文件在 `Source Code/release/`：将 `SINO.iso`、`Start SINO.cmd`、`launch.ps1` 放在同一目录，从 ISO 启动，个人文件写入 `Data/data.img`。旧安装向导、装包、预装硬盘发布流程及 GUI 启动器测试已删除。
+发行启动文件在 `Source Code/release/`：将 `SINO.iso`、`Start SINO.cmd`、`launch.ps1` 放在同一目录，从 ISO 启动，个人文件写入 `Data/data.img`。
 
 Shell 宿主测试参数：`-ExpectedExitCode 1` 断言预期失败，`-TimeoutSeconds 5` 设置超时。报告在 `Build Output/dev/runs/shell-.../`。通道仅在 `-ShellBridge` 构建中启用。
 
 ## 系统地图（路径相对 Source Code/）
 
-32 位 x86 BIOS，单体内核。GUI 移除已完成计划四步：桌面、窗口管理、图形绘制、设置与内置 Ring 0 应用已移除；窗口相关系统调用保留编号并返回错误。GUI Ring 3 终端前端和文件管理器，以及 UIASSET.BIN、PINYIN.TXT、CJK_OFL.TXT 已删除且不再构建或打包。普通镜像通过 VGA 80×25 文字控制台自动进入 Ring 3 gsh；ShellBridge 镜像继续提供独立测试通道，gcmd、tview、writer 保留；brokerqa 是无界面 Shell / 会话探针，继续构建并打包到 ShellBridge 镜像。GUI 测试、注册项和旧转发入口已删除。普通镜像自动启动 conhost.snx 和 gsh.snx，日志依次确认 `SINO CLI ready` 与 `CONSOLE SHELL ready`；US 键盘直接输入，无中文输入法或拼音字典。文字屏幕仅显示 ASCII，UTF-8 文件数据保留。主循环依次推进 RTC、ShellBridge（启用时）、网络、用户线程；语言状态由 locale.cpp 持有。SYS_CONSOLE=0x150 仅授予内核启动的 conhost；普通或严格启动的相同程序也不能取得设备权限。
+32 位 x86 BIOS，单体内核，纯文字控制台。窗口相关系统调用保留编号并返回错误。普通镜像通过 VGA 80×25 文字控制台自动进入 Ring 3 gsh；ShellBridge 镜像继续提供独立测试通道，gcmd、tview、writer 保留；brokerqa 是无界面 Shell / 会话探针，构建并打包到 ShellBridge 镜像。普通镜像自动启动 conhost.snx 和 gsh.snx，日志依次确认 `SINO CLI ready` 与 `CONSOLE SHELL ready`；US 键盘直接输入，文字屏幕仅显示 ASCII，UTF-8 文件数据保留。主循环依次推进 RTC、ShellBridge（启用时）、网络、用户线程；语言状态由 locale.cpp 持有。SYS_CONSOLE=0x150 仅授予内核启动的 conhost；普通或严格启动的相同程序也不能取得设备权限。
 
-启动镜像仍固定 2.88 MB，删除资源减少文件占用，不改变镜像总容量。开发、发行和验收默认 4096 MiB RAM、1 个虚拟 CPU；64 MiB 整机兼容已撤销，启动阶段的 64 MiB 临时映射仍保留。测试报告用 QMP 核对实际内存与 CPU；32 位非 PAE 仅管理 E820 在 4 GiB 以下的可用页，不保证安装 RAM 全部可用。
+启动镜像固定 2.88 MB。开发、发行和验收默认 4096 MiB RAM、1 个虚拟 CPU；启动阶段的 64 MiB 临时映射保留。测试报告用 QMP 核对实际内存与 CPU；32 位非 PAE 仅管理 E820 在 4 GiB 以下的可用页，不保证安装 RAM 全部可用。
 
 | 任务 | 起读文件 / 符号 | 对应验证入口 |
 | --- | --- | --- |
 | 开机文字 Shell | user/console_host.cpp、src32/console.cpp、task/process.cpp:SYS_CONSOLE、loader.asm | `node 'Source Code/tests/host/test-console.js' <普通 BuildOnly 目录>`；9 项；追加 `--persistence` 为 3 项跨重启自动保存检查；契约 docs/text-console.md |
-| 构建、引导 | build32.ps1、build-image32.js、src32/loader.asm、src32/kernel.cpp:kmain | `tests/host/test-boot.js <BuildOnly 构建目录>` |
+| 构建、引导 | build32.ps1、build-image32.js、src32/loader.asm、src32/kernel.cpp:kmain | `tests/host/test-boot.js ` |
 | FAT12 启动卷 | src32/fs/boot_fat12.cpp:fs_init / fs_read / fs_read_at、src32/boot-ramdisk.h | 普通镜像无窗口启动；ShellBridge 验证 `/boot` 读取 |
 | 物理页分配、启动页表 | src32/mm/page.cpp:page_init / page_alloc_run、src32/mm/paging.cpp:paging_bootstrap / paging_kernel_init | 普通镜像无窗口启动，核对启动日志 |
 | 用户页表、权限和线程栈 | src32/mm/paging.cpp、src32/mm/uaccess.cpp:uaccess_prepare、src32/task/process.cpp:launch_policy / alloc_user_stack | ShellBridge 中 `run -s /boot/poltest.snx paging-a/b` |
@@ -98,27 +97,27 @@ Shell 宿主测试参数：`-ExpectedExitCode 1` 断言预期失败，`-TimeoutS
 | 内存范围与用户复制边界 | src32/mm/e820.h、addr.h、uaccess.cpp；docs/mm-access.md | `node 'Source Code/tests/host/test-mm-boundaries.js'`；10 项，`--list` 预览；系统验收按 images / anonymous 选测 |
 | 用户缓冲区校验 | src32/mm/uaccess.cpp、src32/task/process.cpp | ShellBridge 中 fstest.snx / termtest.snx 的 uaccess 系列 |
 | 匿名页按需分配 | src32/task/process.cpp:anon_map / anonPage；task/scheduler.cpp:interrupt | ShellBridge 中 anon-lazy / anon-oom / anon-fault |
-| 高页、SNX v2 与匿名内存 | src32/mm/page.cpp、src32/mm/paging.cpp、user/linker.ld | `tests/host/test-memory.js images <ShellBridge 构建目录>` 或 `anonymous <同一构建目录>`，不依赖历史镜像 |
+| 高页、SNX v2 与匿名内存 | src32/mm/page.cpp、src32/mm/paging.cpp、user/linker.ld | `tests/host/test-memory.js images ` 或 `anonymous <同一构建目录>`，不依赖历史镜像 |
 | 调度、故障回收 | src32/task/scheduler.cpp:step / interrupt；task/process.cpp:release；src32/entry.asm | `regression.ps1 -Suite process`；8 项 |
 | 系统调用与权限 | src32/api.h → src32/task/process.cpp:dispatchSyscall → src32/object.cpp；同步 user/sdk.h | `regression.ps1 -Suite policy`；契约 docs/os-interface.md |
 | 内存回收优先级 | src32/task/process.cpp:launch_policy / SYS_RECLAIM_PRIORITY；src32/terminal.cpp:set_foreground | `regression.ps1 -Suite 'process,policy,shell-waits'` 15 项 + 普通启动 1 项；契约 docs/os-interface.md |
-| 物理页水位与回收 | src32/mm/page.cpp:page_watermark；task/process.cpp:reclaimLowest；task/scheduler.cpp:step / retryAnonFault | `node 'Source Code/tests/host/test-memory.js' reclaim '<ShellBridge 构建目录>'` 5 项（`reclaim --list`）；契约 docs/mm-access.md |
+| 物理页水位与回收 | src32/mm/page.cpp:page_watermark；task/process.cpp:reclaimLowest；task/scheduler.cpp:step / retryAnonFault | `node 'Source Code/tests/host/test-memory.js' reclaim ''` 5 项（`reclaim --list`）；契约 docs/mm-access.md |
 | 进程组 | src32/task/process.cpp:SYS_PROCESS_GROUP / runStartBound / interactiveStart / reclaimLowest | `regression.ps1 -Suite 'process,cli,shell-waits'` 14 项、`reclaim` 5 项、普通启动 1 项；契约 docs/os-interface.md |
-| 可丢弃匿名内存 | src32/task/process.cpp:anon_purgeable / anon_lock / purgeOneRegion；src32/task/scheduler.cpp:step | `test-memory.js purgeable <ShellBridge 构建目录>` 5 项、anonymous 7、reclaim 5、process 8、shell-waits 5、普通启动 1；契约 docs/os-interface.md |
+| 可丢弃匿名内存 | src32/task/process.cpp:anon_purgeable / anon_lock / purgeOneRegion；src32/task/scheduler.cpp:step | `test-memory.js purgeable ` 5 项、anonymous 7、reclaim 5、process 8、shell-waits 5、普通启动 1；契约 docs/os-interface.md |
 | 完成记录 | src32/task/process.cpp:release / SYS_SPAWN_TRACKED / SYS_PROCESS_RESULT | `regression.ps1 -Suite completion`；契约 docs/os-interface.md |
-| 进程完成阻塞等待 | src32/task/process.cpp:release / user_completion_result / retry_wait；tests/guest/completion_tests.cpp | `tests/host/test-completion-waits.js <ShellBridge 构建目录>`（8 项）；契约 docs/os-interface.md |
+| 进程完成阻塞等待 | src32/task/process.cpp:release / user_completion_result / retry_wait；tests/guest/completion_tests.cpp | `tests/host/test-completion-waits.js `（8 项）；契约 docs/os-interface.md |
 | 有限 CLI | src32/task/process.cpp:process_run_start、run_bridge.cpp、shell_bridge.cpp | `regression.ps1 -Suite cli` / `managed-cli`；run.ps1；契约 docs/bounded-cli.md |
 | 目录授权与文件对象 | src32/filesys.cpp、vfs.cpp、task/process.cpp:RunSpecV2；tests/guest/file_tests.cpp | `regression.ps1 -Suite files`；契约 docs/file-objects.md |
 | 管道与标准流 | src32/pipe.cpp/.h、object.cpp、task/process.cpp:RunSpecV3；tests/guest/pipe_tests.cpp | `regression.ps1 -Suite pipes`；契约 docs/stream-pipes.md |
-| 管道阻塞读写 | src32/task/process.cpp:transfer_pipe / retry_wait、src32/pipe.cpp:pipe_release | `tests/host/test-pipe-waits.js <ShellBridge 构建目录>`（10 项）；契约 docs/stream-pipes.md |
+| 管道阻塞读写 | src32/task/process.cpp:transfer_pipe / retry_wait、src32/pipe.cpp:pipe_release | `tests/host/test-pipe-waits.js `（10 项）；契约 docs/stream-pipes.md |
 | 文本会话后端 | src32/terminal.cpp/.h、task/process.cpp:SYS_TERMINAL；tests/guest/terminal_tests.cpp | `regression.ps1 -Suite terminal`；契约 docs/terminal-sessions.md |
-| 终端阻塞读取 | src32/terminal.cpp:wake_readers、task/process.cpp:SYS_TERMINAL / retry_wait；tests/guest/terminal_tests.cpp | `tests/host/test-terminal-waits.js <ShellBridge 构建目录>`（11 项）；契约 docs/terminal-sessions.md |
-| 阻塞等待 SDK 与 Shell | user/stream.h、user/sdk.h、user/interactive.h、user/gsh.cpp:external | `tests/host/test-shell-waits.js <ShellBridge 构建目录>`（5 项，目录须含同次构建的 kernel-normal.exe）；契约 docs/os-interface.md |
+| 终端阻塞读取 | src32/terminal.cpp:wake_readers、task/process.cpp:SYS_TERMINAL / retry_wait；tests/guest/terminal_tests.cpp | `tests/host/test-terminal-waits.js `（11 项）；契约 docs/terminal-sessions.md |
+| 阻塞等待 SDK 与 Shell | user/stream.h、user/sdk.h、user/interactive.h、user/gsh.cpp:external | `tests/host/test-shell-waits.js `（5 项，目录须含同次构建的 kernel-normal.exe）；契约 docs/os-interface.md |
 | 交互启动代理 | src32/interactive.h、task/process.cpp、terminal.cpp；tests/guest/interactive_tests.cpp | `regression.ps1 -Suite interactive`；契约 docs/interactive-runs.md |
 | Shell | user/gsh.cpp、gsh_parse.h、gcmd.cpp | `regression.ps1 -Suite shell-waits`；契约 docs/user-shell.md |
 | 只读文件工具 | user/tview.cpp、file_text.h | tests/host/test-file-text.cpp 宿主模型；契约 docs/file-tools.md |
 | 常用命令与欢迎文本 | user/gsh.cpp、gcmd.cpp、shell_commands.h、shell_banner.h | shell-commands（112 项，仅显式全量）；契约 docs/shell-tools.md |
-| 写工作区 | user/write_tool.cpp、gsh.cpp；task/process.cpp 可信来源 | 文件机制按 files 选测；契约 docs/workspace-shell.md；原 GUI 集成覆盖已移除 |
+| 写工作区 | user/write_tool.cpp、gsh.cpp；task/process.cpp 可信来源 | 文件机制按 files 选测；契约 docs/workspace-shell.md |
 | 行编辑与文本模型 | user/gsh.cpp、line_edit.h、terminal_edit_model.h、terminal_model.h | tests/host/test-line-edit.cpp / test-line-model.cpp / test-terminal-model.cpp；契约 docs/shell-editing.md |
 | 保存与恢复 | src32/vfs.cpp → src32/storage.cpp → src32/disk.cpp | files / persistence |
 | 键盘解码 | src32/keyboard.cpp | tests/host/test-keyboard.js（宿主逻辑） |
@@ -138,7 +137,7 @@ task 提取契约见 [task-subsystem.md](Source Code/docs/task-subsystem.md)。C
 - task::step 按就绪 FIFO 长度快照限制候选，至多派发一个线程；对象等待按索引/代数/原因定位，Yield/等待/有限运行期限使用可撤销堆，退出进入独立回收队列，不在正常调度/唤醒中全扫线程。主循环 IF=0 复查后调用 idle_halt（sti/hlt/ret）。仅空闲策略变更选 process 8 + shell-waits 5 + 普通启动 1，网络/RTC 待办变化各加 1；三类等待共同迁移选 process 8 + 三类 waits 29 + shell-waits 5 + 普通启动 1 + test-task-queues.js 4（--list），合计 47。task_schedule_stats 为 60 字节宿主观察布局，不是用户 ABI。
 - 底层 Write 更新内存、Sync 提交用户目录快照；可写 gsh 的写入/创建/改名/删除命令成功后自动提交，再返回提示符，无需手动 sync；`/boot` 只读
 - 启动镜像 2.88 MB，布局入口 `src32/boot-layout.h`
-- Feature 掩码 1048575（20 个已实现机制），含 FEATURE_EVENT_WAIT=32768、FEATURE_THREAD_JOIN=65536、FEATURE_RECLAIM=131072、FEATURE_PROCESS_GROUP=262144、FEATURE_PURGEABLE=524288；SYS_EVENT_WAIT_BLOCK=0x151，THREAD_CREATE/JOIN/DETACH/EXIT_CODE=0x152..0x155，SYS_RECLAIM_PRIORITY=0x156，SYS_PROCESS_GROUP=0x157，ANON_PURGEABLE/LOCK/UNLOCK=0x158..0x15a，旧编号保持。Event 专项 `node 'Source Code/tests/host/test-event-waits.js' '<ShellBridge 构建目录>'` 为 8 项（--list）。线程专项 `test-thread-waits.js <ShellBridge 构建目录>` 8 项（--list）；含 v1/v2 参数/帧、结果/栈回收、超时/输出失效、单消费者与拒绝外进程 TID、detach/复用及退出清理，本轮加 process 8 + policy 2 + images 11 + Event 8 + completion-waits 8 + 普通启动 1，共 46 项，详见模块指南。
+- Feature 掩码 1048575（20 个已实现机制），含 FEATURE_EVENT_WAIT=32768、FEATURE_THREAD_JOIN=65536、FEATURE_RECLAIM=131072、FEATURE_PROCESS_GROUP=262144、FEATURE_PURGEABLE=524288；SYS_EVENT_WAIT_BLOCK=0x151，THREAD_CREATE/JOIN/DETACH/EXIT_CODE=0x152..0x155，SYS_RECLAIM_PRIORITY=0x156，SYS_PROCESS_GROUP=0x157，ANON_PURGEABLE/LOCK/UNLOCK=0x158..0x15a。Event 专项 `node 'Source Code/tests/host/test-event-waits.js' '<ShellBridge 构建目录>'` 为 8 项（--list）。线程专项 `test-thread-waits.js <ShellBridge 构建目录>` 8 项（--list）；含 v1/v2 参数/帧、结果/栈回收、超时/输出失效、单消费者与拒绝外进程 TID、detach/复用及退出清理，本轮加 process 8 + policy 2 + images 11 + Event 8 + completion-waits 8 + 普通启动 1，共 46 项，详见模块指南。
 - 回收优先级独立于 CPU 调度。可信启动 conhost 为 −800，兼容进程默认 200，独立严格进程默认 400，带交互 CliInfo 的进程按终端前后台在 0 与 200 间切换。兼容且至少有一项能力的进程可查询自身评分，并在 0–400 内调高。
 - 独立启动、宿主 managed run 和新终端会话根进程以自身完整 PID 为组号。`SYS_RUN_START` 继承调用者的组及评分加 100，评分限于 0–400。交互命令继承发起请求的 Shell 的组。`SYS_PROCESS_GROUP` 查询自身组。
 - 物理页空闲比例按已发布页池计算。5%–15% 为 LOW，低于 5% 为 CRITICAL；两者都限制评分 400 的新匿名区。在 CRITICAL 时每轮 `task::step()` 最多选择一个直接回收对象，同组其他合格成员下一轮释放。负分和等待匿名缺页重试的进程受保护。Ring 3 数据页 OOM 延后一次。匿名页表 OOM 回退数据页并单独记录，无效映射返回 `S_INVALID`，两类 OOM 在系统调用边界返回 `S_NOMEM`。
@@ -159,3 +158,4 @@ task 提取契约见 [task-subsystem.md](Source Code/docs/task-subsystem.md)。C
 ## 提交与推送
 
 仅在用户明确要求时 push，并核对目标：origin 是 AKN fork，upstream 是原项目。结束时报告实际验证结果；修改入口、限制或测试命令时同步更新此页。
+

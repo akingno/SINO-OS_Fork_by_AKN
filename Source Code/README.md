@@ -25,19 +25,19 @@ user/                 Ring 3 用户态程序
   sdk.h               用户态 SDK（与 api.h 同步）
   runtime.cpp         用户态运行库与匿名映射堆
   linker.ld           用户态链接脚本（基址 0x40000000）
-disk32/               启动盘内容与字体资源
+disk32/               启动卷文档与示例
 tools/                构建、发布与共享开发工具
   build-user.js       用户态程序构建
   build-locale.py     语言资源生成与校验
-  vm-test.js          QEMU 测试基础设施
+  qmp.js              QEMU 控制接口
   shell-test.js       Shell 命令通道测试
 tests/                宿主套件、Ring 3 测试探针与测试辅助模块
-  host/               宿主测试脚本（test-core.js、test-*-waits.js 等）
+  host/               宿主测试脚本（test-boot.js、test-*-waits.js 等）
   guest/              Ring 3 客户机测试程序（编译为 .snx）
   support/            共享夹具与用例数据
 docs/                 技术契约文档
   architecture.md     系统架构
-  os-interface.md     系统调用接口（Stage A–F）
+  os-interface.md     系统调用接口
   boot-image.md       启动镜像布局与扩展
   user-shell.md       Shell 契约
   file-objects.md     文件对象与目录授权
@@ -47,7 +47,7 @@ docs/                 技术契约文档
   testing.md          构建与测试说明
 ```
 
-默认运行配置为 **4 GiB RAM、单核**，目标为约 1–2 GHz 的单核 PC。32 位非 PAE 根据 E820 管理 4 GiB 以下的可用页，不保证全部安装内存可用；64 MiB 运行兼容不再作为目标。
+默认运行配置为 **4 GiB RAM、单核**，目标为约 1–2 GHz 的单核 PC。32 位非 PAE 根据 E820 管理 4 GiB 以下的可用页，不保证全部安装内存可用。
 
 ## 构建
 
@@ -57,13 +57,13 @@ docs/                 技术契约文档
 
     powershell -NoProfile -ExecutionPolicy Bypass -File ..\dev.ps1 -BuildOnly
 
-需要：Node.js、能生成 i386 目标的 G++ / GNU Binutils、QEMU、源码中包含的 NASM 3.02。工具链不在 PATH 时设置 `SINO_TOOLCHAIN` 环境变量；QEMU 不在 PATH 时设置 `SINO_QEMU_DIR`。内核与用户程序使用 freestanding C++17，关闭异常和 RTTI，不依赖宿主 C++ 运行库。
+需要：Node.js、Python、能生成 i386 目标的 G++ / GNU Binutils、QEMU、源码中包含的 NASM 3.02。工具链不在 PATH 时设置 `SINO_TOOLCHAIN` 环境变量；QEMU 不在 PATH 时设置 `SINO_QEMU_DIR`。内核与用户程序使用 freestanding C++17，关闭异常和 RTTI，不依赖宿主 C++ 运行库。
 
 构建产物输出到 `Build Output/dev/runs/<构建编号>/`。
 
 ## 当前运行方式与内存管理
 
-普通镜像自动进入 VGA 80×25 单色文字控制台，由 Ring 3 的 conhost 和 gsh 提供交互。Shift+PageUp / Shift+PageDown 浏览历史，浏览期间保留视口和底行输入。旧 GUI、桌面应用和图形验收入口已删除。
+普通镜像自动进入 VGA 80×25 单色文字控制台，由 Ring 3 的 conhost 和 gsh 提供交互。Shift+PageUp / Shift+PageDown 浏览历史，浏览期间保留视口和底行输入。
 
 内存子系统通过 E820 解析、动态页状态元数据、分阶段页发布和 kmap 管理 4 GiB 地址范围内的可用物理页。内核直接映射上限为 1 GiB，用户页优先从高页分配；每进程独立页表、栈保护页和用户复制校验提供隔离。匿名区按需分配零页，SDK malloc/free 使用匿名映射；SNX v2 映像内存上限为 16 MiB。
 
@@ -83,7 +83,7 @@ docs/                 技术契约文档
 
 文字控制台先运行 `dev.ps1 -BuildOnly`，再将本次普通构建目录传给 `node 'Source Code/tests/host/test-console.js'`（9 项）。ShellBridge 镜像用于独立命令与接口验证，不自动启动控制台 Shell。
 
-运行前可用 `regression.ps1 -Suite process -List` 查看固定 ID 和数量；重复选择自动去重。压力恢复循环移到 `-Suite stress`（9 项）。完整入口清单见 [当前测试目录](docs/test-catalog.md)。
+运行前可用 `regression.ps1 -Suite process -List` 查看固定 ID 和数量；重复选择自动去重。压力恢复循环使用 `-Suite stress`（9 项）。完整入口清单见 [当前测试目录](docs/test-catalog.md)。
 
 详细说明见 [docs/testing.md](docs/testing.md)。
 

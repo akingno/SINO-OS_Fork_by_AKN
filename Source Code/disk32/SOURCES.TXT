@@ -1,64 +1,14 @@
-SINO 0.10 / source information
+SINO 0.10 / Source information
 
-AKN FORK (2026-11-02)
-  Repository: https://github.com/akingno/SINO-OS_Fork_by_AKN
-  Upstream: https://github.com/SkysoftStudio-Felix/SINO-OS
-  Fork base: bf0cad19002adf8f8f6d8be3efce1c044b05e252
-  Upstream project code: Copyright (c) 2026 SINO contributors.
-  Fork modifications: Copyright (c) 2026 akingno (AKN).
-  Full project MIT license: /boot/license.txt.
-  Third-party notices below retain their own licenses.
+AKN fork: https://github.com/akingno/SINO-OS_Fork_by_AKN
+Upstream: https://github.com/SkysoftStudio-Felix/SINO-OS
+Fork base: bf0cad19002adf8f8f6d8be3efce1c044b05e252
 
-The bootloader, 32-bit kernel, drivers, memory manager, FAT12 reader, VFS,
-ATA storage, shell, desktop and built-in apps were generated and written
-by the assistant for this project. Project code uses the repository MIT license.
-No FreeDOS, Linux, macOS, iPadOS or Codex application source was imported.
-This is not a FreeDOS or Linux kernel fork.
+Copyright (c) 2026 SINO contributors.
+Copyright (c) 2026 akingno (AKN) for fork modifications.
+Full project MIT terms: /boot/license.txt.
 
-Visual appearance follows the requested classic Mac OS 8.5 Platinum style.
-Window frames, icons, desktop pattern and cursor are drawn by project code.
-There are no copied Apple bitmap assets or Apple system components.
-
-THIRD-PARTY COMPONENTS
-  QEMU 11.1.0 Windows build: qemu.org -> qemu.weilnetz.de/w64
-  External emulator, GPLv2 and component-specific licenses.
-  SeaBIOS / standard VGA firmware supplied with QEMU, original licenses.
-  NASM 3.02, GCC / Binutils and Node.js are build/test tools.
-  Python / Pillow generate font atlases and procedural cursor resources.
-  Jarrah, Kurrajong and Mallee bitmap fonts: Ben Letchford, SIL OFL 1.1.
-  Font license: /boot/font_ofl.txt. Sources: systemless v0.18.14 font artwork.
-
-REFERENCES
-  Intel architecture manuals: GDT, IDT, interrupts, paging and exceptions.
-  QEMU public vmmouse / vmport source: device protocol verification only.
-  The reference files are not compiled or linked into SINO.
-  QMP documentation: host-side input, state inspection and actual screenshots.
-
-Kernel, storage and applications are custom project code; this does not claim
-that standard algorithms, protocols or common implementation patterns are novel.
-Third-party tools, firmware, references and fonts retain their own licenses.
-
-SINO SH is a custom command interpreter, not Bash. The current system has no
-Linux, macOS or traditional DOS binary compatibility. Legacy built-ins remain
-in ring 0; new SNX1 applications run in isolated ring-3 processes. This is a functional desktop prototype, not a production OS.
-
-Host source map, exact downloads and checksums: SOURCES.md in the project folder.
-
-TEXT CONSOLE
-  US keyboard input, VGA 80x25 text output; no Chinese IME or Pinyin data.
-  File bytes and UTF-8 filenames remain supported.
-
-BOOT, STORAGE AND SETTINGS (0.10)
-  Custom BIOS boot and four-device ATA PIO driver.
-  Read-only ISO boot volume and a separate SINO data disk.
-  Custom display mode, scaling, contrast, timed rollback and preference storage.
-  The immutable UI translation table excludes RAM-backed user filenames/text.
-  No Windows code, logos or Microsoft graphical assets were imported.
-
-NATIVE PLATFORM (0.10)
-  src32/process.c, object.c, api.h: native CPL3 loader, scheduling and syscalls.
-  src32/net.c: original bounded loopback IPv4/ICMP/UDP/TCP implementation.
-  user/files.c, calculator.c, clock.c, gsh.c: independent user-mode applications.
-  Protocol/CPU references: Intel SDM; RFC 791, 792, 768, 9293 and 1035.
-  No Windows/VB6/FreeDOS/Linux source or proprietary resources were imported.
-  Full status, limitations and verification are in Source Code/docs/architecture.md.
+The source tree includes NASM 3.02 under BSD-2-Clause. GCC, GNU Binutils,
+Node.js and Python are host build tools. QEMU supplies the emulator and
+SeaBIOS/VGA firmware. See Source Code/SOURCES.md for component notices
+and technical references.

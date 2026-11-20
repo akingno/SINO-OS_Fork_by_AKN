@@ -1,8 +1,9 @@
-# Text sessions and G1 desktop frontend
+# Text sessions
 
-Stage F delivered the headless session backend. G1 adds a Ring 3 desktop frontend
-and a strict, deadline-bound session probe using the same API. F12 now opens the formal user Shell. G2 adds atomic interactive launch/restore; PTY, ANSI and job control remain future work. Input arrives through focused USERAPP events, with copied drawing
-commands for display. Global input and framebuffer access stay kernel-owned.
+The kernel brokers input, output and foreground ownership for text sessions.
+The [console host](text-console.md) uses the session controller to launch and
+serve the Shell. See [interactive startup](interactive-runs.md) for atomic
+terminal binding at process launch.
 
 ## Authority and lifecycle
 
@@ -131,106 +132,12 @@ Expiry returns S_TIMEOUT without writing to the destination. EOF, buffered
 data and S_CLOSED follow the same ordering as a nonblocking read. Existing
 interactive-shell cancellation on controller loss still applies.
 
-## Evidence and remaining work
+## Verification
 
-termtest.snx drives real strict CPL3 tasks with two independent controls: raw
-binary, canonical backspace/newline, echo, resize, foreground transfer and denied
-background reads, fault/cancel restoration, quota, direction/role/unknown request
-errors, output integrity/backpressure, event saturation with unchanged dimensions,
-EOF versus explicit hangup, controller loss, and generic stream/runtime access.
-The host waits for completion, checks one intentional #UD, all remaining PIDs
-and object/page baselines. Existing A-E, host protocol and cold boot stay enabled.
+`regression.ps1 -Suite terminal` runs strict tasks against two independent
+sessions. It checks raw and canonical input, echo, resize, foreground transfer,
+backpressure, handle rights, EOF, hangup and recovery after fault or cancel.
 
-G2/G3 deliver atomic launch-time binding and interactive Shell launch/restore.
-Remaining work includes further application integration, foreground groups instead of one
-task, full PTY/ANSI and detailed page-allocation failure injection. The backend
-does not reserve global device input. The headless F suite covers its own API
-authority checks. G1 separately exercises desktop keyboard/focus routing below.
-The terminal-wait runner `tests/host/test-terminal-waits.js <ShellBridge build directory>`
-checks blocking reads and selected pipe/completion regressions with a private
-guest disk. The scheduler parks only the calling thread and resumes from its
-saved user state.
-
-## Historical G1 desktop frontend
-
-`user/terminal_frontend.c` implements `/boot/term.snx`. F12 and the legacy Shell
-command `run /boot/term.snx` open independent windows. The resolved read-only boot
-image is forced to caps=0. Its frontend uses compatibility policy and retains
-ambient read access under that policy. Its strict child runs the probe from
-`tests/guest/terminal_probe.c`. Both entry points share the boot image, selected by the
-trusted startup policy, to fit the current FAT12 image. Only this new program
-uses function-section garbage collection during linking.
-
-The frontend creates a session, launches a C bounded run, then explicitly calls
-TerminalForeground. The probe waits at most 100 ticks for TerminalCurrent and
-uses that client directly. CliInfo stdio retains the existing C finite backend.
-Each session consumes two process slots, one of the two retained C runs, three
-frontend handles and four child handles. At steady state its window, controller,
-completion, three finite streams and terminal client occupy seven objects.
-Two windows use four of eight process slots and both C run slots. G2 needs a
-separate interactive task contract before adding resident Shells and children.
-
-The default probe deadline is 30000 guest ticks, approximately five guest
-minutes. Window close requests cancel the owned task and release observation
-and control references. Frontend crash still follows F controller-loss semantics,
-with the managed run deadline bounding a client that ignores hangup. The fault
-test uses a 100-tick deadline and verifies this noncooperative case. A completed
-probe leaves a readable result until the user closes the window.
-
-### Input and display
-
-- Since G5a, the default grid is 120 by 25 in an 872 by 522 window. Client dimensions map to
-  seven-pixel columns and 18-pixel rows, capped at 120 by 35. Size changes replace
-  a pending resize with the newest dimensions and retry S_AGAIN.
-- Each process owns 128 history rows and a streaming UTF-8 decoder. History is
-  clipped when resized. Newline, CR, four-cell tabs, wide-character backspace and
-  malformed/incomplete UTF-8 have explicit handling. NUL, ESC and other unsupported
-  controls display `?`, preserving bytes after them. Output returns to the bottom
-  of scrollback. PgUp/PgDn are reserved for local history in G1.
-- MSG_TEXT codepoints are encoded once. MSG_KEY provides printable ASCII,
-  newline, backspace and tab. Other raw keys become typed KEY events. Ctrl+D
-  feeds EOF. Ctrl+C cancels the owned foreground probe. A desktop focus selection
-  clears an unfinished IME composition before assigning another window.
-- Each iteration consumes at most eight window events, retries eight pending
-  input items and drains 1024 output bytes. Accepted input survives S_AGAIN in
-  order. The pending queue holds 64 items. Further input receives visible full
-  queue feedback, while close/cancel remain responsive. The existing 15-event
-  desktop delivery queue also remains bounded. Arbitrarily fast input has no
-  lossless delivery guarantee.
-- `UI_CELL_TEXT=9` appends a copied drawing command for fixed-grid text. Font 2
-  draws at x/y, advancing seven pixels for ASCII and 21 for non-ASCII. The existing
-  17-pixel CJK glyph sits within the latter cells. Strings hold at most 79 UTF-8
-  bytes and split only between codepoints. The frontend's compile-time bound
-  ensures the entire visible grid fits one 256-command canvas.
-
-### Probe and regression coverage
-
-Type any line to receive `LINE ...`. `raw` enables byte and special-key reporting,
-Escape returns to canonical mode, `flood` writes 12289 bytes under backpressure,
-and `unicode` splits a UTF-8 sequence across writes and includes visible controls.
-`fault` deliberately faults the strict client. `/selftest` runs a small CPL3 model
-smoke check. `/qa` enables bounded diagnostic markers. `/fault-test` faults the
-frontend after the probe starts. `rawpause` and `stall` exercise input pressure.
-
-The host compiles the actual model for malformed UTF-8, wide-cell overwrite,
-backspace, wrapping, ring history, independent state and bounded scene segments.
-The native suite injects real QMP keys, verifies copied scene text, switches two
-focused windows, commits Chinese input, checks ordered retries, maps a simple
-maximize operation and checks EOF/cancel/fault/external termination. It also
-exhausts sessions and the pending queue, closes a stalled client, and checks exact
-page/object baselines. F2 receives a separate real-keyboard compatibility check.
-Complex visual interactions and the complete 22-suite GUI gate remain separate.
-
-G2 adds an opt-in atomic interactive startup and session broker. See [interactive-runs.md](interactive-runs.md) for ownership, typed requests/results and stream roles. In a ShellBridge test image, use `run /boot/termqa.snx /broker-test` for its strict diagnostic probes.
-
-G3 introduced the broker path now used by `run /boot/term.snx` for a strict user Shell with quoted argv,
-per-session cwd within a read-only home grant, bounded history and external text
-tools. See [user-shell.md](user-shell.md) for syntax, statuses and verification.
-
-G5a adds the plain-text user welcome, everyday text/information commands and a 120-column default. See [shell-tools.md](shell-tools.md). The earlier G1 dimensions describe that delivery.
-
-G5b adds an explicit writable frontend mode, now selected by /write. The default stays read-only; session ownership and cancellation contracts are unchanged. See [workspace-shell.md](workspace-shell.md).
-
-G5c adds the editable prompt protocol and separates diagnostics from the ordinary boot image. See [shell-editing.md](shell-editing.md).
-
-G6 routes F2, the SINO menu and Terminal.app to the writable Ring 3 frontend. F12 opens a read-only window. For read-only boot access and the typed desktop application launcher, see [desktop-shell.md](desktop-shell.md).
+`tests/host/test-terminal-waits.js <ShellBridge build directory>` checks blocking
+reads and selected pipe and completion interactions on a private guest disk.
+The scheduler parks only the calling thread and resumes from its saved state.

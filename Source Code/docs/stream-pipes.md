@@ -1,15 +1,12 @@
-# Stage E: bounded streaming and runtime waiting
+# Pipes and stream waits
 
-Stage E adds pipe-backed streams and explicit standard-stream binding to strict
-children. It uses the existing StreamRead/StreamWrite, object table and completion
-objects. It does not change the kernel Shell's builtin pipe implementation, the
-host v2 finite-capture protocol, or interactive terminal behavior.
+Pipe endpoints use StreamRead and StreamWrite. Launchers can bind explicit
+endpoints to a strict child's standard streams.
 
 ## ABI and quotas
 
-FEATURE_PIPES=64 raised the Stage E mask to 127 (A-F now use 255). Existing IDs/layouts and
-errors remain unchanged. Append S_CLOSED=-12 for a pipe's missing reader, and
-S_TIMEOUT=-13 for user runtime deadlines. No Unix SIGPIPE is delivered.
+`FEATURE_PIPES=64` advertises this API. Writes return `S_CLOSED=-12` when no
+reader remains. Wait timeouts return `S_TIMEOUT=-13`.
 
 | ID | Call | EBX | ECX | EDX |
 | --- | --- | --- | --- | --- |
@@ -25,8 +22,7 @@ PipeCreate is allowed in either policy; it creates only process-local authority.
 PipeLimits is eight u32 words: size=32, version=1, pipes=8, capacity=4096,
 io_bytes=65536, timeout_ticks=60000, ready_flags=31, reserved=0. The pipe pool is
 global; capacity is chosen per pipe in 1..4096, including non-powers of two.
-Each live pipe allocates one metadata and one data page. The existing 64 objects,
-24 handles per process, 8 processes and two retained managed-run limit remain.
+Each live pipe allocates one metadata page and one data page.
 Closing only one endpoint does not free a pipe held by its other endpoint.
 
 Queries leave output unchanged on failure and leave capacity tails untouched.
@@ -168,7 +164,7 @@ as a single immediate attempt.
 
 ## Validation boundary
 
-`pipetest.snx suite` remains part of the independent non-GUI pipes group. Its
+`pipetest.snx suite` runs in the `pipes` group. Its
 cases cover exact memory/size/direction limits, short writes, tiny circular
 buffers, binary NUL, quota and second-handle rollback, duplicate writer EOF,
 explicit v3 startup and rollback, real concurrent 12289-byte transport through a
@@ -182,4 +178,4 @@ final peer close, timeout, competing readers, local handle reuse, buffer unmap,
 wire validation and process timeout cleanup. It checks the free-page count after
 each case and saves the aggregate result in `shell-report.json`.
 
-Terminal sessions and foreground/input ownership belong to Stage F.
+See [text sessions](terminal-sessions.md) for foreground and input ownership.

@@ -298,9 +298,8 @@ The kernel publishes E820 RAM above 64 MiB after switching to its formal
 supervisor page tables. The identity window ends at 1 GiB, where SNX user
 addresses begin. Pages marked unavailable, boot reserves and allocator metadata
 stay outside the pool. Development, release and acceptance VMs default to 4096 MiB
-and one virtual CPU, verified with QMP. There is no 64 MiB runtime compatibility
-requirement. Non-PAE ignores RAM remapped above 4 GiB; installed RAM is not the
-allocatable page count. ShellBridge-only read-only probes inject allocation failures
+and one virtual CPU, verified with QMP. Non-PAE manages only usable pages below
+4 GiB. ShellBridge-only read-only probes inject allocation failures
 for their own page directories; ordinary kernels contain no injection backend.
 
 ## Trusted selection and old application compatibility
@@ -310,10 +309,8 @@ to use it. Existing caps=0 applications retain their old public read APIs;
 caps=0 alone must not be described as a confidentiality sandbox.
 
 PROCESS_STRICT=1 is selected only by trusted kernel launch code through
-process_launch_strict(path, args). It grants caps=0. The kernel Shell exposes
-`run -s native.snx [argument]`; ordinary `run native.snx [argument]` is unchanged.
-The Shell remains trusted Ring 0 code; this command is not a user syscall for
-changing one's own policy. Policy cannot be selected by filenames, manifests,
+process_launch_strict(path, args). It grants caps=0. ShellBridge exposes `run -s native.snx [argument]` to select strict launch.
+Its `run native.snx [argument]` selects compatibility launch. Policy cannot be selected by filenames, manifests,
 argument strings or writable copies of an executable. The normal SNX loader
 still validates the resolved image; the strict entry has no legacy Ring 0
 executable fallback. A launch response still reports creation, not final exit.
@@ -337,15 +334,12 @@ apply. LOG remains diagnostics, not stdout; time and language are public data.
 
 All other known calls return S_DENIED before any operation-specific side effect
 or user-buffer access: path reads/listing/writes, Sync, Spawn, Kill, process
-enumeration, named Lease, networking, clipboard, OpenPath, windows and desktop
-drag/drop integration. Even a strict process cannot use legacy Spawn to start a
+enumeration, named Lease, networking and OpenPath. Even a strict process cannot use legacy Spawn to start a
 compatibility child, including through aliases or writable copies. Strict policy
 rejects both old Spawn and Stage B SpawnTracked; later delegation must preserve authority.
 
-This confines explicitly strict processes, not every legacy application or the
-remaining Ring 0 desktop. No GUI file selection grants, arbitrary delegation or general
-revocation system are claimed. New CLI launch mechanisms should default to
-strict policy when introduced, without silently changing old launch semantics.
+The strict policy confines processes launched with `PROCESS_STRICT`.
+Directory access depends on explicitly granted handles.
 
 ## Stage B: completion objects
 
@@ -447,14 +441,9 @@ immutable policy. The host checks actual completion/fault counters, PID cleanup,
 resource recovery and a subsequent compatibility launch. Existing application,
 Shell, storage, recovery and network checks remain in the same gate.
 
-The recorded test-first run on the old kernel failed at `system query available`;
-the original 336-check baseline had passed before adding these tests. Runtime limits and
-feature changes require corresponding contract review, not just relaxed tests.
-This does not replace historical-binary fixtures or excluded GUI regressions.
+SYS_CALENDAR=0x14b provides a versioned 32-byte read-only RTC calendar query in both policies. See [shell-tools.md](shell-tools.md) for the ABI and failure rules.
 
-G5a appends SYS_CALENDAR=0x14b for a versioned 32-byte read-only RTC calendar query in both policies, preserving SYS_TIME. ABI, failure-output rules and tests are documented in [shell-tools.md](shell-tools.md). G1-G5a frontend/Shell integration is now available through the opt-in user Shell entry.
-
-G5b appends SYS_WORKSPACE=0x14c (trusted read-only boot frontend only) and SYS_DIRECTORY_COMMIT=0x14d (owned COMMIT directory required). Strict ambient Sync remains denied. See [workspace-shell.md](workspace-shell.md).
+SYS_WORKSPACE=0x14c is restricted to the kernel-started console host. SYS_DIRECTORY_COMMIT=0x14d requires an owned directory handle with COMMIT. See [workspace-shell.md](workspace-shell.md).
 
 ## Native text console
 

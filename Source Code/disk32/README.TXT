@@ -1,7 +1,7 @@
 SINO CLI 0.10
 
 Boot starts the text console and isolated user Shell automatically.
-Type help for commands. Input uses the US keyboard layout; there is no IME.
+Type help for commands. Input uses the US keyboard layout.
 Arrow keys move the caret or recall history. Tab completes commands and paths.
 Ctrl+C cancels the foreground command; Ctrl+D sends EOF.
 Exiting the Shell starts a fresh Shell session.

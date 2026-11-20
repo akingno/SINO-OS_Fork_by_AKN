@@ -1,20 +1,15 @@
-# G5b explicitly writable Shell workspace
+# Shell workspace
 
-The native text console automatically opens the writable workspace. GUI entry points have been removed.
-The Shell, tools and frontend have caps=0. See [desktop-shell.md](desktop-shell.md).
+The [text console](text-console.md) automatically opens a writable workspace.
+The Shell, tools and console host have caps=0.
 
 ## Trusted grant and broker
 
 SYS_WORKSPACE=0x14c takes zero arguments and returns a directory grant fixed to
 /home/user. It is denied to strict clients and ordinary compatibility programs.
-The kernel records a trusted-frontend bit only when compatibility launch resolves
-the executable to the read-only boot /boot/term.snx node. A writable copy,
-a matching filename or a caller-provided string does not obtain this bit.
-The trusted frontend remains outside the strict security boundary; caps=0 alone
-never described all its authority. No ambient CAP_HOME is added to it.
-
-Only the explicit writable mode calls this operation. Its root receives home
-rights without DELEGATE and argv[0]=shell-write; the session pins that root and
+The kernel grants this operation only to the console host it starts from
+`/boot/conhost.snx`. The host passes `shell-write` as argv[0] and delegates
+home rights without DELEGATE. The session pins that root and
 its rights as the existing broker ceiling. Nonzero worker grants must still use
 the exact same pinned directory object. Write intents use catalog6, resolved to
 read-only /boot/writer.snx. Catalog4 accepts no directory rights; catalog5 and
@@ -29,7 +24,7 @@ explicit grant, not made incapable of writing by merely delegating work to tools
 
 ## Commands
 
-| Command | First-version contract |
+| Command | Contract |
 | --- | --- |
 | `touch path` | Create an empty file if absent, preserve existing contents |
 | `mkdir path` | Create one directory; existing target fails; no implicit -p |
@@ -59,17 +54,13 @@ per-directory isolated transaction. Other home changes may also be committed.
 The32-byte report uses published=0/revision=0 (no stage publication), durable=1
 and the snapshot generation on success. I/O failure gives durable=0 and S_IO;
 invalid handles, pointers and unauthorized directories leave output unchanged.
-The old ambient Sync remains denied to strict clients.
+Strict clients use `DirectoryCommit` with an explicit grant.
 
-FEATURE_WORKSPACE=512 made the G5b feature mask 1023; G5c adds LINE_EDIT=1024. Earlier ABI numbers,
-structures, read-only modes and C finite captures are unchanged. This stage does
-not add pipelines, redirection, POSIX unlink lifetimes; [shell-editing.md](shell-editing.md) describes the separately delivered line editor.
+`FEATURE_WORKSPACE=512` advertises the workspace grant and commit operations.
 
-普通dev-20261105-210318-d95daeff编译通过：kernel152096 bytes，BSS末端1884832。普通镜像私有VM完成写/追加/cp/mv/sync，宿主核对快照精确字节，冷启动用当时的只读入口重新读取一致。截图已检查，VM已关闭。
+For boot-to-home copies, the writer receives its normal home target grant and
+a separate read-only boot grant. `StartBootDirectory()` uses selector 1 of
+`SYS_START_DIRECTORY`. Selector 0 returns the primary grant.
 
-G6 adds boot-to-home copy. A dedicated writer startup receives its normal home
-target grant and a separate read-only boot source. `StartBootDirectory()` uses
-selector 1 of SYS_START_DIRECTORY. Selector 0 returns the primary grant.
-See [desktop-shell.md](desktop-shell.md).
-
-Text-console autosave is checked by `test-console.js <ordinary build> --persistence` (3 cases); generic explicit commits remain covered by the independent `-Suite persistence`.
+Run `test-console.js <ordinary build> --persistence` for the three autosave
+checks. `regression.ps1 -Suite persistence` checks explicit commits.

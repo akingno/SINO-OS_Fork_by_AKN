@@ -7,7 +7,7 @@
 1. 根据改动行为选择下表命令。`task/process.cpp` 等共享文件按修改的函数/系统调用判断，不能因为文件相同就运行所有子系统测试。
 2. 运行前简述“修改模块、选择的套件及原因、预计用例数”。统一入口先加 `-List` 预览；数量以实际计划为准，表内数字只作参考。
 3. 只运行直接相关项。每步累计最多 50 项、每专项最多 20 项；不把上限当目标，不以拆批方式规避累计上限。通过后停止，只有新的修改、失败或明确的未验证影响才重跑/扩大范围。
-4. 只有“追加条件”成立才增加对应项。不能为求保险默认追加 core、测试器检查、压力或 GUI；`-Full` 只供用户显式要求全量时使用。
+4. 只有“追加条件”成立才增加对应项。不能为求保险默认追加 core、测试器检查或压力；`-Full` 只供用户显式要求全量时使用。
 5. 同一轮组合共享一次构建；独立专项复用同次且身份仍匹配的构建。源码/测试身份改变后遵守现有重建检查，不修改记录来强行复用旧镜像。
 6. 成功只读取摘要；失败只读取失败用例对应的日志片段。报告检查仅在修改报告或测试框架时运行。文档/目录说明修改只检查命令和链接，不自动启动系统回归。
 7. 没有匹配项时，沿受影响接口补充小范围验证并说明原因；不要回退到全量扫描。新增功能先按 [临时测试规则](development/README.md) 建立专项。
@@ -18,7 +18,7 @@
 
 | 模块 / 修改范围 | 默认命令与参考数量 | 仅在这些改动时追加 |
 | --- | --- | --- |
-| 开机文字控制台、ASCII 键盘和 Shell 前端 | 普通 `dev.ps1 -BuildOnly` 后运行 `node 'Source Code/tests/host/test-console.js' <构建目录>`；9 项，`--list` 预览 | 自动保存变化加同入口 `--persistence`（3 项，支持 `--list --persistence`）及 files / persistence；键盘滚屏或行编辑显示变化加 test-terminal-model.c / test-line-model.c 宿主模型；设备授权改动追加 policy；会话等待变化加 shell-waits；不恢复 GUI 套件 |
+| 开机文字控制台、ASCII 键盘和 Shell 前端 | 普通 `dev.ps1 -BuildOnly` 后运行 `node 'Source Code/tests/host/test-console.js' <构建目录>`；9 项，`--list` 预览 | 自动保存变化加同入口 `--persistence`（3 项，支持 `--list --persistence`）及 files / persistence；键盘滚屏或行编辑显示变化加 `test-terminal-model.cpp` / `test-line-model.cpp` 宿主模型；设备授权改动追加 policy；会话等待变化加 shell-waits |
 | 引导、镜像、FAT12 启动卷 | `.\dev.ps1 -BuildOnly`，再 `node 'Source Code/tests/host/test-boot.js' '<本次普通构建目录>'`；1 项 | 涉及用户态启动/隔离时追加相应进程或内存专项 |
 | 匿名映射、懒分配、SDK 堆；`anon_map/unmap` | 下方内存命令的 `anonymous`；7 项 | 映像、高页或线程栈布局变化时追加 `images` |
 | 物理页、页表、高页、SNX、用户栈；`page_* / paging_*` | 下方内存命令的 `images`；11 项 | 涉及匿名映射/OOM 时加 `anonymous`；启动页表/物理池初始化变化时加普通启动检查 |
@@ -47,7 +47,7 @@
 | 测试计划、ID、去重或数量限制 | `node 'Source Code/tests/host/test-regression-plan.js'`；12 项 | 报告选择变化加 `test-report-summary.js --group selections`；4 项；报告文件读取变化加 `io` 组，4 项；报告契约变化选 `contracts` 组，18 项 |
 | 键盘扫描码解码 | `node 'Source Code/verify-system.js'`；1 个宿主程序 | 无需 ISO；不启动 VM |
 
-`dev.ps1 -VerifyOnly` 转入同一个 `process` 套件（8 项），不再通过窗口键盘输入或截图验证；`verify-system.js` 仅保留宿主键盘检查。GUI 测试与选择名称已删除，旧名称在构建前拒绝。
+`dev.ps1 -VerifyOnly` 运行 `process` 套件（8 项）。`verify-system.js` 运行宿主键盘检查。
 
 共享调度器/内存等底层机制确实影响多个接口时，应按实际影响追加，不能为少跑而漏掉必要边界。表中没有给出小入口的解析器、语言资源或存储故障检查，应先找到对应宿主测试或建立小专项，不以 `-Full` 代替选测。
 
@@ -55,13 +55,15 @@ task 子系统提取按实际接口选测：process 8 项、policy 2 项；Threa
 
 内核入口栈大小/生命周期变化选 process 8 项及 images 11 项，普通启动追加 1 项。KernelStack 的 9 页布局、共享内核 PTE 权限、边界读写、重复分配/释放、保护记录耗尽后的失败回滚与重试由启动自检覆盖，并在现有 process / boot 用例中断言标记，不新增 ID。编译器逐函数栈用量见 build32/*-normal.su；需要连同中断帧和实际调用链评估，不能当作整条调用链上界。
 
+物理页分配器迁移到 buddy 时，选 process 8 项、images 11 项、anonymous 7 项及普通启动 1 项，共 27 项。现有启动自检包含精确连续页分配、守护页和空闲链一致性，images 核对 E820 和 8 字节/PFN 的元数据预算，不新增 ID。
+
 调度/主循环空闲决策变化选 process 8 项、shell-waits 5 项、普通启动 1 项；后台待办查询涉及网络与 RTC 时各加对应 1 项。process 原有启动/抢占用例包含就绪/到期状态自检、实际 idle_halt 的 `sti; hlt; ret` 字节、`probe.snx /schedule` 主动让出/有限睡眠/竞争读重试，以及有界候选和空闲统计检查，不新增固定 ID。`task_schedule_stats` 仅供宿主观察，不是用户 ABI。
 
 ## VM 配置基线
 
-就绪/对象等待/定时队列共同迁移时，选 `process,completion-waits,pipe-waits,terminal-waits,shell-waits`，共 42 项；普通启动追加 1 项。真实集合算法另运行 `node 'Source Code/tests/host/test-task-queues.js'`（4 项，先 `--list`）：96 节点 FIFO/撤销、定时堆容量/取消、tick 回绕/同期限次序、移除重插；不扩大运行时 8×4 容量。启动自检覆盖对象代数复用、重复通知及到期优先；`probe.snx /schedule` 覆盖通知后条件失效重试和剩余数据交接。宿主统计布局为 60 字节，新增目标队列遍历/有限唤醒/广播/定时到期计数，不是用户 ABI。
+就绪/对象等待/定时队列共同迁移时，选 `process,completion-waits,pipe-waits,terminal-waits,shell-waits`，共 42 项；普通启动追加 1 项。真实集合算法另运行 `node 'Source Code/tests/host/test-task-queues.js'`（4 项，先 `--list`）：96 节点 FIFO/撤销、定时堆容量/取消、tick 回绕/同期限次序、移除重插。启动自检覆盖对象代数复用、重复通知及到期优先；`probe.snx /schedule` 覆盖通知后条件失效重试和剩余数据交接。宿主统计布局为 60 字节，新增目标队列遍历/有限唤醒/广播/定时到期计数，不是用户 ABI。
 
-开发、发行与普通/接口验收默认 4096 MiB RAM、单核；QMP 报告实际配置。64 MiB 运行兼容已撤销。仅定向内存边界专项允许显式 1024/2048 MiB，不恢复低内存验收。
+开发、发行与普通/接口验收默认 4096 MiB RAM、单核；QMP 报告实际配置。定向内存边界专项可显式选择 1024 或 2048 MiB。
 `node 'Source Code/tests/host/test-vm-config.js' --list` 预览，去掉 --list 执行 4 项配置宿主检查；仅 VM 参数/身份验证变化时运行，不默认追加全部基础设施测试。
 OOM 探针使用 ShellBridge 内限定只读节点与页目录的映像/页表/匿名页失败注入，退出或启动失败时清理；不耗尽整台 VM。
 
