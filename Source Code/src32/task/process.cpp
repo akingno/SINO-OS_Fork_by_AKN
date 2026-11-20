@@ -385,7 +385,8 @@ namespace task {
   int launch(const char* path, u32 caps) {
     return launchArgs(path, caps, "");
   }
-  static int launch_policy(const char*, u32, const char*, u32, int, bool console = false);
+  static int launch_policy(const char*, u32, const char*, u32, int, bool console = false,
+                           const Process* groupParent = nullptr);
   int launchArgs(const char* path, u32 caps, const char* arguments) {
     return launch_policy(path, caps, arguments, PROCESS_COMPAT, -1);
   }
@@ -449,7 +450,7 @@ namespace task {
   // 若增加内核线程、异步 I/O 或可挂起加载，应先改成每次加载独占并负责回收的缓冲。
   static u8 image_scratch[MAX_FILE];
   static int launch_policy(const char* path, u32 caps, const char* arguments,
-    u32 policy, int completion, bool console) {
+    u32 policy, int completion, bool console, const Process* groupParent) {
     int n = vfs_lookup(path);
     if (n < 0) {
       return S_NOTFOUND;
@@ -483,6 +484,15 @@ namespace task {
       return S_NOMEM;
     }
     RunData* run = completion >= 0 ? completions[objects[completion].value].run : 0;
+    if (run && groupParent) {
+      constexpr int ChildPriorityOffset = 100;
+      int score = groupParent->reclaim_priority + ChildPriorityOffset;
+      const int maxScore = (int)ReclaimClass::Background;
+      const int minScore = (int)ReclaimClass::Foreground;
+      if (score > maxScore) { score = maxScore; }
+      else if (score < minScore) { score = minScore; }
+      p->reclaim_priority = (i16)score;
+    }
 #ifdef SINO_SHELL_BRIDGE
     // 仅按只读 /boot 节点身份和精确模式启用；可写副本、普通镜像无此能力。
     const char* probe_mode = arguments;
@@ -585,6 +595,7 @@ namespace task {
     // 提交之后不再执行会失败的资源分配；完整 PID 先绑定完成记录，再进入就绪队列。
     p->pid = processIds.commit((u32)reserved);
     if (!p->pid) { panic("PID commit state", reserved, 0); }
+    p->group_id = groupParent ? groupParent->group_id : p->pid;
     identifier_stats.processes++;
     p->completion_object = (u32)(completion + 1);
     if (completion >= 0) {
@@ -611,13 +622,21 @@ namespace task {
     pr_debug(" reclaim=");
     pr_debug_hex((u32)(i32)p->reclaim_priority);
     pr_debug("\n");
+    if (groupParent) {
+      pr_debug("PROCESS group pid=");
+      pr_debug_hex(p->pid);
+      pr_debug(" id=");
+      pr_debug_hex(p->group_id);
+      pr_debug("\n");
+    }
     return (int)p->pid;
   }
   /* Both old tracked launches and bounded runs use the same startup transaction. */
   int launchConsole(void) {
     return launch_policy("/boot/conhost.snx", 0, "", PROCESS_COMPAT, -1, true);
   }
-  static int tracked_launch(Handle* owner, const char* path, const char* args, RunData* run) {
+  static int tracked_launch(Handle* owner, const char* path, const char* args, RunData* run,
+                            const Process* groupParent = nullptr) {
     int slot;
     for (slot = 0; slot < PROCESS_COMPLETIONS && completions[slot].used; slot++){
       ;
@@ -630,7 +649,7 @@ namespace task {
     int handle = handle_open(owner, object, PROCESS_WAIT | PROCESS_CANCEL);
     if (handle < 0) { object_unref(object); return handle; }
     objects[object].refs++;
-    int pid = launch_policy(path, 0, args, PROCESS_STRICT, object);
+    int pid = launch_policy(path, 0, args, PROCESS_STRICT, object, false, groupParent);
     if (pid < 0) {
       handle_close(owner, (u32)handle);
       object_unref(object);
@@ -651,7 +670,7 @@ namespace task {
     return 0;
   }
   int interactiveStart(Handle* owner, const InteractiveSpec* spec,
-    int directory, void* session, u32* pid) {
+    int directory, void* session, u32 shellPid, u32* pid) {
     if (spec->size != sizeof(*spec) || spec->version != 1 ||
       spec->argc > RUN_ARGC || spec->bytes > RUN_ARGS ||
       (spec->rights & ~(FS_RIGHTS & ~FS_DELEGATE)) ||
@@ -696,6 +715,10 @@ namespace task {
     if (n < 0 || !nodes[n].readonly || nodes[n].boot < 0) {
       return S_DENIED;
     }
+    const Process* shell = shellPid ? findProcess(shellPid) : nullptr;
+    if (shellPid && (!shell || shell->state != 1 || !shell->interactive)) {
+      return S_CLOSED;
+    }
     int grant = -1;
     if (spec->rights) {
       grant = filesys_acquire_directory(owner, directory, spec->rights);
@@ -716,7 +739,7 @@ namespace task {
     cli->argv_bytes = spec->bytes;
     memcpy(cli->offsets, spec->offsets, sizeof(cli->offsets));
     memcpy(cli->bytes, spec->argv, spec->bytes);
-    int h = tracked_launch(owner, path, "", 0);
+    int h = tracked_launch(owner, path, "", nullptr, shell);
     if (h < 0) {
       kpage_free(cli);
       if (grant >= 0) {
@@ -783,7 +806,7 @@ namespace task {
   * 替换方向：将进程启动、完成观察与有限捕获分开，仅为使用捕获的角色分配
   * 缓冲；管线成员先全部启动，再统一等待，启动失败时关闭端点并回收已启动成员。 */
   int runStartBound(Handle* owner, const RunSpec* spec, u32 directory, u32 rights,
-    const u32* streams) {
+    const u32* streams, const Process* parent) {
     if (spec->size != sizeof(RunSpec) || spec->version != 1 || spec->flags ||
       spec->reserved || spec->argc > RUN_ARGC || spec->argv_bytes > RUN_ARGS ||
       spec->input_bytes > RUN_BYTES || spec->timeout_ticks > RUN_TIMEOUT_MAX ||
@@ -855,7 +878,7 @@ namespace task {
         }
       }
     }
-    return tracked_launch(owner, run->path, "", run);
+    return tracked_launch(owner, run->path, "", run, parent);
   }
   static int run_result(const Object* object, RunResult* out) {
     int slot = object->value;
@@ -1172,7 +1195,7 @@ namespace task {
     case SYS_EVENT_CREATE: case SYS_EVENT_SET: case SYS_EVENT_WAIT: case SYS_EVENT_WAIT_BLOCK:
     case SYS_DIRECTORY_COMMIT: case SYS_TIME: case SYS_CALENDAR: case SYS_UI_LANGUAGE:
     case SYS_SYSTEM_INFO: case SYS_START_INFO:
-    case SYS_PROCESS_RESULT: case SYS_PROCESS_CANCEL:
+    case SYS_PROCESS_RESULT: case SYS_PROCESS_CANCEL: case SYS_PROCESS_GROUP:
     case SYS_CLI_INFO: case SYS_STREAM_READ: case SYS_STREAM_WRITE:
     case SYS_RUN_RESULT: case SYS_RUN_READ: case SYS_RUN_LIMITS:
     case SYS_START_DIRECTORY: case SYS_OPEN_AT:
@@ -1381,7 +1404,7 @@ namespace task {
           UACCESS_TRY(uaccess_prepare(user_pd, spec.input, spec.input_bytes, UserAccess::READ));
         }
         spec.path = (u32)path;
-        return runStartBound(current->handles, &spec, directory, rights, streams);
+        return runStartBound(current->handles, &spec, directory, rights, streams, current);
       }
     case SYS_RUN_LIMITS: {
         if (c || b < sizeof(RunLimits)) {
@@ -1523,6 +1546,8 @@ namespace task {
         return S_INVALID;
       }
       return cancelOwned(current->handles, a);
+    case SYS_PROCESS_GROUP:
+      return a || b || c ? S_INVALID : (int)current->group_id;
     case SYS_SYSTEM_INFO: {
         if (c || b < sizeof(SystemInfo)) {
           return S_INVALID;
@@ -1996,35 +2021,40 @@ namespace task {
     reapProcesses();
   }
 
-  static bool hasDeferredFault(const Process& process) {
+  static bool reclaimEligible(const Process& process) {
+    if (process.state != 1 || !process.pd || process.reclaim_priority < 0) { return false; }
     for (const auto& thread : process.thread) {
-      if (thread.anonFaultPage) { return true; }
+      if (thread.anonFaultPage) { return false; }
     }
-    return false;
+    return true;
   }
   bool reclaimLowest() {
-    u32 pid, pages;
-    i16 priority;
+    Process* victim = nullptr;
     {
       sync::IrqGuard guard;
-      Process* victim = nullptr;
       for (auto& p : processes) {
-        if (p.state != 1 || !p.pd || p.reclaim_priority < 0 || hasDeferredFault(p)) {
-          continue;
-        }
+        if (!reclaimEligible(p)) { continue; }
         if (!victim || p.reclaim_priority > victim->reclaim_priority ||
             (p.reclaim_priority == victim->reclaim_priority && p.pages_used > victim->pages_used)) {
           victim = &p;
         }
       }
       if (!victim) { return false; }
-      pid = victim->pid;
-      priority = victim->reclaim_priority;
-      pages = victim->pages_used;
       victim->retire(PROCESS_KILLED, 0);
     }
+    const u32 pid = victim->pid;
+    const u32 pages = victim->pages_used;
+    const i16 priority = victim->reclaim_priority;
+    const u32 group = victim->group_id;
+    // Retire eligible peers before closing any handles so their exit reason wins.
+    // Process retirement is serialized on this CPU. Peers stay on the reap queue.
+    for (auto& peer : processes) {
+      if (peer.group_id == group && reclaimEligible(peer)) {
+        peer.retire(PROCESS_KILLED, 0);
+      }
+    }
     const u32 before = free_pages;
-    reapProcesses();
+    release(victim);
     pr_debug("MEM reclaim pid=");
     pr_debug_hex(pid);
     pr_debug(" priority=");

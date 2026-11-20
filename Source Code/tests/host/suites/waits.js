@@ -25,6 +25,11 @@ async function shell(api) {
             assert.deepEqual(updates.map(([, name, , score]) => [name, Number(score)]),
                 [['gsh', 0], ['gsh', 200], ['gcmd', 0], ['gsh', 0]]);
             assert.equal(new Set(updates.filter(([, name]) => name === 'gsh').map(([, , pid]) => pid)).size, 1);
+            const shellPid = updates[0][2];
+            const commandPid = updates[2][2];
+            assert.deepEqual([...log().matchAll(/PROCESS group pid=(0x[0-9A-F]{8}) id=(0x[0-9A-F]{8})\n/g)]
+                .map(([, pid, group]) => [pid, group]), [[commandPid, shellPid]],
+                'each session root starts a group and the command inherits the shell group');
         }
     });
     await checkedProbe(api, 'headless Shell broker failure', 'brokerqa', 'shell-error', /SHELL PASS/);

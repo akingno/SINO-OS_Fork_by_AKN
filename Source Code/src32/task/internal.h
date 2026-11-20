@@ -67,6 +67,7 @@ enum class ReclaimClass : i16 {
 };
 struct Process {
   u32 pid, state, caps;
+  u32 group_id;
   int code;
   u32* pd;
   u32 abi, code_end;
@@ -130,7 +131,8 @@ void terminalWake(u32 a0);
 void interactiveWake(u32 a0);
 int runStart(Handle * a0, const RunSpec * a1);
 int runStartDirectory(Handle * a0, const RunSpec * a1, u32 a2, u32 a3);
-int runStartBound(Handle * a0, const RunSpec * a1, u32 a2, u32 a3, const u32 * a4);
+int runStartBound(Handle* owner, const RunSpec* spec, u32 directory, u32 rights,
+                  const u32* streams, const Process* parent = nullptr);
 int runResult(Handle * a0, u32 a1, RunResult * a2);
 int runRead(Handle * a0, u32 a1, u32 a2, u32 a3, void * a4, u32 a5);
 int cancelOwned(Handle * a0, u32 a1);
@@ -138,7 +140,6 @@ Handle* terminalTarget(Handle* a0, u32 a1, u32* a2);
 Handle* interactiveHandles(u32 a0);
 int terminalCancel(u32 a0);
 int interactiveResult(Handle* a0, u32 a1, ProcessCompletion* a2);
-int interactiveStart(Handle* a0, const InteractiveSpec* a1, int a2, void* a3, u32* a4);
 void runLimits(RunLimits * a0);
 int list(ProcessInfo * a0, u32 a1);
 int alive(u32 a0);

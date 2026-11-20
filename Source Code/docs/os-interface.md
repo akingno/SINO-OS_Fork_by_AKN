@@ -48,7 +48,8 @@ THREAD_WAIT=16384.
 `FEATURE_EVENT_WAIT=32768` advertises explicit blocking manual-reset event waits.
 `FEATURE_THREAD_JOIN=65536` advertises argument-bearing threads and join/detach.
 `FEATURE_RECLAIM=131072` advertises per-process reclaim priority queries and updates.
-The current feature mask is 262143. Clients detect features by testing individual bits.
+`FEATURE_PROCESS_GROUP=262144` advertises reclaim groups and the self-query.
+The current feature mask is 524287. Clients detect features by testing individual bits.
 These indicate implemented mechanisms, not grants to use every mechanism.
 Unknown feature bits must not be interpreted as authority. Unknown syscalls
 return S_INVALID. Add future syscall IDs before SYS_CALL_END; the sentinel is not
@@ -56,8 +57,8 @@ a callable interface. Strict policy remains a default-deny allowlist.
 
 ## Reclaim priority
 
-The kernel starts compatibility processes at 200 and strict processes, including
-managed runs, at 400. The trusted boot console host starts at -800. Interactive
+The kernel starts compatibility processes at 200 and independent strict
+processes at 400. The trusted boot console host starts at -800. Interactive
 clients with terminal-bound `CliInfo` have score 0 in the foreground and 200
 after giving it up. The terminal changes those scores as part of its existing
 foreground handoff. Higher scores are preferred for reclaim during critical
@@ -76,7 +77,26 @@ Invalid selectors, reserved arguments, output ranges or scores return
 `S_INVALID`. Query uses the standard checked user copy and may return `S_NOMEM`
 if preparing an anonymous output page fails. The SDK exposes
 `QueryReclaimPriority` and `SetReclaimPriority`. Existing ABI layouts are
-unchanged. `SYS_CALL_END` is `0x157`.
+unchanged.
+
+## Process groups
+
+`SYS_PROCESS_GROUP=0x157` returns the caller's positive group ID. EBX, ECX and
+EDX must be zero. Both strict and compatibility processes can use the query
+through `ProcessGroup()` in the SDK. Nonzero arguments return `S_INVALID`.
+`SYS_CALL_END` is `0x158`.
+
+Independent launches use their full PID as the group ID. This includes ordinary
+and tracked spawn, host-managed runs, and each new interactive session root.
+Runs launched with `SYS_RUN_START` inherit the caller's group and start at the
+caller's reclaim score plus 100, clamped to 0–400. Interactive commands inherit
+the requesting shell's group and keep the terminal's foreground scoring rules.
+
+Group IDs remain stable if the original process exits. Full PID generations keep
+remaining group members separate from later occupants of the same process slot.
+Membership affects memory reclaim only. Ordinary termination and cancellation use
+the existing process and object rules, and completion records remain independent.
+See [memory watermarks](mm-access.md#物理页水位与匿名回收).
 
 ## Thread-level waiting
 

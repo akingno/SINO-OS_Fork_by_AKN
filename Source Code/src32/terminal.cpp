@@ -456,8 +456,10 @@ static int interactive_call(Terminal* t, Client* c, Object* control,
       (q->program == IX_BOOTCOPY && (!t->desktop || !(t->rights & FS_COMMIT))) ||
       (role && directory && !boot && (u32)(directory - objects) + 1 != t->root)) {
     status = S_DENIED;
-  } else
-    status = process_interactive_start(owner, q, r->value, t, &child);
+  } else {
+    // The shell submitted the command. A new session has no shell parent yet.
+    status = task::interactiveStart(owner, q, r->value, t, role ? t->shell : 0, &child);
+  }
   if (status >= 0) {
     if (role) {
       t->task = child;

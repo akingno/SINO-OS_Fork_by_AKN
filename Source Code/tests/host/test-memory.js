@@ -350,6 +350,64 @@ async function reclaimContracts(source) {
                 assert.equal(await command('echo responsive'), 'responsive\n');
             } finally { await cleanup(); }
         });
+
+        await check('memory.reclaim.process-group-lifetime', ['managed group inheritance, deferred peer cleanup and PID generation isolation'], async () => {
+            async function startGroup(mode, expectedScore) {
+                const offset = guestLog().length;
+                const parent = await launch(mode, 'RECLAIM GROUP PARENT ', false);
+                await until(() => {
+                    const log = guestLog().slice(offset);
+                    return log.includes(`RECLAIM GROUP PARENT ${parent}\n`) &&
+                        log.includes(`RECLAIM GROUP MEMBER ${parent}\n`);
+                });
+                const log = guestLog().slice(offset);
+                const launches = [...log.matchAll(/PROCESS start reclaim\.snx pid=(0x[\da-f]+) reclaim=(0x[\da-f]+)/gi)];
+                assert.equal(launches.length, 3, 'parent, completed child and live child');
+                const [, childPid, score] = launches[2];
+                assert.equal(Number(score), expectedScore);
+                assert.match(log, new RegExp(`PROCESS group pid=${childPid} id=0x[\\da-f]+`, 'i'));
+                return {parent, child:Number(childPid)};
+            }
+
+            try {
+                const session = new RunSession(channel);
+                await session.hello();
+                const standalone = await session.run('/boot/reclaim.snx', ['group-id']);
+                assert.equal(standalone.reason, 1);
+                assert.equal(standalone.code, standalone.pid, 'host-managed run starts its own group');
+
+                const unrelated = await launch('hold-small', 'RECLAIM HOLD READY', false);
+                const unrelatedFree = await currentFree();
+                const {parent, child} = await startGroup('group-parent', 300);
+                assert.deepEqual(await processes(), new Map([[unrelated, 2], [parent, 1], [child, 2]]));
+                const available = await currentFree();
+                const offset = guestLog().length;
+                await override(available + 1, available + 256, 2);
+                await until(async () => (await processes()).size === 1 && await currentFree() === unrelatedFree);
+                const reaped = victims(guestLog().slice(offset));
+                assert.deepEqual(reaped.map(item => item.pid), [child], 'only one primary victim is selected');
+                assert.equal(reaped[0].before, available);
+                assert(reaped[0].after > available && reaped[0].after < unrelatedFree,
+                    'the primary releases first and its peer releases in the next pass');
+                assert.deepEqual(await processes(), new Map([[unrelated, 2]]));
+            } finally { await cleanup(); }
+
+            try {
+                const {parent, child} = await startGroup('group-parent-max', 400);
+                await command(`kill ${parent}`);
+                await until(async () => !(await processes()).has(parent));
+                assert.deepEqual(await processes(), new Map([[child, 2]]), 'ordinary kill does not propagate to the group');
+                const replacement = await launch('hold-small', 'RECLAIM HOLD READY', false);
+                assert.equal(replacement & 0x7f, parent & 0x7f);
+                assert.notEqual(replacement, parent);
+                const available = await currentFree();
+                const offset = guestLog().length;
+                await override(available + 1, available + 256, 2);
+                await until(async () => !(await processes()).has(child));
+                assert.deepEqual(victims(guestLog().slice(offset)).map(item => item.pid), [child]);
+                assert.deepEqual(await processes(), new Map([[replacement, 2]]), 'reused PID slot is a different group');
+            } finally { await cleanup(); }
+        });
     });
 }
 

@@ -33,7 +33,6 @@ Handle* process_terminal_target(Handle*,u32,u32*);
 Handle* process_interactive_handles(u32);
 int process_terminal_cancel(u32);
 int process_interactive_result(Handle*,u32,ProcessCompletion*);
-int process_interactive_start(Handle*,const InteractiveSpec*,int,void*,u32*);
 void process_run_limits(RunLimits *);
 int process_list(ProcessInfo *, u32);
 int process_alive(u32);
@@ -46,6 +45,10 @@ u32 process_user_limit(const u32* pd, u32 address);
 void process_tests(void);
 #ifdef __cplusplus
 }
-namespace task { void terminalForeground(u32 pid, bool foreground); }
+namespace task {
+void terminalForeground(u32 pid, bool foreground);
+int interactiveStart(Handle* owner, const InteractiveSpec* spec, int directory,
+                     void* session, u32 shellPid, u32* pid);
+}
 #endif
 #endif

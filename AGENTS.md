@@ -102,7 +102,8 @@ Shell 宿主测试参数：`-ExpectedExitCode 1` 断言预期失败，`-TimeoutS
 | 调度、故障回收 | src32/task/scheduler.cpp:step / interrupt；task/process.cpp:release；src32/entry.asm | `regression.ps1 -Suite process`；8 项 |
 | 系统调用与权限 | src32/api.h → src32/task/process.cpp:dispatchSyscall → src32/object.cpp；同步 user/sdk.h | `regression.ps1 -Suite policy`；契约 docs/os-interface.md |
 | 内存回收优先级 | src32/task/process.cpp:launch_policy / SYS_RECLAIM_PRIORITY；src32/terminal.cpp:set_foreground | `regression.ps1 -Suite 'process,policy,shell-waits'` 15 项 + 普通启动 1 项；契约 docs/os-interface.md |
-| 物理页水位与回收 | src32/mm/page.cpp:page_watermark；task/process.cpp:reclaimLowest；task/scheduler.cpp:step / retryAnonFault | `node 'Source Code/tests/host/test-memory.js' reclaim '<ShellBridge 构建目录>'` 4 项（`reclaim --list`）；本轮再选 images 11、anonymous 7、process 8、shell-waits 5、普通启动 1，共 36 项；契约 docs/mm-access.md |
+| 物理页水位与回收 | src32/mm/page.cpp:page_watermark；task/process.cpp:reclaimLowest；task/scheduler.cpp:step / retryAnonFault | `node 'Source Code/tests/host/test-memory.js' reclaim '<ShellBridge 构建目录>'` 5 项（`reclaim --list`）；契约 docs/mm-access.md |
+| 进程组 | src32/task/process.cpp:SYS_PROCESS_GROUP / runStartBound / interactiveStart / reclaimLowest | `regression.ps1 -Suite 'process,cli,shell-waits'` 14 项、`reclaim` 5 项、普通启动 1 项；契约 docs/os-interface.md |
 | 完成记录 | src32/task/process.cpp:release / SYS_SPAWN_TRACKED / SYS_PROCESS_RESULT | `regression.ps1 -Suite completion`；契约 docs/os-interface.md |
 | 进程完成阻塞等待 | src32/task/process.cpp:release / user_completion_result / retry_wait；tests/guest/completion_tests.cpp | `tests/host/test-completion-waits.js <ShellBridge 构建目录>`（8 项）；契约 docs/os-interface.md |
 | 有限 CLI | src32/task/process.cpp:process_run_start、run_bridge.cpp、shell_bridge.cpp | `regression.ps1 -Suite cli` / `managed-cli`；run.ps1；契约 docs/bounded-cli.md |
@@ -136,9 +137,10 @@ task 提取契约见 [task-subsystem.md](Source Code/docs/task-subsystem.md)。C
 - task::step 按就绪 FIFO 长度快照限制候选，至多派发一个线程；对象等待按索引/代数/原因定位，Yield/等待/有限运行期限使用可撤销堆，退出进入独立回收队列，不在正常调度/唤醒中全扫线程。主循环 IF=0 复查后调用 idle_halt（sti/hlt/ret）。仅空闲策略变更选 process 8 + shell-waits 5 + 普通启动 1，网络/RTC 待办变化各加 1；三类等待共同迁移选 process 8 + 三类 waits 29 + shell-waits 5 + 普通启动 1 + test-task-queues.js 4（--list），合计 47。task_schedule_stats 为 60 字节宿主观察布局，不是用户 ABI。
 - 底层 Write 更新内存、Sync 提交用户目录快照；可写 gsh 的写入/创建/改名/删除命令成功后自动提交，再返回提示符，无需手动 sync；`/boot` 只读
 - 启动镜像 2.88 MB，布局入口 `src32/boot-layout.h`
-- Feature 掩码 262143（18 个已实现机制），含 FEATURE_EVENT_WAIT=32768、FEATURE_THREAD_JOIN=65536、FEATURE_RECLAIM=131072；SYS_EVENT_WAIT_BLOCK=0x151，THREAD_CREATE/JOIN/DETACH/EXIT_CODE=0x152..0x155，SYS_RECLAIM_PRIORITY=0x156，旧编号保持。Event 专项 `node 'Source Code/tests/host/test-event-waits.js' '<ShellBridge 构建目录>'` 为 8 项（--list）。线程专项 `test-thread-waits.js <ShellBridge 构建目录>` 8 项（--list）；含 v1/v2 参数/帧、结果/栈回收、超时/输出失效、单消费者与拒绝外进程 TID、detach/复用及退出清理，本轮加 process 8 + policy 2 + images 11 + Event 8 + completion-waits 8 + 普通启动 1，共 46 项，详见模块指南。
-- 回收优先级独立于 CPU 调度。可信启动 conhost 为 −800，兼容进程默认 200，严格及 managed run 默认 400，带交互 CliInfo 的进程按终端前后台在 0 与 200 间切换。兼容且至少有一项能力的进程可查询自身评分，并在 0–400 内调高。
-- 物理页空闲比例按已发布页池计算。5%–15% 为 LOW，低于 5% 为 CRITICAL；两者都限制评分 400 的新匿名区。在 CRITICAL 时每轮 `task::step()` 最多回收一个进程，保护负分和等待匿名缺页重试的进程。Ring 3 数据页 OOM 延后一次。匿名页表 OOM 回退数据页并单独记录，无效映射返回 `S_INVALID`，两类 OOM 在系统调用边界返回 `S_NOMEM`。
+- Feature 掩码 524287（19 个已实现机制），含 FEATURE_EVENT_WAIT=32768、FEATURE_THREAD_JOIN=65536、FEATURE_RECLAIM=131072、FEATURE_PROCESS_GROUP=262144；SYS_EVENT_WAIT_BLOCK=0x151，THREAD_CREATE/JOIN/DETACH/EXIT_CODE=0x152..0x155，SYS_RECLAIM_PRIORITY=0x156，SYS_PROCESS_GROUP=0x157，旧编号保持。Event 专项 `node 'Source Code/tests/host/test-event-waits.js' '<ShellBridge 构建目录>'` 为 8 项（--list）。线程专项 `test-thread-waits.js <ShellBridge 构建目录>` 8 项（--list）；含 v1/v2 参数/帧、结果/栈回收、超时/输出失效、单消费者与拒绝外进程 TID、detach/复用及退出清理，本轮加 process 8 + policy 2 + images 11 + Event 8 + completion-waits 8 + 普通启动 1，共 46 项，详见模块指南。
+- 回收优先级独立于 CPU 调度。可信启动 conhost 为 −800，兼容进程默认 200，独立严格进程默认 400，带交互 CliInfo 的进程按终端前后台在 0 与 200 间切换。兼容且至少有一项能力的进程可查询自身评分，并在 0–400 内调高。
+- 独立启动、宿主 managed run 和新终端会话根进程以自身完整 PID 为组号。`SYS_RUN_START` 继承调用者的组及评分加 100，评分限于 0–400。交互命令继承发起请求的 Shell 的组。`SYS_PROCESS_GROUP` 查询自身组。
+- 物理页空闲比例按已发布页池计算。5%–15% 为 LOW，低于 5% 为 CRITICAL；两者都限制评分 400 的新匿名区。在 CRITICAL 时每轮 `task::step()` 最多选择一个直接回收对象，同组其他合格成员下一轮释放。负分和等待匿名缺页重试的进程受保护。Ring 3 数据页 OOM 延后一次。匿名页表 OOM 回退数据页并单独记录，无效映射返回 `S_INVALID`，两类 OOM 在系统调用边界返回 `S_NOMEM`。
 - 新线程主槽保留，3 个 worker 槽含 joinable 退出记录；栈退出即回收，记录由成功 join（含非阻塞 query）或 detach 消费，最后活动线程不会被未领取记录保活。每条 joinable 记录占 1 个私有 THREAD Object，共用 256 对象预算；TID 为全局不回绕 28 位代数加 3 位槽号，耗尽返回 S_LIMIT。join 只允许同进程，一个阻塞消费者占用目标；旧 SYS_THREAD 仍返回原始槽号。
 - PID 是正整数 `(每槽 24 位代数 << 7) | (进程槽 + 1)`，仅完整比较；失败预留不消耗代数，资源回收完成才复用槽。Object 为每槽 32 位不回绕代数；Handle 保持 `(23 位 cookie << 8) | (句柄槽 + 1)`，cookie 按槽号全局计数、均衡选空槽，不按进程重置。达到末代后退役/返回 S_LIMIT，详见 [identifier-lifetime.md](Source Code/docs/identifier-lifetime.md)。PID 专项 `test-pids.js <ShellBridge 目录>` 8 项、宿主 `test-identifiers.js` 6 项（均 --list），本轮选择共 47 项，详见 TESTING.md。
 - 网络仅回环；宿主桥接和服务器通道是规划
@@ -146,7 +148,7 @@ task 提取契约见 [task-subsystem.md](Source Code/docs/task-subsystem.md)。C
 - 管道读写、完成记录查询、终端字节读取、交互命令结果和手动复位 Event 支持显式线程级阻塞，超时为 0 表示无限等待，有限等待最多 60000 tick；Event 查询保留非阻塞，SDK 为 sino::event
 - 通用子进程委托、cwd/env 继承尚未实现
 
-独立 VM 配置宿主检查：`node 'Source Code/tests/host/test-vm-config.js'`，4 项，`--list` 预览。内存专项 images 11 项、anonymous 7 项、reclaim 4 项；OOM 为 ShellBridge 只读探针绑定页目录的定向注入，普通镜像不含注入后端。
+独立 VM 配置宿主检查：`node 'Source Code/tests/host/test-vm-config.js'`，4 项，`--list` 预览。内存专项 images 11 项、anonymous 7 项、reclaim 5 项；OOM 为 ShellBridge 只读探针绑定页目录的定向注入，普通镜像不含注入后端。
 
 ## 新代码约定
 

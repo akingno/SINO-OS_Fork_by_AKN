@@ -1,4 +1,6 @@
-#include "sdk.h"
+#include "stream.h"
+
+static_assert(SYS_PROCESS_GROUP == 0x157 && FEATURE_PROCESS_GROUP == 262144u, "process group ABI");
 
 namespace {
 constexpr u32 PageBytes = 4096;
@@ -21,6 +23,33 @@ volatile u8* reserve(u32 pages) {
   require(base > 0, "reserve anonymous memory before pressure");
   return (volatile u8*)(u32)base;
 }
+
+int queryGroup() {
+  SystemInfo info;
+  const int group = ProcessGroup();
+  require(QuerySystemInfo(&info) == S_OK && (info.features & FEATURE_PROCESS_GROUP) && group > 0,
+          "process group feature and positive self query");
+  require(api(0x157, 1, 0, 0) == S_INVALID && api(0x157, 0, 1, 0) == S_INVALID &&
+          api(0x157, 0, 0, 1) == S_INVALID, "process group rejects arguments");
+  return group;
+}
+
+int startGroupChild(const char* mode) {
+  const u32 offset = 0;
+  const RunSpec spec = {sizeof(spec), 1, 0, (u32)"/boot/reclaim.snx", 1,
+                       strlen(mode) + 1, (u32)mode, (u32)&offset, 0, 0, 0, 0};
+  const int child = StartRun(&spec);
+  require(child > 0, "start managed group child");
+  return child;
+}
+
+void logGroup(const char* label, int group) {
+  char text[11];
+  number((u32)group, text);
+  Log(label);
+  Log(text);
+  Log("\n");
+}
 }
 
 int main() {
@@ -28,6 +57,31 @@ int main() {
   CliInfo cli;
   char* argv[2];
   if (!*mode && CliArguments(&cli, argv, 2) == 1) { mode = argv[0]; }
+
+  if (streq(mode, "group-id")) { return queryGroup(); }
+  if (streq(mode, "group-hold")) {
+    volatile u8* memory = reserve(2);
+    memory[0] = memory[PageBytes] = 1;
+    logGroup("RECLAIM GROUP MEMBER ", queryGroup());
+    hold();
+  }
+  if (streq(mode, "group-parent") || streq(mode, "group-parent-max")) {
+    if (streq(mode, "group-parent-max")) {
+      require(SetReclaimPriority(350) == S_OK, "raise parent score before managed run");
+    }
+    const int group = queryGroup();
+    const int shortChild = startGroupChild("group-id");
+    ProcessCompletion result;
+    require(ProcessWaitFor(shortChild, &result, 500) == S_OK && result.pid != (u32)group &&
+            result.reason == PROCESS_EXITED && result.code == group,
+            "managed child inherits group and publishes its own completion");
+    require(Close(shortChild) == S_OK, "close completed child handle");
+    volatile u8* memory = reserve(1);
+    *memory = 1;
+    startGroupChild("group-hold");
+    logGroup("RECLAIM GROUP PARENT ", group);
+    hold();
+  }
 
   if (streq(mode, "low")) {
     volatile u8* reserved = reserve(2);

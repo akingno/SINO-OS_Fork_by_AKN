@@ -26,7 +26,6 @@ extern "C" {
   Handle* process_interactive_handles(u32 a0) { return task::interactiveHandles(a0); }
   int process_terminal_cancel(u32 a0) { return task::terminalCancel(a0); }
   int process_interactive_result(Handle* a0, u32 a1, ProcessCompletion* a2) { return task::interactiveResult(a0, a1, a2); }
-  int process_interactive_start(Handle* a0, const InteractiveSpec* a1, int a2, void* a3, u32* a4) { return task::interactiveStart(a0, a1, a2, a3, a4); }
   void process_run_limits(RunLimits * a0) { task::runLimits(a0); }
   int process_list(ProcessInfo * a0, u32 a1) { return task::list(a0, a1); }
   int process_alive(u32 a0) { return task::alive(a0); }

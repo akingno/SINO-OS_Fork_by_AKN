@@ -100,6 +100,10 @@
     {
       "id": "memory.reclaim.exhaustion-preserves-failure-contracts",
       "name": "no eligible victim preserves syscall OOM and contains the retried fault"
+    },
+    {
+      "id": "memory.reclaim.process-group-lifetime",
+      "name": "managed group inheritance, deferred peer cleanup and PID generation isolation"
     }
   ],
   "anonymous": [
