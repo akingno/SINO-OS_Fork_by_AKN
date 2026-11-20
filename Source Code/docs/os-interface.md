@@ -31,7 +31,7 @@ All fields below are little-endian u32, in listed order, aligned to four bytes.
 
 SystemInfo (48 bytes): size, version, features, ticks_hz, max_processes,
 max_threads, max_handles, max_objects, max_file, image_bytes, stack_bytes, reserved.
-Current values after the first three fields: 100, 8, 4, 24, 64, 65536, 16777216,
+Current values after the first three fields: 100, 64, 4, 24, 256, 65536, 16777216,
 16384, 0. Limits describe current hard maxima, not available capacity or a promise
 that allocation will succeed. ticks_hz is the current PIT frequency.
 
@@ -47,11 +47,36 @@ WORKSPACE=512, LINE_EDIT=1024, ANON_MEMORY=2048, ANON_LAZY=4096, SNX_V2=8192,
 THREAD_WAIT=16384.
 `FEATURE_EVENT_WAIT=32768` advertises explicit blocking manual-reset event waits.
 `FEATURE_THREAD_JOIN=65536` advertises argument-bearing threads and join/detach.
-The current feature mask is 131071. Clients detect features by testing individual bits.
+`FEATURE_RECLAIM=131072` advertises per-process reclaim priority queries and updates.
+The current feature mask is 262143. Clients detect features by testing individual bits.
 These indicate implemented mechanisms, not grants to use every mechanism.
 Unknown feature bits must not be interpreted as authority. Unknown syscalls
 return S_INVALID. Add future syscall IDs before SYS_CALL_END; the sentinel is not
 a callable interface. Strict policy remains a default-deny allowlist.
+
+## Reclaim priority
+
+The kernel starts compatibility processes at 200 and strict processes, including
+managed runs, at 400. The trusted boot console host starts at -800. Interactive
+clients with terminal-bound `CliInfo` have score 0 in the foreground and 200
+after giving it up. The terminal changes those scores as part of its existing
+foreground handoff. Higher scores are intended for earlier memory reclaim.
+Phase B only provides scoring. CPU scheduling is independent of the score.
+
+`SYS_RECLAIM_PRIORITY=0x156` applies to the calling process. Compatibility
+callers need at least one granted capability bit. Restricted or capability-free
+callers receive `S_DENIED` before argument or output validation.
+
+| Operation | EBX | ECX | EDX | Result |
+| --- | --- | --- | --- | --- |
+| `Query` | 0 | Writable pointer to an `i32` | 0 | Writes the signed score and returns `S_OK` |
+| `Set` | 1 | New score, 0 through 400 | 0 | Returns `S_OK` for an equal or higher score, `S_DENIED` for a lower in-range score |
+
+Invalid selectors, reserved arguments, output ranges or scores return
+`S_INVALID`. Query uses the standard checked user copy and may return `S_NOMEM`
+if preparing an anonymous output page fails. The SDK exposes
+`QueryReclaimPriority` and `SetReclaimPriority`. Existing ABI layouts are
+unchanged. `SYS_CALL_END` is `0x157`.
 
 ## Thread-level waiting
 
@@ -70,7 +95,7 @@ handles return S_BADHANDLE. A pre-set event returns S_OK immediately. Otherwise
 only the calling thread parks using the common generation-keyed wait queue.
 Strict and compatibility callers may use this local mechanism; no cross-process
 handle lookup or new delegation is provided. Old syscall numbers and query
-structure layouts are unchanged; SYS_CALL_END is now 0x156 after the thread calls below.
+structure layouts are unchanged.
 
 Notification permits a retry under the waiting process's address space. Reset
 before retry causes the wait to resume with its original deadline. Expiry is

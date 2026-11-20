@@ -49,6 +49,8 @@ static_assert(SYS_DROP_ZONES == 0x12d, "ABI 1 syscall number");
 static_assert(SYS_WINDOW_SIZE == 0x12e, "ABI 1 syscall number");
 #define QUERY_SYSTEM 0x12fu
 #define QUERY_START 0x130u
+static_assert(SYS_RECLAIM_PRIORITY == 0x156 && FEATURE_RECLAIM == 131072u,
+              "reclaim priority ABI");
 static u32 buffer[16];
 static volatile int done;
 static volatile u32 paging_cookie;
@@ -141,7 +143,7 @@ static void query_tests(int strict) {
           api(QUERY_START,0xffffffffu,24,0)==S_INVALID,"query output rights");
   require(api(QUERY_SYSTEM,(u32)buffer,64,0)==0,"system query available");
   require(buffer[0]==48 && buffer[1]==1 && (buffer[2]&7)==7 && buffer[3]==100 &&
-          buffer[4]==8 && buffer[5]==4 && buffer[6]==24 && buffer[7]==64 &&
+          buffer[4]==64 && buffer[5]==4 && buffer[6]==24 && buffer[7]==256 &&
           buffer[8]==65536 && buffer[9]==SNX_V2_IMAGE_BYTES && buffer[10]==16384 &&
           buffer[11]==0 && buffer[12]==0xccccccccu,"system wire layout and tail");
   for(u32 i=0;i<16;i++) buffer[i]=0xccccccccu;
@@ -163,6 +165,28 @@ static void query_tests(int strict) {
   require(api(SYS_DIRECTORY_COMMIT,0,(u32)buffer,sizeof(CommitInfo))==S_BADHANDLE && buffer[0]==0xccccccccu,"directory commit requires owned authorization and preserves output");
   require(api(0xffffffffu,0,0,0)==S_INVALID,"unknown syscall");
 }
+static void reclaim_priority_tests(int strict) {
+  StartInfo start;
+  require(QueryStartInfo(&start) == S_OK && (start.features & FEATURE_RECLAIM),
+          "reclaim priority feature discovery");
+  i32 score = -123;
+  if (strict) {
+    require(QueryReclaimPriority(&score) == S_DENIED && score == -123 &&
+            SetReclaimPriority(400) == S_DENIED, "strict reclaim calls denied");
+    return;
+  }
+  require(QueryReclaimPriority(&score) == S_OK && score == 200, "compat initial reclaim score");
+  require(api(0x156, 0, USER_BASE, 0) == S_INVALID &&
+          api(0x156, 0, (u32)&score, 1) == S_INVALID && score == 200 &&
+          api(0x156, 2, 0, 0) == S_INVALID, "reclaim query pointer and selectors");
+  require(SetReclaimPriority(-1) == S_INVALID && SetReclaimPriority(401) == S_INVALID &&
+          SetReclaimPriority(199) == S_DENIED, "reclaim bounds and no added protection");
+  require(api(0x156, 1, 250, 1) == S_INVALID && QueryReclaimPriority(&score) == S_OK &&
+          score == 200, "invalid reclaim update leaves score intact");
+  require(SetReclaimPriority(250) == S_OK && SetReclaimPriority(400) == S_OK &&
+          SetReclaimPriority(400) == S_OK && SetReclaimPriority(250) == S_DENIED &&
+          QueryReclaimPriority(&score) == S_OK && score == 400, "reclaim score can only increase");
+}
 int main(void) {
   if (streq(Arguments(), "paging-a")) return paging_tests(1);
   if (streq(Arguments(), "paging-b")) return paging_tests(2);
@@ -170,6 +194,7 @@ int main(void) {
   if (streq(Arguments(), "paging-c-fault")) return paging_window_tests(1);
   int strict=streq(Arguments(),"strict");
   query_tests(strict);
+  reclaim_priority_tests(strict);
   if (!strict) {
     FileInfo items[1];
     require(List("/home/user",items,1)>=0,"legacy file reads remain available");

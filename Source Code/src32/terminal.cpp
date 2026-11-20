@@ -56,12 +56,19 @@ static void publish_result(Terminal* t) {
 }
 static void reset(Terminal* t) {
   if (t->foreground_object) {
+    task::terminalForeground(t->foreground, false);
     task::notify(t->foreground_object, task::WaitReason::TERM_READ, true);
   }
   t->edit_pending=t->editing=0;
   t->mode = TERM_LINE | TERM_ECHO;
   t->foreground = t->foreground_object = 0;
   t->input_size = t->line_size = t->events = t->eof = 0;
+}
+static void set_foreground(Terminal* t, u32 pid, u32 object) {
+  reset(t);
+  t->foreground = pid;
+  t->foreground_object = object;
+  task::terminalForeground(pid, true);
 }
 static void unref(Terminal* t) {
   if (!--t->refs) {
@@ -161,9 +168,7 @@ static int attach(Terminal* t, Handle* target, u32 pid) {
     }
     object = (u32)o + 1;
   }
-  reset(t);
-  t->foreground = pid;
-  t->foreground_object = object;
+  set_foreground(t, pid, object);
   return handle;
 }
 static int pop(u8* from, u32* size, void* out, u32 bytes) {
@@ -322,9 +327,7 @@ int terminal_bind_interactive(void* session, Handle* handles, u32 pid,
   cli->in = h[1];
   cli->out = h[2];
   cli->err = h[3];
-  reset(t);
-  t->foreground = pid;
-  t->foreground_object = (u32)object + 1;
+  set_foreground(t, pid, (u32)object + 1);
   return 0;
 }
 static int interactive_call(Terminal* t, Client* c, Object* control,

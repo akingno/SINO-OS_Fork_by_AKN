@@ -1,7 +1,8 @@
 const assert = require('node:assert/strict');
+const {RunSession} = require('../../../tools/run-channel');
 
 async function run(api) {
-    const {check, resources, command, native, guestLog, value, until, gone} = api;
+    const {check, resources, command, native, guestLog, value, until, gone, channel} = api;
     const initial = await resources();
     await command('echo policy private > /home/user/contracts-persist.bin');
     const baseline = await resources();
@@ -10,6 +11,13 @@ async function run(api) {
         assert.match(await command('help'), /run -s file.snx/);
         assert.match(await command('run -s', 1), /run -s native.snx/);
         await native('poltest', 'legacy', 'POLICY LEGACY PASS');
+        const session = new RunSession(channel);
+        await session.hello();
+        const managed = await session.run('/boot/clitest.snx', ['exit']);
+        assert.equal(managed.reason, 1);
+        assert.equal(managed.code, -17);
+        const pid = managed.pid.toString(16).toUpperCase().padStart(8, '0');
+        assert(guestLog().includes(`PROCESS start clitest.snx pid=0x${pid} reclaim=0x00000190\n`));
         assert.deepEqual(await resources(), baseline);
     });
     await check('strict policy denies every ambient entry and downgrade', async () => {
@@ -21,6 +29,7 @@ async function run(api) {
         const pid = Number(output.match(/^Started user process (\d+)\n$/)?.[1]);
         assert(pid > 0);
         await until(() => guestLog().slice(offset).includes('POLICY STRICT PASS'), 'strict policy');
+        assert.match(guestLog().slice(offset), /PROCESS start poltest\.snx pid=0x[0-9A-F]{8} reclaim=0x00000190\n/);
         await gone(pid);
         assert.equal(await value('process_faults'), faults);
         assert.equal(await value('process_exits'), exits + 1);

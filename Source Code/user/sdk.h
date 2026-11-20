@@ -48,6 +48,12 @@ static inline int ThreadWaitAvailable(void) {
 static inline int QueryStartInfo(StartInfo *out) {
   return api(SYS_START_INFO, (u32)out, sizeof(*out), 0);
 }
+static inline int QueryReclaimPriority(i32* out) {
+  return api(SYS_RECLAIM_PRIORITY, (u32)ReclaimPriorityOp::Query, (u32)out, 0);
+}
+static inline int SetReclaimPriority(i32 priority) {
+  return api(SYS_RECLAIM_PRIORITY, (u32)ReclaimPriorityOp::Set, (u32)priority, 0);
+}
 /* Map returns a positive base or an S_* error. Unmap takes the exact base. */
 static inline int AnonMap(u32 bytes) {
   return api(SYS_ANON_MAP, bytes, 0, 0);

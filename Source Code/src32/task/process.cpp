@@ -361,7 +361,7 @@ namespace task {
   int launch(const char* path, u32 caps) {
     return launchArgs(path, caps, "");
   }
-  static int launch_policy(const char*, u32, const char*, u32, int);
+  static int launch_policy(const char*, u32, const char*, u32, int, bool console = false);
   int launchArgs(const char* path, u32 caps, const char* arguments) {
     return launch_policy(path, caps, arguments, PROCESS_COMPAT, -1);
   }
@@ -425,7 +425,7 @@ namespace task {
   // 若增加内核线程、异步 I/O 或可挂起加载，应先改成每次加载独占并负责回收的缓冲。
   static u8 image_scratch[MAX_FILE];
   static int launch_policy(const char* path, u32 caps, const char* arguments,
-    u32 policy, int completion) {
+    u32 policy, int completion, bool console) {
     int n = vfs_lookup(path);
     if (n < 0) {
       return S_NOTFOUND;
@@ -551,7 +551,13 @@ namespace task {
       completions[objects[completion].value].result.pid = p->pid;
     }
     p->policy = policy;
-    p->input_frontend = p->workspace_frontend = 0;
+    p->input_frontend = p->workspace_frontend = console;
+    ReclaimClass reclaim = policy == PROCESS_STRICT ? ReclaimClass::Background
+                                                   : ReclaimClass::InteractiveBackground;
+    if (console) {
+      reclaim = ReclaimClass::Service;
+    }
+    p->reclaim_priority = (i16)reclaim;
     p->state = 1;
     p->caps = caps & 7; /* Boot utilities have no write, network or management
     grant, regardless of launcher. */
@@ -568,15 +574,14 @@ namespace task {
     pr_debug(p->name);
     pr_debug(" pid=");
     pr_debug_hex(p->pid);
+    pr_debug(" reclaim=");
+    pr_debug_hex((u32)(i32)p->reclaim_priority);
     pr_debug("\n");
     return (int)p->pid;
   }
   /* Both old tracked launches and bounded runs use the same startup transaction. */
   int launchConsole(void) {
-    int pid = launch_policy("/boot/conhost.snx", 0, "", PROCESS_COMPAT, -1);
-    Process* p = findProcess((u32)pid);
-    if (p && p->state == 1) { p->input_frontend = p->workspace_frontend = 1; }
-    return pid;
+    return launch_policy("/boot/conhost.snx", 0, "", PROCESS_COMPAT, -1, true);
   }
   static int tracked_launch(Handle* owner, const char* path, const char* args, RunData* run) {
     int slot;
@@ -891,6 +896,24 @@ namespace task {
     Process* p = findProcess(pid);
     return p && p->state == 1 && p->interactive ? p->handles : nullptr;
   }
+  void terminalForeground(u32 pid, bool foreground) {
+    Process* p = findProcess(pid);
+    if (!p || p->state != 1 || !p->interactive) {
+      return;
+    }
+    const i16 priority = (i16)(foreground ? ReclaimClass::Foreground
+                                          : ReclaimClass::InteractiveBackground);
+    if (p->reclaim_priority != priority) {
+      p->reclaim_priority = priority;
+      pr_debug("PROCESS foreground ");
+      pr_debug(p->name);
+      pr_debug(" pid=");
+      pr_debug_hex(pid);
+      pr_debug(" reclaim=");
+      pr_debug_hex((u32)(i32)priority);
+      pr_debug("\n");
+    }
+  }
   int terminalCancel(u32 pid) {
     Process* p = findProcess(pid);
     if (!p) { return S_NOTFOUND; }
@@ -1169,6 +1192,29 @@ namespace task {
       return b || c ? S_INVALID : anon_map(current, a);
     case SYS_ANON_UNMAP:
       return b || c ? S_INVALID : anon_unmap(current, a);
+    case SYS_RECLAIM_PRIORITY:
+      if (!current->caps) {
+        return S_DENIED;
+      }
+      if (c) {
+        return S_INVALID;
+      }
+      switch ((ReclaimPriorityOp)a) {
+      case ReclaimPriorityOp::Query: {
+        const i32 priority = current->reclaim_priority;
+        return copy_to_user(user_pd, b, &priority, sizeof(priority));
+      }
+      case ReclaimPriorityOp::Set:
+        if (b > (u32)ReclaimClass::Background) {
+          return S_INVALID;
+        }
+        if ((i32)b < current->reclaim_priority) {
+          return S_DENIED;
+        }
+        current->reclaim_priority = (i16)b;
+        return S_OK;
+      }
+      return S_INVALID;
     case SYS_WORKSPACE:
       if(!current->workspace_frontend || a || b || c){
         return S_DENIED;

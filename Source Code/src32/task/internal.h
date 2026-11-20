@@ -60,6 +60,10 @@ struct Thread {
 static_assert(__is_trivially_copyable(Thread), "thread state needs no runtime construction");
 
 struct AnonRegion { u32 base, bytes; };
+enum class ReclaimClass : i16 {
+  System = -1000, Service = -800, Foreground = 0, InteractiveBackground = 200,
+  Background = 400
+};
 struct Process {
   u32 pid, state, caps;
   int code;
@@ -77,6 +81,7 @@ struct Process {
   u32 boot_directory;
   u32 desktop_owner;
   u32 pages_used;
+  i16 reclaim_priority;
   AnonRegion anon[ANON_MAX_REGIONS];
   QueueLink<Process> reapLink;
   TimerNode timer;

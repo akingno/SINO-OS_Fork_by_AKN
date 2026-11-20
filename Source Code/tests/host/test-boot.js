@@ -56,6 +56,8 @@ async function boot(executable, directory, buildId) {
                 assert(log.includes('TASK kernel stack self-check passed (32 KiB usable + 4 KiB guard)'),
                     'Kernel entry stack checks did not pass');
                 assert(!log.includes('SINO SHELL BRIDGE'), 'Expected an ordinary build without ShellBridge');
+                assert.match(log, /PROCESS start conhost\.snx pid=0x[0-9A-F]{8} reclaim=0xFFFFFCE0\n/);
+                assert.match(log, /PROCESS foreground gsh\.snx pid=0x[0-9A-F]{8} reclaim=0x00000000\n/);
                 qmp = await new QMP(port).connect();
                 return await vm.verify(qmp);
             }

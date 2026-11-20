@@ -46,5 +46,6 @@ u32 process_user_limit(const u32* pd, u32 address);
 void process_tests(void);
 #ifdef __cplusplus
 }
+namespace task { void terminalForeground(u32 pid, bool foreground); }
 #endif
 #endif
