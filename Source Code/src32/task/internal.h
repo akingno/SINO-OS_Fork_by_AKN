@@ -36,6 +36,7 @@ struct Thread {
   int waitTimed;
   TerminalRequest waitTerminal;
   UserFrame saved;
+  u32 anonFaultPage; // Zero or an anonymous page awaiting one retry on dispatch.
   QueueLink<Thread> schedLink;
   TimerNode timer;
   Process* process;
@@ -94,6 +95,8 @@ extern Process processes[MaxProcesses];
 extern Process* current;
 extern int currentThread;
 void reapAndExpireRuns();
+bool reclaimLowest();
+void requestReclaim();
 void initScheduler();
 void waitSelfTest();
 void enqueueReady(Thread& thread);
@@ -141,7 +144,8 @@ int list(ProcessInfo * a0, u32 a1);
 int alive(u32 a0);
 int kill(u32 a0, i32 a1);
 int interrupt(Frame * a0);
-int anonPage(u32* a0, u32 a1, int a2);
+enum class UserPageStatus : u8 { Ok, Invalid, DataNoMemory, TableNoMemory, ReclaimDataNoMemory };
+UserPageStatus anonPage(u32* pd, u32 page, int populate);
 u32 userLimit(const u32* a0, u32 a1);
 void tests();
 }

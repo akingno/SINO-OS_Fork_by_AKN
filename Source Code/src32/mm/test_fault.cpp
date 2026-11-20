@@ -2,6 +2,7 @@
 #ifdef SINO_SHELL_BRIDGE
 #include "../klog.h"
 #include "../panic.h"
+#include "page.h"
 
 namespace mmtest {
 namespace {
@@ -30,6 +31,7 @@ struct Fault {
 };
 // 当前同时至多 8 个进程；记录不持有资源，在页目录回收前撤销。
 Fault faults[8]{};
+const u32* pressureOwner;
 }
 
 void arm(const u32* owner, Stage stage, u32 allowed, bool repeat) {
@@ -48,14 +50,24 @@ void arm(const u32* owner, Stage stage, u32 allowed, bool repeat) {
 
 bool fail(const u32* owner, Stage stage) {
   for (auto& fault : faults) {
-    if (fault.owner == owner) {
-      return fault.take(stage);
+    if (fault.owner == owner && fault.take(stage)) {
+      if (stage == Stage::ReclaimData && !pressureOwner) {
+        if (!overrideWatermarks(free_pages + 1, free_pages + 1)) {
+          panic("Invalid reclaim probe watermarks", free_pages, 0);
+        }
+        pressureOwner = owner;
+      }
+      return true;
     }
   }
   return false;
 }
 
 void clear(const u32* owner) {
+  if (pressureOwner == owner) {
+    restoreWatermarks();
+    pressureOwner = nullptr;
+  }
   for (auto& fault : faults) {
     if (fault.owner == owner) {
       fault = Fault{};

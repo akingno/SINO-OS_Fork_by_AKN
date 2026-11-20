@@ -273,33 +273,33 @@ u32* paging_user_create(void) {
     page: 已经准备好的物理页起始页
     write: 是否允许用户写入
 */
-int paging_user_map(u32* pd, u32 va, phys_t page, int write) {
-  if (!page || va < USER_BASE || va >= USER_V2_END || !page_aligned(va | page)) {
-    return 0;
+UserMapResult paging_user_map(u32* pd, u32 va, phys_t page, int write) {
+  if (!pd || !page || va < USER_BASE || va >= USER_V2_END || !page_aligned(va | page)) {
+    return UserMapResult::Invalid;
   }
   u32* pt = user_table(pd, va);
   if (!pt) {
     if (pd[pde_index(va)] & PAGE_PRESENT) {
-      return 0;
+      return UserMapResult::Invalid;
     }
 #ifdef SINO_SHELL_BRIDGE
     if (mmtest::fail(pd, mmtest::Stage::Table)) {
-      return 0;
+      return UserMapResult::TableNoMemory;
     }
 #endif
     pt = (u32*)kpage_alloc();
     if (!pt) {
-      return 0;
+      return UserMapResult::TableNoMemory;
     }
     pd[pde_index(va)] = make_entry(virt_to_phys(pt), USER_FLAGS | PAGE_WRITE);
   } else if ((pt[pte_index(va)] & PAGE_PRESENT) ||
              (write && !(pd[pde_index(va)] & PAGE_WRITE))) {
-    return 0;
+    return UserMapResult::Invalid;
   }
   pt[pte_index(va)] = make_entry(page, USER_FLAGS | (write ? PAGE_WRITE : 0));
   /* No TLB invalidation: both the new PTE and any new PDE are 0→1
    * transitions, and x86 never caches non-present entries (SDM 4.10.4.3). */
-  return 1;
+  return UserMapResult::Ok;
 }
 
 // 取消一个用户虚拟页的映射，如果对应页表已经没有任何有效映射则把页表页释放了

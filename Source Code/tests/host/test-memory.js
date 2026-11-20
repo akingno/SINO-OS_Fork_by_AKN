@@ -118,10 +118,16 @@ async function geometry(qmp, directory, log, baseline) {
     const actualPublished = Number(log.match(/PAGE extended pages=(0x[0-9a-f]+)/i)?.[1]);
     assert.equal(actualEnd, endPFN, 'physical limit follows E820 below 4 GiB');
     assert.equal(actualPublished, extendedPages, 'reserved overlaps and MMIO holes stay unpublished');
+    const metadataPages = Math.ceil(endPFN / 4096);
+    const publishedPages = pages.subarray(52 * 1024 * 1024 / 4096).reduce((sum, n) => sum + n, 0) - metadataPages;
+    const watermarks = log.match(/PAGE watermarks total=(0x[0-9a-f]+) criticalBelow=(0x[0-9a-f]+) normalAbove=(0x[0-9a-f]+)/i);
+    assert(watermarks, 'watermarks were finalized after publishing the full pool');
+    assert.deepEqual(watermarks.slice(1).map(Number), [publishedPages, Math.ceil(publishedPages * 5 / 100),
+        Math.floor(publishedPages * 15 / 100)], 'watermarks use published pages, including pages already allocated');
     assert.match(log, /Direct mapping: \[0, 0x40000000\)/i);
     assert(endPFN > 0x40000 && baseline > 0x40000, 'real pages above the direct map are available');
     assert(baseline < endPFN, 'reserved and kernel-owned pages are not free');
-    return {e820Entries:count, endPFN, extendedPages, freePages:baseline};
+    return {e820Entries:count, endPFN, extendedPages, publishedPages, freePages:baseline};
 }
 
 async function imageContracts(source) {
@@ -216,15 +222,147 @@ async function anonymousContracts(source) {
     });
 }
 
+async function reclaimContracts(source) {
+    await boot(source, 'reclaim', vm.memoryMiB, async ({check, command, free, baseline, until, guestLog, channel, qmp, directory}) => {
+        async function launch(mode, marker, strict = true) {
+            const offset = guestLog().length;
+            const out = await command(`run ${strict ? '-s ' : ''}/boot/reclaim.snx ${mode}`);
+            const pid = Number(out.match(/^Started user process (\d+)\n$/)?.[1]);
+            assert(pid, out);
+            await until(() => guestLog().slice(offset).includes(marker));
+            return pid;
+        }
+        async function processes() {
+            const table = await command('ps');
+            return new Map([...table.matchAll(/^(\d+)\s+\d+\s+(\d+)\s+\S+$/gm)]
+                .map(([, pid, pages]) => [Number(pid), Number(pages)]));
+        }
+        async function currentFree() { return free(await command('mem')); }
+        async function override(critical, normal, expected) {
+            assert.equal(await command(`mmtest-watermark ${critical} ${normal}`), `${expected}\n`);
+        }
+        async function cleanup() {
+            assert.equal(await command('mmtest-watermark reset'), '0\n');
+            for (const pid of (await processes()).keys()) { await command(`kill ${pid}`); }
+            await until(async () => (await processes()).size === 0 && await currentFree() === baseline);
+        }
+        function victims(log) {
+            return [...log.matchAll(/MEM reclaim pid=(0x[\da-f]+) priority=(0x[\da-f]+) pages=(0x[\da-f]+) pass=(0x[\da-f]+) before=(0x[\da-f]+) after=(0x[\da-f]+)/gi)]
+                .map(([, pid, score, pages, pass, before, after]) => ({pid:Number(pid), score:Number(score),
+                    pages:Number(pages), pass:Number(pass), before:Number(before), after:Number(after)}));
+        }
+
+        await check('memory.reclaim.pool-and-reservation-boundaries', ['published pool, exact watermarks and anonymous reservation rules'], async () => {
+            await geometry(qmp, directory, guestLog(), baseline);
+            try {
+                await override(baseline - 32, baseline - 1, 0);
+                await override(baseline - 32, baseline, 1);
+                await override(baseline, baseline + 32, 1);
+                await override(baseline + 1, baseline + 32, 2);
+                assert.equal(await currentFree(), baseline, 'watermark override leaves the allocator untouched');
+                assert.equal(await command('mmtest-watermark reset'), '0\n');
+
+                const offset = guestLog().length;
+                await launch('low', 'RECLAIM LOW READY');
+                const available = await currentFree();
+                await override(available - 32, available, 1);
+                await until(() => guestLog().slice(offset).includes('RECLAIM LOW PASS'));
+                assert.deepEqual(victims(guestLog().slice(offset)), [], 'LOW must not kill');
+            } finally { await cleanup(); }
+        });
+
+        await check('memory.reclaim.bounded-priority-and-stop-at-low', ['reclaim orders by score, resident pages and slot and stops at LOW'], async () => {
+            try {
+                const protectedPid = await launch('protect', 'RECLAIM HOLD READY');
+                const medium = await launch('hold-large', 'RECLAIM HOLD READY', false);
+                const firstSmall = await launch('hold-small', 'RECLAIM HOLD READY');
+                const secondSmall = await launch('hold-small', 'RECLAIM HOLD READY');
+                const before = await currentFree();
+                const large = await launch('hold-large', 'RECLAIM HOLD READY');
+                const available = await currentFree();
+                const critical = before + 1;
+                const offset = guestLog().length;
+                await override(critical, critical + 256, 2);
+                await until(() => victims(guestLog().slice(offset)).length >= 2);
+                const reaped = victims(guestLog().slice(offset));
+                assert.deepEqual(reaped.map(item => [item.pid, item.score, item.pages]), [[large, 400, 16], [firstSmall, 400, 2]]);
+                assert(reaped[1].pass > reaped[0].pass, 'at most one victim per scheduler pass');
+                assert.equal(reaped[0].before, available);
+                assert.equal(reaped[0].after, before, 'first victim restores all owned frames');
+                assert.equal(reaped[1].before, before);
+                assert(reaped[1].after >= critical && reaped[1].after <= critical + 256, 'second victim restores LOW');
+                assert.deepEqual(await processes(), new Map([[protectedPid, 24], [medium, 16], [secondSmall, 2]]));
+            } finally { await cleanup(); }
+        });
+
+        await check('memory.reclaim.first-touch-retries-after-release', ['first touch resumes after real release and charges one anonymous page'], async () => {
+            try {
+                const victim = await launch('hold-small', 'RECLAIM HOLD READY');
+                const offset = guestLog().length;
+                const requester = await launch('retry', 'RECLAIM TOUCH PASS');
+                const log = guestLog().slice(offset);
+                assert.match(log, /injected stage=0x00000004[\s\S]*MEM reclaim pid=[^\n]+[\s\S]*RECLAIM TOUCH PASS/);
+                const reaped = victims(log);
+                assert.deepEqual(reaped.map(item => item.pid), [victim]);
+                assert(reaped[0].after > reaped[0].before);
+                assert.deepEqual(await processes(), new Map([[requester, 1]]));
+            } finally { await cleanup(); }
+        });
+
+        await check('memory.reclaim.exhaustion-preserves-failure-contracts', ['no eligible victim preserves syscall OOM and contains the retried fault',
+            'page table OOM rolls back the anonymous data page and skips global reclaim'], async () => {
+            try {
+                const offset = guestLog().length;
+                const caller = await launch('copy', 'RECLAIM COPY PASS');
+                await until(() => guestLog().slice(offset).includes('MEM reclaim no eligible process'));
+                await sleep(150);
+                const log = guestLog().slice(offset);
+                assert.equal([...log.matchAll(/MEM reclaim no eligible process/g)].length, 1, 'no busy rescans');
+                assert.deepEqual(await processes(), new Map([[caller, 0]]));
+                assert.deepEqual(victims(log), []);
+                await command(`kill ${caller}`);
+                await until(async () => (await processes()).size === 0 && await currentFree() === baseline);
+
+                const session = new RunSession(channel);
+                await session.hello();
+                const faultOffset = guestLog().length;
+                const fault = await session.run('/boot/reclaim.snx', ['fault']);
+                assert.equal(fault.reason, 2, 'exhausted requester is faulted, not killed');
+                assert.equal(fault.vector, 14);
+                const faultLog = guestLog().slice(faultOffset);
+                assert.equal([...faultLog.matchAll(/injected stage=0x00000004/g)].length, 2, 'one original attempt and one retry');
+                assert.match(faultLog, /MEM reclaim no eligible process[\s\S]*USER fault contained/);
+                assert.match(faultLog, /USER anonymous data page OOM/);
+                assert.deepEqual(victims(faultLog), []);
+
+                const tableOffset = guestLog().length;
+                const tableCaller = await launch('table-copy', 'RECLAIM TABLE COPY PASS');
+                assert.deepEqual(await processes(), new Map([[tableCaller, 0]]), 'failed page table does not charge an anonymous page');
+                await command(`kill ${tableCaller}`);
+                await until(async () => (await processes()).size === 0 && await currentFree() === baseline);
+                const tableFault = await session.run('/boot/reclaim.snx', ['table-fault']);
+                assert.equal(tableFault.reason, 2);
+                assert.equal(tableFault.vector, 14);
+                const tableLog = guestLog().slice(tableOffset);
+                assert.equal([...tableLog.matchAll(/injected stage=0x00000002/g)].length, 2);
+                assert.match(tableLog, /USER anonymous page table OOM/);
+                assert.doesNotMatch(tableLog, /MEM reclaim|USER anonymous data page OOM/);
+                assert.equal(await command('echo responsive'), 'responsive\n');
+            } finally { await cleanup(); }
+        });
+    });
+}
+
 const [mode, source] = process.argv.slice(2);
-if (!Object.hasOwn(memoryCases, mode) || process.argv.length !== 4) {
-    console.error('Usage: node test-memory.js images|anonymous <ShellBridge build directory>|--list');
+const suites = {images:imageContracts, anonymous:anonymousContracts, reclaim:reclaimContracts};
+if (!Object.hasOwn(suites, mode) || process.argv.length !== 4) {
+    console.error('Usage: node test-memory.js images|anonymous|reclaim <ShellBridge build directory>|--list');
     process.exitCode = 2;
 } else if (source === '--list') {
     console.log(mode + ': ' + memoryCases[mode].length + ' cases');
     for (const item of memoryCases[mode]) console.log(item.id + '  ' + item.name);
 } else {
-    (mode === 'images' ? imageContracts(path.resolve(source)) : anonymousContracts(path.resolve(source)))
+    suites[mode](path.resolve(source))
         .then(() => {
             assertCaseIds(executed, memoryCases[mode]);
             fs.writeFileSync(path.join(path.resolve(source), 'memory-' + mode + '-report.json'),

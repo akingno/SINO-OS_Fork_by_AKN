@@ -19,6 +19,7 @@
 #include "../mm/page.h"
 #include "../mm/test_fault.h"
 #include "../panic.h"
+#include "../sync/irq.h"
 
 namespace task {
   /* 进程和线程使用固定数组，上限 64 x 4（Stage 7 扩容）。
@@ -152,18 +153,31 @@ namespace task {
     }
     if (!pid) { identifier_stats.abortedProcesses++; }
   }
-  static phys_t alloc_user_page(Process* p, u32 va, int write) {
+  struct UserPageAllocation {
+    phys_t page;
+    UserPageStatus status;
+  };
+  static UserPageAllocation alloc_user_page(Process* p, u32 va, int write, bool anonymous = false) {
 #ifdef SINO_SHELL_BRIDGE
     if (mmtest::fail(p->pd, mmtest::Stage::Image)) {
-      return PHYS_NULL;
+      return {PHYS_NULL, UserPageStatus::DataNoMemory};
     }
+    const phys_t page = anonymous && mmtest::fail(p->pd, mmtest::Stage::ReclaimData)
+      ? PHYS_NULL : page_alloc();
+#else
+    (void)anonymous;
+    const phys_t page = page_alloc();
 #endif
-    phys_t page = page_alloc();
-    if (page && !paging_user_map(p->pd, va, page, write)) {
-      page_free(page);
-      return PHYS_NULL;
+    if (!page) {
+      return {PHYS_NULL, UserPageStatus::DataNoMemory};
     }
-    return page;
+    const auto mapped = paging_user_map(p->pd, va, page, write);
+    if (mapped == UserMapResult::Ok) {
+      return {page, UserPageStatus::Ok};
+    }
+    page_free(page);
+    return {PHYS_NULL, mapped == UserMapResult::TableNoMemory ? UserPageStatus::TableNoMemory
+                                                             : UserPageStatus::Invalid};
   }
   static u32 free_user_pages(Process* p, u32 start, u32 end) {
     u32 freed = 0;
@@ -212,6 +226,10 @@ namespace task {
         }
       }
       if (next == base) {
+        if (p->reclaim_priority >= (i16)ReclaimClass::Background &&
+            page_watermark() != PageWatermark::Normal) {
+          return S_NOMEM;
+        }
         *slot = (AnonRegion){base, bytes};
         return (int)base;
       }
@@ -236,33 +254,39 @@ namespace task {
     return S_INVALID;
   }
 
-  int anonPage(u32* pd, u32 page, int populate) {
+  UserPageStatus anonPage(u32* pd, u32 page, int populate) {
     if (!current || current->pd != pd || !page_aligned(page) ||
       page < USER_DYNAMIC_BASE || page >= USER_DYNAMIC_END) {
-      return S_INVALID;
+      return UserPageStatus::Invalid;
     }
     for (u32 i = 0; i < ANON_MAX_REGIONS; i++) {
       const AnonRegion* region = &current->anon[i];
       if (page >= region->base && page - region->base < region->bytes) {
         if (!populate) {
-          return S_OK;
+          return UserPageStatus::Ok;
         }
         if (paging_user_flags(pd, page) & PAGE_PRESENT) {
-          return S_INVALID;
+          return UserPageStatus::Invalid;
         }
 #ifdef SINO_SHELL_BRIDGE
         if (mmtest::fail(current->pd, mmtest::Stage::Anonymous)) {
-          return S_NOMEM;
+          return UserPageStatus::DataNoMemory;
         }
 #endif
-        if (alloc_user_page(current, page, 1)) {
+        const auto status = alloc_user_page(current, page, 1, true).status;
+        if (status == UserPageStatus::Ok) {
           current->pages_used++;
-          return S_OK;
+          if (page_watermark() == PageWatermark::Critical) { requestReclaim(); }
+          return UserPageStatus::Ok;
         }
-        return S_NOMEM;
+        if (status == UserPageStatus::DataNoMemory && page_watermark() == PageWatermark::Critical) {
+          requestReclaim();
+          return UserPageStatus::ReclaimDataNoMemory;
+        }
+        return status;
       }
     }
-    return S_INVALID;
+    return UserPageStatus::Invalid;
   }
 
   u32 userLimit(const u32* pd, u32 address) {
@@ -287,7 +311,7 @@ namespace task {
   static int alloc_user_stack(Process* p, int thread) {
     u32 top = user_stack_top(p, thread), start = top - UserStackBytes;
     for (u32 va = start; va < top; va += PAGE_SIZE) {
-      if (!alloc_user_page(p, va, 1)) {
+      if (!alloc_user_page(p, va, 1).page) {
         free_user_pages(p, start, va);
         return 0;
       }
@@ -300,16 +324,16 @@ namespace task {
     u32 cross = USER_DYNAMIC_BASE + TABLE_BYTES - PAGE_SIZE;
     u32 high = USER_DYNAMIC_END - PAGE_SIZE;
     if (paging_user_find_gap(p->pd, cross, cross + 2 * PAGE_SIZE, 2 * PAGE_SIZE) != cross ||
-      !alloc_user_page(p, cross, 1) || !alloc_user_page(p, cross + PAGE_SIZE, 1) ||
+      !alloc_user_page(p, cross, 1).page || !alloc_user_page(p, cross + PAGE_SIZE, 1).page ||
       paging_user_find_gap(p->pd, cross, cross + 3 * PAGE_SIZE, PAGE_SIZE) != cross + 2 * PAGE_SIZE) {
       return S_INVALID;
     }
 
     u32 before = free_pages;
-    if (alloc_user_page(p, cross, 0) || free_pages != before) {
+    if (alloc_user_page(p, cross, 0).status != UserPageStatus::Invalid || free_pages != before) {
       return S_INVALID;
     }
-    if (!alloc_user_page(p, high, 0)) {
+    if (!alloc_user_page(p, high, 0).page) {
       return S_NOMEM;
     }
     free_user_pages(p, high, high + PAGE_SIZE);
@@ -317,13 +341,13 @@ namespace task {
       return S_INVALID;
     }
     if (!exhaust) {
-      return alloc_user_page(p, high, 0) ? S_OK : S_NOMEM;
+      return alloc_user_page(p, high, 0).page ? S_OK : S_NOMEM;
     }
 
     // 数据页实际分配成功，仅使此页目录的下一次页表分配失败，检查回滚。
     mmtest::arm(p->pd, mmtest::Stage::Table, 0);
-    int failed_cleanly = !alloc_user_page(p, high, 0) &&
-    !paging_user_flags(p->pd, high);
+    const bool failed_cleanly = alloc_user_page(p, high, 0).status == UserPageStatus::TableNoMemory &&
+                                !paging_user_flags(p->pd, high);
     if (!failed_cleanly || free_pages != before) {
       return S_INVALID;
     }
@@ -450,6 +474,9 @@ namespace task {
     memset((void*)p, 0, sizeof(*p));
     p->abi = h->abi;
     p->code_end = USER_BASE + h->data_offset;
+    p->reclaim_priority = (i16)(policy == PROCESS_STRICT ? ReclaimClass::Background
+                                                       : ReclaimClass::InteractiveBackground);
+    if (console) { p->reclaim_priority = (i16)ReclaimClass::Service; }
     p->pd = paging_user_create();
     if (!p->pd || p->kernelStack.allocate() != S_OK) {
       release(p);
@@ -472,7 +499,7 @@ namespace task {
     }
 #endif
     for (u32 offset = 0; offset < h->memory_bytes; offset += PAGE_SIZE) {
-      phys_t page = alloc_user_page(p, USER_BASE + offset, offset >= h->data_offset);
+      phys_t page = alloc_user_page(p, USER_BASE + offset, offset >= h->data_offset).page;
       if (!page) {
         release(p);
         return S_NOMEM;
@@ -487,7 +514,7 @@ namespace task {
         kunmap(mapped);
       }
     }
-    phys_t params_page = alloc_user_page(p, p->abi == 2 ? USER_V2_ARGUMENTS : USER_V1_ARGUMENTS, 0);
+    phys_t params_page = alloc_user_page(p, p->abi == 2 ? USER_V2_ARGUMENTS : USER_V1_ARGUMENTS, 0).page;
     if (!params_page) {
       release(p);
       return S_NOMEM;
@@ -503,6 +530,19 @@ namespace task {
       return S_NOMEM;
     }
 #ifdef SINO_SHELL_BRIDGE
+    if (policy == PROCESS_STRICT && nodes[n].readonly && nodes[n].boot >= 0 &&
+        n == vfs_lookup("/boot/reclaim.snx")) {
+      const bool copy = streq(probe_mode, "copy");
+      const bool repeat = streq(probe_mode, "fault");
+      if (copy || streq(probe_mode, "protect")) {
+        p->reclaim_priority = (i16)ReclaimClass::Service;
+      }
+      if (copy || repeat || streq(probe_mode, "retry")) {
+        mmtest::arm(p->pd, mmtest::Stage::ReclaimData, 0, repeat);
+      } else if (streq(probe_mode, "table-copy") || streq(probe_mode, "table-fault")) {
+        mmtest::arm(p->pd, mmtest::Stage::Table, 0);
+      }
+    }
     if (policy == PROCESS_STRICT && n == vfs_lookup("/boot/poltest.snx") &&
       (streq(arguments, "paging-c") || streq(arguments, "paging-c-fault") ||
       streq(arguments, "paging-c-oom"))) {
@@ -552,12 +592,6 @@ namespace task {
     }
     p->policy = policy;
     p->input_frontend = p->workspace_frontend = console;
-    ReclaimClass reclaim = policy == PROCESS_STRICT ? ReclaimClass::Background
-                                                   : ReclaimClass::InteractiveBackground;
-    if (console) {
-      reclaim = ReclaimClass::Service;
-    }
-    p->reclaim_priority = (i16)reclaim;
     p->state = 1;
     p->caps = caps & 7; /* Boot utilities have no write, network or management
     grant, regardless of launcher. */
@@ -1952,11 +1986,59 @@ namespace task {
     return p && p->state == 1;
   }
 
-  void reapAndExpireRuns() {
-    expireTimers(ticks);
+  static void reapProcesses() {
     while (Process* p = takeReap()) {
       release(p);
     }
+  }
+  void reapAndExpireRuns() {
+    expireTimers(ticks);
+    reapProcesses();
+  }
+
+  static bool hasDeferredFault(const Process& process) {
+    for (const auto& thread : process.thread) {
+      if (thread.anonFaultPage) { return true; }
+    }
+    return false;
+  }
+  bool reclaimLowest() {
+    u32 pid, pages;
+    i16 priority;
+    {
+      sync::IrqGuard guard;
+      Process* victim = nullptr;
+      for (auto& p : processes) {
+        if (p.state != 1 || !p.pd || p.reclaim_priority < 0 || hasDeferredFault(p)) {
+          continue;
+        }
+        if (!victim || p.reclaim_priority > victim->reclaim_priority ||
+            (p.reclaim_priority == victim->reclaim_priority && p.pages_used > victim->pages_used)) {
+          victim = &p;
+        }
+      }
+      if (!victim) { return false; }
+      pid = victim->pid;
+      priority = victim->reclaim_priority;
+      pages = victim->pages_used;
+      victim->retire(PROCESS_KILLED, 0);
+    }
+    const u32 before = free_pages;
+    reapProcesses();
+    pr_debug("MEM reclaim pid=");
+    pr_debug_hex(pid);
+    pr_debug(" priority=");
+    pr_debug_hex((u32)priority);
+    pr_debug(" pages=");
+    pr_debug_hex(pages);
+    pr_debug(" pass=");
+    pr_debug_hex(task_schedule_stats.passes);
+    pr_debug(" before=");
+    pr_debug_hex(before);
+    pr_debug(" after=");
+    pr_debug_hex(free_pages);
+    pr_debug("\n");
+    return true;
   }
 
   void setEntryStack(const Process& process) {

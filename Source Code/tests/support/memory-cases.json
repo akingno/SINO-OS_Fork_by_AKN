@@ -84,6 +84,24 @@
       ]
     }
   ],
+  "reclaim": [
+    {
+      "id": "memory.reclaim.pool-and-reservation-boundaries",
+      "name": "published pool, exact watermarks and anonymous reservation rules"
+    },
+    {
+      "id": "memory.reclaim.bounded-priority-and-stop-at-low",
+      "name": "reclaim orders by score, resident pages and slot and stops at LOW"
+    },
+    {
+      "id": "memory.reclaim.first-touch-retries-after-release",
+      "name": "first touch resumes after real release and charges one anonymous page"
+    },
+    {
+      "id": "memory.reclaim.exhaustion-preserves-failure-contracts",
+      "name": "no eligible victim preserves syscall OOM and contains the retried fault"
+    }
+  ],
   "anonymous": [
     {
       "id": "memory.anonymous.strict-feature-discovery",

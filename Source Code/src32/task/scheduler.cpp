@@ -4,6 +4,7 @@
 #include "../panic.h"
 #include "../sync/irq.h"
 #include "../lib/kstring.h"
+#include "../mm/page.h"
 
 extern "C" {
   task::ScheduleStats task_schedule_stats;
@@ -13,6 +14,8 @@ namespace task {
   namespace {
     u32 quantum_end;
     phys_t kernelDirectory;
+    PageWatermark observedWatermark;
+    bool reclaimPending;
 
     void requireUnbound(bool interrupts) {
       if (current || currentThread != -1 || read_cr3() != kernelDirectory ||
@@ -20,9 +23,59 @@ namespace task {
         panic("Scheduler context/CR3/IF contract", read_cr3(), (u32)currentThread);
       }
     }
+
+    void observeWatermark() {
+      const auto watermark = page_watermark();
+      if (watermark != observedWatermark) {
+        pr_debug("MEM watermark from=");
+        pr_debug_hex((u32)observedWatermark);
+        pr_debug(" to=");
+        pr_debug_hex((u32)watermark);
+        pr_debug(" free=");
+        pr_debug_hex(free_pages);
+        pr_debug("\n");
+        observedWatermark = watermark;
+        reclaimPending = watermark == PageWatermark::Critical;
+      }
+    }
+
+    void containFault(u32 vector) {
+      process_faults++;
+      current->retire(PROCESS_FAULTED, -(int)vector, vector);
+      pr_debug("USER fault contained pid=");
+      pr_debug_hex(current->pid);
+      pr_debug(" vector=");
+      pr_debug_hex(vector);
+      pr_debug("\n");
+    }
+
+    void logAnonOom(UserPageStatus status, u32 address) {
+      if (status == UserPageStatus::Invalid) { return; }
+      pr_debug(status == UserPageStatus::TableNoMemory ? "USER anonymous page table OOM address="
+                                                       : "USER anonymous data page OOM address=");
+      pr_debug_hex(address);
+      pr_debug("\n");
+    }
+
+    bool retryAnonFault(Thread& thread) {
+      const u32 page = thread.anonFaultPage;
+      thread.anonFaultPage = 0;
+      u32* pd = current->pd;
+      if (anonPage(pd, page, 0) == UserPageStatus::Ok) {
+        const u32 mapped = paging_user_flags(pd, page);
+        constexpr u32 writable = PAGE_PRESENT | PAGE_USER | PAGE_WRITE;
+        if ((mapped & writable) == writable) { return true; }
+        const auto status = anonPage(pd, page, 1);
+        if (status == UserPageStatus::Ok) { return true; }
+        logAnonOom(status, page);
+      }
+      containFault(14);
+      return false;
+    }
   }
 
-  bool hasWork(u32 now) { return queuedWork(now); }
+  void requestReclaim() { reclaimPending = true; }
+  bool hasWork(u32 now) { return reclaimPending || queuedWork(now); }
 
   void initScheduler() {
     kernelDirectory = read_cr3();
@@ -80,23 +133,19 @@ namespace task {
     if (f->vector < 32) {
       if (f->vector == 14 && (f->error & ~2u) == 4u) {
         u32 address = read_cr2();
-        int status = anonPage(current->pd, page_floor(address), 1);
-        if (status == S_OK) {
+        const u32 page = page_floor(address);
+        const auto status = anonPage(current->pd, page, 1);
+        if (status == UserPageStatus::Ok) {
           return 1;
         }
-        if (status == S_NOMEM) {
-          pr_debug("USER anonymous page OOM address=");
-          pr_debug_hex(address);
-          pr_debug("\n");
+        logAnonOom(status, address);
+        if (status == UserPageStatus::ReclaimDataNoMemory) {
+          current->thread[currentThread].anonFaultPage = page;
+          leave(f);
+          return 1;
         }
       }
-      process_faults++;
-      current->retire(PROCESS_FAULTED, -(int)f->vector, f->vector);
-      pr_debug("USER fault contained pid=");
-      pr_debug_hex(current->pid);
-      pr_debug(" vector=");
-      pr_debug_hex(f->vector);
-      pr_debug("\n");
+      containFault(f->vector);
       leave(f);
       return 1;
     }
@@ -126,6 +175,15 @@ namespace task {
     requireUnbound(true);
     task_schedule_stats.passes++;
     reapAndExpireRuns();
+    observeWatermark();
+    if (reclaimPending) {
+      reclaimPending = false;
+      if (page_watermark() == PageWatermark::Critical) {
+        reclaimPending = reclaimLowest();
+        if (!reclaimPending) { pr_debug("MEM reclaim no eligible process\n"); }
+      }
+      observeWatermark();
+    }
     const u32 budget = readyCount();
     StepResult result = StepResult::NoDispatch;
     u32 attempts = 0;
@@ -140,7 +198,13 @@ namespace task {
       currentThread = (int)t->index;
       user_switch_out = 0;
       paging_activate(p->pd);
-      int ready = t->waitOp == WaitReason::NONE || retryWait(t);
+      bool ready = true;
+      if (t->anonFaultPage) {
+        ready = retryAnonFault(*t);
+      } else if (t->waitOp != WaitReason::NONE) {
+        ready = retryWait(t);
+        if (!ready) { task_schedule_stats.retriesBlocked++; }
+      }
       if (ready) {
         quantum_end = ticks + 2;
         setEntryStack(*p);
@@ -148,8 +212,6 @@ namespace task {
         user_enter(&t->saved);
         task_schedule_stats.dispatches++;
         result = StepResult::Ran;
-      } else {
-        task_schedule_stats.retriesBlocked++;
       }
       paging_activate_kernel();
       current = nullptr;

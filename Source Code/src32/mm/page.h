@@ -24,5 +24,7 @@ extern u32 free_pages, nr_pages;
 
 #ifdef __cplusplus
 }
+enum class PageWatermark : u8 { Normal, Low, Critical };
+PageWatermark page_watermark();
 #endif
 #endif

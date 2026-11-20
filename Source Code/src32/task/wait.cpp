@@ -182,6 +182,7 @@ void Thread::cancel(bool pass) {
   {
     sync::IrqGuard guard;
     key = clearWait(*this);
+    anonFaultPage = 0;
     state = ThreadState::UNUSED;
   }
   if (pass) { handoff(key); }

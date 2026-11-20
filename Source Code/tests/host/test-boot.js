@@ -56,6 +56,7 @@ async function boot(executable, directory, buildId) {
                 assert(log.includes('TASK kernel stack self-check passed (32 KiB usable + 4 KiB guard)'),
                     'Kernel entry stack checks did not pass');
                 assert(!log.includes('SINO SHELL BRIDGE'), 'Expected an ordinary build without ShellBridge');
+                assert.doesNotMatch(log, /MEM watermark|MEM reclaim/, 'ordinary startup stays above LOW');
                 assert.match(log, /PROCESS start conhost\.snx pid=0x[0-9A-F]{8} reclaim=0xFFFFFCE0\n/);
                 assert.match(log, /PROCESS foreground gsh\.snx pid=0x[0-9A-F]{8} reclaim=0x00000000\n/);
                 qmp = await new QMP(port).connect();
@@ -80,6 +81,8 @@ async function main(args) {
     const iso = fs.readFileSync(path.join(directory, 'SINO.iso'));
     assert.equal(hash(iso), build.isoSha256, 'ISO does not match the build record');
     assert.equal(hash(bootPayload(iso)), build.bootImageSha256, 'ISO boot payload does not match the build record');
+    const manifest = JSON.parse(fs.readFileSync(path.join(directory, 'boot-manifest.json'), 'utf8'));
+    assert(!manifest.files.some(file => file.name === 'RECLAIM.SNX'), 'reclaim probe belongs to ShellBridge');
     console.log(`PASS ISO9660 / El Torito boot payload for ${build.buildId}`);
 
     const executable = qemuPath();

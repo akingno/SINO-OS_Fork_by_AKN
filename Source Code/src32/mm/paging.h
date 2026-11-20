@@ -49,8 +49,6 @@ extern u32 direct_map_end;
 u32* paging_user_create(void);
 u32 paging_user_destroy(u32* pd);
 
-/* A successful map transfers ownership of page to pd. Unmap returns it. */
-int paging_user_map(u32* pd, u32 va, phys_t page, int write);
 phys_t paging_user_unmap(u32* pd, u32 va);
 u32 paging_user_flags(const u32* pd, u32 va);
 u32 paging_user_count(const u32* pd);
@@ -69,5 +67,8 @@ void paging_protect_selftest(void);
 
 #ifdef __cplusplus
 }
+enum class UserMapResult : u8 { Ok, TableNoMemory, Invalid };
+/* Success transfers the data page to pd. Failure leaves it with the caller. */
+UserMapResult paging_user_map(u32* pd, u32 va, phys_t page, int write);
 #endif
 #endif

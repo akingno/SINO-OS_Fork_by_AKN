@@ -5,6 +5,7 @@
 #include "e820.h"
 #include "paging.h"
 #include "kmap.h"
+#include "test_fault.h"
 #include "../lib/kstring.h"
 #include "../panic.h"
 
@@ -27,6 +28,42 @@ static u32 metadata_pages;
 u32 free_pages;
 // 可用 E820 区域中的最大的结束 PFN，但中间可能有被保留的 PFN
 u32 nr_pages;
+static u32 published_pages;
+namespace {
+struct Watermarks {
+  u32 criticalBelow, normalAbove;
+
+  PageWatermark classify(u32 available) const {
+    if (available < criticalBelow) { return PageWatermark::Critical; }
+    return available <= normalAbove ? PageWatermark::Low : PageWatermark::Normal;
+  }
+};
+Watermarks watermarks;
+bool watermarks_ready;
+#ifdef SINO_SHELL_BRIDGE
+Watermarks test_watermarks;
+bool test_watermarks_active;
+#endif
+}
+
+PageWatermark page_watermark() {
+#ifdef SINO_SHELL_BRIDGE
+  if (test_watermarks_active) { return test_watermarks.classify(free_pages); }
+#endif
+  return watermarks_ready ? watermarks.classify(free_pages) : PageWatermark::Normal;
+}
+
+#ifdef SINO_SHELL_BRIDGE
+bool mmtest::overrideWatermarks(u32 criticalBelow, u32 normalAbove) {
+  if (normalAbove > PHYS_LIMIT_PAGES || criticalBelow > normalAbove) {
+    return false;
+  }
+  test_watermarks = {criticalBelow, normalAbove};
+  test_watermarks_active = true;
+  return true;
+}
+void mmtest::restoreWatermarks() { test_watermarks_active = false; }
+#endif
 
 // 通用物理页分配池允许使用的最低 PFN
 #define LOW_START_PFN (BOOT_POOL_START / PAGE_SIZE)
@@ -57,6 +94,7 @@ static void publish_pages(u32 start_pfn, u32 end_pfn) {
         page_boot_usable(pfn * PAGE_SIZE)) {
       mem_map[pfn] = PAGE_FREE;
       free_pages++;
+      published_pages++;
     }
   }
 }
@@ -135,6 +173,16 @@ void page_publish_extended(void) {
   publish_pages(BOOT_IDENTITY_BYTES / PAGE_SIZE, nr_pages);
   pr_debug("PAGE extended pages=");
   pr_debug_hex(free_pages - before);
+  pr_debug("\n");
+  // Non-PAE 4 GiB bounds published_pages to 1 Mi pages, so these products fit u32.
+  watermarks = {(published_pages * 5 + 99) / 100, published_pages * 15 / 100};
+  watermarks_ready = true;
+  pr_debug("PAGE watermarks total=");
+  pr_debug_hex(published_pages);
+  pr_debug(" criticalBelow=");
+  pr_debug_hex(watermarks.criticalBelow);
+  pr_debug(" normalAbove=");
+  pr_debug_hex(watermarks.normalAbove);
   pr_debug("\n");
 }
 

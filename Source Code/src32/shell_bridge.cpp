@@ -10,6 +10,7 @@
 #include "storage.h"
 #include "lib/kstring.h"
 #include "mm/page.h"
+#include "mm/test_fault.h"
 #include "panic.h"
 #define LINE_SIZE 256
 #define TOKENS 32
@@ -881,6 +882,22 @@ static int command(Context* c, int argc, char** argv) {
       return error(out, cmd, "expected PID");
     return process_kill(pid, 0) < 0 ? error(out, cmd, "no such process") : 0;
   }
+#ifdef SINO_SHELL_BRIDGE
+  if (streq(cmd, "mmtest-watermark")) {
+    if (argc == 2 && streq(argv[1], "reset")) {
+      mmtest::restoreWatermarks();
+    } else {
+      u32 criticalBelow, normalAbove;
+      if (argc != 3 || !parse_number(argv[1], &criticalBelow) ||
+          !parse_number(argv[2], &normalAbove) || !mmtest::overrideWatermarks(criticalBelow, normalAbove)) {
+        return error(out, cmd, "expected integer watermarks or reset");
+      }
+    }
+    num(out, (u32)page_watermark());
+    put(out, "\n");
+    return 0;
+  }
+#endif
   if (streq(cmd, "nettest")) {
     return process_launch("/boot/nettest.snx", CAP_HOME | CAP_NETWORK) < 0
                ? error(out, cmd, "network test cannot start")

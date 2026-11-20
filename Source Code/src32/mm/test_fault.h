@@ -5,10 +5,12 @@
 
 // 仅供只读启动卷上的指定探针使用；不提供用户态控制接口。
 namespace mmtest {
-enum class Stage : u32 { None = 0, Image = 1, Table = 2, Anonymous = 3 };
+enum class Stage : u32 { None = 0, Image = 1, Table = 2, Anonymous = 3, ReclaimData = 4 };
 void arm(const u32* owner, Stage stage, u32 allowed, bool repeat = false);
 bool fail(const u32* owner, Stage stage);
 void clear(const u32* owner);
+bool overrideWatermarks(u32 criticalBelow, u32 normalAbove);
+void restoreWatermarks();
 }
 #endif
 #endif

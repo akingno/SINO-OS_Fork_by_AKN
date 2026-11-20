@@ -60,8 +60,8 @@ The kernel starts compatibility processes at 200 and strict processes, including
 managed runs, at 400. The trusted boot console host starts at -800. Interactive
 clients with terminal-bound `CliInfo` have score 0 in the foreground and 200
 after giving it up. The terminal changes those scores as part of its existing
-foreground handoff. Higher scores are intended for earlier memory reclaim.
-Phase B only provides scoring. CPU scheduling is independent of the score.
+foreground handoff. Higher scores are preferred for reclaim during critical
+memory pressure. CPU scheduling is independent of the score. See [memory watermarks](mm-access.md#物理页水位与匿名回收).
 
 `SYS_RECLAIM_PRIORITY=0x156` applies to the calling process. Compatibility
 callers need at least one granted capability bit. Restricted or capability-free
