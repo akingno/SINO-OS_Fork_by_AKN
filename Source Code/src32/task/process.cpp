@@ -190,6 +190,28 @@ namespace task {
     }
     return freed;
   }
+  static AnonRegion* anon_region(Process* p, u32 base) {
+    if (!base) { return nullptr; }
+    for (auto& region : p->anon) {
+      if (region.base == base) { return &region; }
+    }
+    return nullptr;
+  }
+  static u32 free_anon_pages(Process* p, AnonRegion& region) {
+    const u32 freed = free_user_pages(p, region.base, region.base + region.bytes);
+    if (freed != region.resident || freed > p->pages_used) {
+      panic("Anonymous resident page count", freed, region.resident);
+    }
+    p->pages_used -= freed;
+    region.resident = 0;
+    return freed;
+  }
+  static bool can_purge(const AnonRegion& region) {
+    return region.purgeable && !region.lock_count && region.resident;
+  }
+  static void schedule_purge(const AnonRegion& region) {
+    if (can_purge(region) && page_watermark() != PageWatermark::Normal) { requestReclaim(); }
+  }
   /* 【简化实现：虚拟区间】用 32 项数组保存匿名预留区，线性避开已映射页和
   * 尚未落地的预留区，总量限制 16 MiB；物理页由缺页路径按需补齐。
   * 替换方向：统一管理映像、栈和匿名区的虚拟区间，记录权限与后备类型，
@@ -230,7 +252,7 @@ namespace task {
             page_watermark() != PageWatermark::Normal) {
           return S_NOMEM;
         }
-        *slot = (AnonRegion){base, bytes};
+        *slot = AnonRegion{base, bytes, 0, 0, false, false};
         return (int)base;
       }
       start = next;
@@ -240,18 +262,49 @@ namespace task {
   * 替换方向：在统一虚拟区间管理中拆分/缩短区域，再回收实际存在的页；
   * 同时处理等待中的用户缓冲区失效及页表、TLB 的生命周期。 */
   static int anon_unmap(Process* p, u32 base) {
-    if (base < USER_DYNAMIC_BASE || base >= USER_DYNAMIC_END || !page_aligned(base)) {
-      return S_INVALID;
-    }
-    for (u32 i = 0; i < ANON_MAX_REGIONS; i++) {
-      AnonRegion* region = &p->anon[i];
-      if (region->base == base) {
-        p->pages_used -= free_user_pages(p, base, base + region->bytes);
-        *region = (AnonRegion){0, 0};
+    AnonRegion* region = anon_region(p, base);
+    if (!region) { return S_INVALID; }
+    if (region->lock_count) { return S_BUSY; }
+    free_anon_pages(p, *region);
+    *region = {};
+    return S_OK;
+  }
+
+  static int anon_purgeable(Process* p, u32 base, AnonPurgeableOp operation) {
+    AnonRegion* region = anon_region(p, base);
+    if (!region) { return S_INVALID; }
+    switch (operation) {
+      case AnonPurgeableOp::Clear:
+        if (region->lock_count) { return S_BUSY; }
+        region->purgeable = false;
         return S_OK;
-      }
+      case AnonPurgeableOp::Mark:
+        if (region->purgeable && region->purged) {
+          if (!region->lock_count) { return S_BUSY; }
+          // A locked owner may acknowledge that it rebuilt the contents.
+          region->purged = false;
+        }
+        region->purgeable = true;
+        schedule_purge(*region);
+        return S_OK;
+      case AnonPurgeableOp::Query:
+        return region->purged ? S_CHANGED : S_OK;
     }
     return S_INVALID;
+  }
+
+  static int anon_lock(Process* p, u32 base, bool lock) {
+    AnonRegion* region = anon_region(p, base);
+    if (!region || !region->purgeable) { return S_INVALID; }
+    if (lock) {
+      if (region->lock_count == 0xffffu) { return S_LIMIT; }
+      ++region->lock_count;
+    } else {
+      if (!region->lock_count) { return S_INVALID; }
+      --region->lock_count;
+      schedule_purge(*region);
+    }
+    return S_OK;
   }
 
   UserPageStatus anonPage(u32* pd, u32 page, int populate) {
@@ -260,7 +313,7 @@ namespace task {
       return UserPageStatus::Invalid;
     }
     for (u32 i = 0; i < ANON_MAX_REGIONS; i++) {
-      const AnonRegion* region = &current->anon[i];
+      AnonRegion* region = &current->anon[i];
       if (page >= region->base && page - region->base < region->bytes) {
         if (!populate) {
           return UserPageStatus::Ok;
@@ -276,7 +329,12 @@ namespace task {
         const auto status = alloc_user_page(current, page, 1, true).status;
         if (status == UserPageStatus::Ok) {
           current->pages_used++;
-          if (page_watermark() == PageWatermark::Critical) { requestReclaim(); }
+          region->resident++;
+          const auto watermark = page_watermark();
+          if (watermark == PageWatermark::Critical ||
+              (watermark == PageWatermark::Low && can_purge(*region))) {
+            requestReclaim();
+          }
           return UserPageStatus::Ok;
         }
         if (status == UserPageStatus::DataNoMemory && page_watermark() == PageWatermark::Critical) {
@@ -1205,6 +1263,7 @@ namespace task {
     case SYS_PIPE_CREATE: case SYS_STREAM_READY: case SYS_PIPE_LIMITS:
     case SYS_TERMINAL:
     case SYS_ANON_MAP: case SYS_ANON_UNMAP:
+    case SYS_ANON_PURGEABLE: case SYS_ANON_LOCK: case SYS_ANON_UNLOCK:
       return 1;
     default: return 0;
     }
@@ -1249,6 +1308,11 @@ namespace task {
       return b || c ? S_INVALID : anon_map(current, a);
     case SYS_ANON_UNMAP:
       return b || c ? S_INVALID : anon_unmap(current, a);
+    case SYS_ANON_PURGEABLE:
+      return c ? S_INVALID : anon_purgeable(current, a, (AnonPurgeableOp)b);
+    case SYS_ANON_LOCK:
+    case SYS_ANON_UNLOCK:
+      return b || c ? S_INVALID : anon_lock(current, a, f->eax == SYS_ANON_LOCK);
     case SYS_RECLAIM_PRIORITY:
       if (!current->caps) {
         return S_DENIED;
@@ -2019,6 +2083,37 @@ namespace task {
   void reapAndExpireRuns() {
     expireTimers(ticks);
     reapProcesses();
+  }
+
+  bool purgeOneRegion() {
+    Process* owner = nullptr;
+    AnonRegion* victim = nullptr;
+    for (auto& p : processes) {
+      if (p.state != 1 || !p.pd || (owner && p.reclaim_priority < owner->reclaim_priority)) {
+        continue;
+      }
+      for (auto& region : p.anon) {
+        if (!can_purge(region)) { continue; }
+        if (!owner || p.reclaim_priority > owner->reclaim_priority || region.resident > victim->resident) {
+          owner = &p;
+          victim = &region;
+        }
+      }
+    }
+    if (!victim) { return false; }
+    // Only the unbound scheduler reaches this path. The reservation stays owned.
+    const u32 freed = free_anon_pages(owner, *victim);
+    victim->purged = true;
+    pr_debug("MEM purge pid=");
+    pr_debug_hex(owner->pid);
+    pr_debug(" base=");
+    pr_debug_hex(victim->base);
+    pr_debug(" pages=");
+    pr_debug_hex(freed);
+    pr_debug(" pass=");
+    pr_debug_hex(task_schedule_stats.passes);
+    pr_debug("\n");
+    return true;
   }
 
   static bool reclaimEligible(const Process& process) {

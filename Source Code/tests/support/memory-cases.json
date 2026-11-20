@@ -106,6 +106,13 @@
       "name": "managed group inheritance, deferred peer cleanup and PID generation isolation"
     }
   ],
+  "purgeable": [
+    {"id": "memory.purgeable.abi-and-lock-limits", "name": "purgeable ABI, reservation ownership and lock count edges"},
+    {"id": "memory.purgeable.low-discard-and-rebuild", "name": "LOW discards resident cache, preserves neighbors and supports rebuild"},
+    {"id": "memory.purgeable.critical-discard-before-kill", "name": "CRITICAL prefers cache by priority and can satisfy a deferred fault"},
+    {"id": "memory.purgeable.insufficient-cache-falls-back", "name": "insufficient discardable cache falls back to process reclaim on a later pass"},
+    {"id": "memory.purgeable.last-unlock-rearms-pressure", "name": "last unlock schedules discard again under unchanged LOW pressure"}
+  ],
   "anonymous": [
     {
       "id": "memory.anonymous.strict-feature-discovery",

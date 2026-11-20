@@ -29,6 +29,7 @@
 | 内存回收优先级；`launch_policy / SYS_RECLAIM_PRIORITY / terminalForeground` | `.\regression.ps1 -Suite 'process,policy,shell-waits'`；15 项 | 进程启动与回收 8 项、评分 ABI/权限及 managed run 初始分 2 项、前台交接 5 项。另加普通启动 1 项，验证 conhost 与 gsh 的评分，共 16 项 |
 | 物理页水位、回收待办和缺页重试；`page_watermark / reclaimLowest / retryAnonFault` | `node 'Source Code/tests/host/test-memory.js' reclaim '<ShellBridge 构建目录>'`；5 项，先用 `reclaim --list` 预览 | 水位初始化和匿名落页接入加 `images` 11 项、`anonymous` 7 项，进程回收及空闲决策变化加 `process` 8 项、`shell-waits` 5 项及普通启动 1 项 |
 | 进程组继承、查询与回收；`SYS_PROCESS_GROUP / runStartBound / interactiveStart / reclaimLowest` | `.\regression.ps1 -Suite 'process,cli,shell-waits'`；14 项，共用本次镜像执行 `test-memory.js reclaim` 5 项 | 进程生命周期 8 项、managed run 1 项、交互组继承与结果交付 5 项、回收专项 5 项、普通启动 1 项，共 20 项 |
+| 可丢弃匿名内存；`SYS_ANON_PURGEABLE / SYS_ANON_LOCK / SYS_ANON_UNLOCK / purgeOneRegion` | `node 'Source Code/tests/host/test-memory.js' purgeable '<ShellBridge 构建目录>'`；5 项，先用 `purgeable --list` 预览 | 匿名落页、解除映射和失效重建加 `anonymous` 7 项；水位回收及空闲待办变化加 `reclaim` 5 项、`process` 8 项、`shell-waits` 5 项；普通启动 1 项，共 31 项 |
 | 手动复位 Event、阻塞等待、Set/Reset/Close | `node 'Source Code/tests/host/test-event-waits.js' '<ShellBridge 构建目录>'`；8 项，先 `--list` | 调度/等待接入加 process 8；ABI/授权变化加 policy 2；SDK/启动能力位变化加普通启动 1。Event 独立专项不自动加入 core，复用同次构建、共享 VM 工具和私有盘 |
 | 线程传参、返回、join/detach 与 TID | `node 'Source Code/tests/host/test-thread-waits.js' '<ShellBridge 构建目录>'`；8 项，先 `--list` | 创建/退出接入加 process 8；用户栈变化加 images 11；新 ABI/授权加 policy 2；公共等待撤销增加 join 占用清理时加 Event 8、completion-waits 8；普通启动 1。本轮组合 46 项。V2 探针 threadv2.snx 仅打包到 ShellBridge，不自动加入 core |
 | PID 槽位/代数、陈旧标识、Object/cookie/TID 寿命 | `node 'Source Code/tests/host/test-pids.js' '<ShellBridge 构建目录>'`；8 项；`node 'Source Code/tests/host/test-identifiers.js'`；6 项；均先 `--list` | 进程资源变化加 process 8、历史完成记录加 completion 5、终端归属查找加 interactive 1、句柄代数/选槽变化加 policy 2、Event 8、线程 8；普通启动 1，共 47 项。独立专项不自动加入 core，不改统一 267 个 ID。真实负载消耗写入 PID 专项 shell-report 的 identifierAudit；耗尽边界用同一分配器的缩小范围及 ShellBridge 启动自检，不能在运行中重置用户编号 |
@@ -75,7 +76,7 @@ node 'Source Code/tests/host/test-memory.js' anonymous --list
 node 'Source Code/tests/host/test-memory.js' anonymous $build
 ```
 
-高页/SNX 改用 `images`，水位回收使用 `reclaim`。按表中实际受影响的范围组合模式，不默认连续运行。普通启动检查使用 `dev.ps1 -BuildOnly` 的普通镜像。
+高页/SNX 改用 `images`，水位回收使用 `reclaim`，可丢弃页使用 `purgeable`。按表中实际受影响的范围组合模式，不默认连续运行。普通启动检查使用 `dev.ps1 -BuildOnly` 的普通镜像。
 
 ## 临时测试与收尾
 

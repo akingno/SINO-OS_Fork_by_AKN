@@ -53,6 +53,7 @@
 | `test-memory.js images <ShellBridge 目录>` | 11 | 4 GiB 单核/E820 空洞、定向映像/页表 OOM 回滚、SNX v1/v2、高页、线程栈与冷启动 |
 | `test-memory.js anonymous <ShellBridge 目录>` | 7 | 匿名映射、配额、跨页 I/O、定向 OOM/首次触页故障及可写副本注入隔离 |
 | `test-memory.js reclaim <ShellBridge 目录>` | 5 | 水位精确边界、预留准入、按评分和驻留页排序、回收后补页、失败语义、进程组继承与回收 |
+| `test-memory.js purgeable <ShellBridge 目录>` | 5 | 可丢弃 ABI、锁计数、LOW 丢弃和重建、CRITICAL 回收顺序及最后解锁重启丢弃 |
 
 上述入口均支持 `--list`（内存入口为 `test-memory.js images --list`）。内存用例按实际探针/配置契约执行计数，详细断言列在报告 conditions 中。默认配置为 4096 MiB、单核，并用 QMP 核对。旧 64 MiB 兼容例已移除，映像、页表和匿名页的失败回滚改由限定目标的注入保留覆盖，不再依赖耗尽全局物理池。
 

@@ -35,7 +35,7 @@ namespace task {
         pr_debug_hex(free_pages);
         pr_debug("\n");
         observedWatermark = watermark;
-        reclaimPending = watermark == PageWatermark::Critical;
+        reclaimPending = watermark != PageWatermark::Normal;
       }
     }
 
@@ -178,9 +178,13 @@ namespace task {
     observeWatermark();
     if (reclaimPending) {
       reclaimPending = false;
-      if (page_watermark() == PageWatermark::Critical) {
-        reclaimPending = reclaimLowest();
-        if (!reclaimPending) { pr_debug("MEM reclaim no eligible process\n"); }
+      const auto watermark = page_watermark();
+      if (watermark != PageWatermark::Normal) {
+        reclaimPending = purgeOneRegion();
+        if (!reclaimPending && watermark == PageWatermark::Critical) {
+          reclaimPending = reclaimLowest();
+          if (!reclaimPending) { pr_debug("MEM reclaim no eligible process\n"); }
+        }
       }
       observeWatermark();
     }

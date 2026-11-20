@@ -222,35 +222,43 @@ async function anonymousContracts(source) {
     });
 }
 
+function pressureTools({command, free, baseline, until, guestLog}) {
+    async function launch(mode, marker, strict = true) {
+        const offset = guestLog().length;
+        const out = await command(`run ${strict ? '-s ' : ''}/boot/reclaim.snx ${mode}`);
+        const pid = Number(out.match(/^Started user process (\d+)\n$/)?.[1]);
+        assert(pid, out);
+        await until(() => guestLog().slice(offset).includes(marker));
+        return pid;
+    }
+    async function processes() {
+        const table = await command('ps');
+        return new Map([...table.matchAll(/^(\d+)\s+\d+\s+(\d+)\s+\S+$/gm)]
+            .map(([, pid, pages]) => [Number(pid), Number(pages)]));
+    }
+    async function currentFree() { return free(await command('mem')); }
+    async function override(critical, normal, expected) {
+        assert.equal(await command(`mmtest-watermark ${critical} ${normal}`), `${expected}\n`);
+    }
+    async function reset() { assert.equal(await command('mmtest-watermark reset'), '0\n'); }
+    async function cleanup() {
+        await reset();
+        for (const pid of (await processes()).keys()) { await command(`kill ${pid}`); }
+        await until(async () => (await processes()).size === 0 && await currentFree() === baseline);
+    }
+    return {launch, processes, currentFree, override, reset, cleanup};
+}
+
+function victims(log) {
+    return [...log.matchAll(/MEM reclaim pid=(0x[\da-f]+) priority=(0x[\da-f]+) pages=(0x[\da-f]+) pass=(0x[\da-f]+) before=(0x[\da-f]+) after=(0x[\da-f]+)/gi)]
+        .map(([, pid, score, pages, pass, before, after]) => ({pid:Number(pid), score:Number(score),
+            pages:Number(pages), pass:Number(pass), before:Number(before), after:Number(after)}));
+}
+
 async function reclaimContracts(source) {
-    await boot(source, 'reclaim', vm.memoryMiB, async ({check, command, free, baseline, until, guestLog, channel, qmp, directory}) => {
-        async function launch(mode, marker, strict = true) {
-            const offset = guestLog().length;
-            const out = await command(`run ${strict ? '-s ' : ''}/boot/reclaim.snx ${mode}`);
-            const pid = Number(out.match(/^Started user process (\d+)\n$/)?.[1]);
-            assert(pid, out);
-            await until(() => guestLog().slice(offset).includes(marker));
-            return pid;
-        }
-        async function processes() {
-            const table = await command('ps');
-            return new Map([...table.matchAll(/^(\d+)\s+\d+\s+(\d+)\s+\S+$/gm)]
-                .map(([, pid, pages]) => [Number(pid), Number(pages)]));
-        }
-        async function currentFree() { return free(await command('mem')); }
-        async function override(critical, normal, expected) {
-            assert.equal(await command(`mmtest-watermark ${critical} ${normal}`), `${expected}\n`);
-        }
-        async function cleanup() {
-            assert.equal(await command('mmtest-watermark reset'), '0\n');
-            for (const pid of (await processes()).keys()) { await command(`kill ${pid}`); }
-            await until(async () => (await processes()).size === 0 && await currentFree() === baseline);
-        }
-        function victims(log) {
-            return [...log.matchAll(/MEM reclaim pid=(0x[\da-f]+) priority=(0x[\da-f]+) pages=(0x[\da-f]+) pass=(0x[\da-f]+) before=(0x[\da-f]+) after=(0x[\da-f]+)/gi)]
-                .map(([, pid, score, pages, pass, before, after]) => ({pid:Number(pid), score:Number(score),
-                    pages:Number(pages), pass:Number(pass), before:Number(before), after:Number(after)}));
-        }
+    await boot(source, 'reclaim', vm.memoryMiB, async context => {
+        const {check, command, baseline, until, guestLog, channel, qmp, directory} = context;
+        const {launch, processes, currentFree, override, cleanup} = pressureTools(context);
 
         await check('memory.reclaim.pool-and-reservation-boundaries', ['published pool, exact watermarks and anonymous reservation rules'], async () => {
             await geometry(qmp, directory, guestLog(), baseline);
@@ -411,10 +419,103 @@ async function reclaimContracts(source) {
     });
 }
 
+async function purgeableContracts(source) {
+    await boot(source, 'purgeable', vm.memoryMiB, async context => {
+        const {check, probe, until, guestLog} = context;
+        const {launch, processes, currentFree, override, reset, cleanup} = pressureTools(context);
+        function purges(log) {
+            return [...log.matchAll(/MEM purge pid=(0x[\da-f]+) base=(0x[\da-f]+) pages=(0x[\da-f]+) pass=(0x[\da-f]+)/gi)]
+                .map(([, pid, base, pages, pass]) => ({pid:Number(pid), base:Number(base), pages:Number(pages), pass:Number(pass)}));
+        }
+
+        await check('memory.purgeable.abi-and-lock-limits', ['purgeable ABI, reservation ownership and lock count edges'], () =>
+            probe('run -s /boot/reclaim.snx purge-abi', /PURGE ABI PASS/));
+
+        await check('memory.purgeable.low-discard-and-rebuild', ['LOW discards resident cache, preserves neighbors and supports rebuild'], async () => {
+            const offset = guestLog().length;
+            const log = () => guestLog().slice(offset);
+            try {
+                const pid = await launch('purge-cache', 'PURGE CACHE READY');
+                assert.deepEqual(await processes(), new Map([[pid, 5]]));
+                const before = await currentFree();
+                await override(before - 32, before + 128, 1);
+                await until(() => log().includes('PURGE CACHE DROPPED'));
+                assert.deepEqual(purges(log()).map(item => [item.pid, item.pages]), [[pid, 3]]);
+                assert.equal(await currentFree(), before + 3, 'other mappings keep the shared page table alive');
+                assert.deepEqual(await processes(), new Map([[pid, 2]]));
+                assert.deepEqual(victims(log()), []);
+                await reset();
+                await until(() => log().includes('PURGE CACHE PASS'));
+                await until(async () => !(await processes()).has(pid));
+            } finally { await cleanup(); }
+        });
+
+        await check('memory.purgeable.critical-discard-before-kill', ['CRITICAL prefers cache by priority and can satisfy a deferred fault'], async () => {
+            try {
+                const lower = await launch('purge-hold-large', 'PURGE HOLD READY', false);
+                const higher = await launch('purge-hold', 'PURGE HOLD READY');
+                const ordinary = await launch('hold-large', 'RECLAIM HOLD READY');
+                const before = await currentFree();
+                const offset = guestLog().length;
+                await override(before + 1, before + 1, 2);
+                await until(() => purges(guestLog().slice(offset)).length > 0);
+                assert.deepEqual(purges(guestLog().slice(offset)).map(item => [item.pid, item.pages]), [[higher, 2]]);
+                assert.deepEqual(victims(guestLog().slice(offset)), []);
+                assert.deepEqual(await processes(), new Map([[lower, 4], [higher, 0], [ordinary, 16]]));
+            } finally { await cleanup(); }
+
+            try {
+                const cache = await launch('purge-hold', 'PURGE HOLD READY');
+                const offset = guestLog().length;
+                const requester = await launch('retry', 'RECLAIM TOUCH PASS');
+                const log = guestLog().slice(offset);
+                assert.match(log, /injected stage=0x00000004[\s\S]*MEM purge pid=[^\n]+[\s\S]*RECLAIM TOUCH PASS/);
+                assert.deepEqual(victims(log), []);
+                assert.deepEqual(await processes(), new Map([[cache, 0], [requester, 1]]));
+            } finally { await cleanup(); }
+        });
+
+        await check('memory.purgeable.insufficient-cache-falls-back', ['insufficient discardable cache falls back to process reclaim on a later pass'], async () => {
+            try {
+                const cache = await launch('purge-hold', 'PURGE HOLD READY');
+                const ordinary = await launch('hold-large', 'RECLAIM HOLD READY');
+                const before = await currentFree();
+                const offset = guestLog().length;
+                const log = () => guestLog().slice(offset);
+                await override(before + 8, before + 256, 2);
+                await until(() => victims(log()).length > 0);
+                const dropped = purges(log());
+                const reaped = victims(log());
+                assert.deepEqual(dropped.map(item => [item.pid, item.pages]), [[cache, 2]]);
+                assert.deepEqual(reaped.map(item => item.pid), [ordinary]);
+                assert(dropped[0].pass < reaped[0].pass, 'purge is completed before process reclaim');
+                assert(reaped[0].before > before && reaped[0].before < before + 8);
+                assert.deepEqual(await processes(), new Map([[cache, 0]]));
+            } finally { await cleanup(); }
+        });
+
+        await check('memory.purgeable.last-unlock-rearms-pressure', ['last unlock schedules discard again under unchanged LOW pressure'], async () => {
+            const offset = guestLog().length;
+            const log = () => guestLog().slice(offset);
+            try {
+                const pid = await launch('purge-unlock', 'PURGE UNLOCK READY');
+                const available = await currentFree();
+                await override(available - 32, available + 128, 1);
+                await until(() => log().includes('PURGE UNLOCK PASS') && purges(log()).length >= 2);
+                const dropped = purges(log());
+                assert.deepEqual(dropped.map(item => [item.pid, item.pages]), [[pid, 1], [pid, 1]]);
+                assert.equal(dropped[0].base, dropped[1].base);
+                assert.deepEqual(victims(log()), []);
+                assert.deepEqual(await processes(), new Map([[pid, 0]]));
+            } finally { await cleanup(); }
+        });
+    });
+}
+
 const [mode, source] = process.argv.slice(2);
-const suites = {images:imageContracts, anonymous:anonymousContracts, reclaim:reclaimContracts};
+const suites = {images:imageContracts, anonymous:anonymousContracts, reclaim:reclaimContracts, purgeable:purgeableContracts};
 if (!Object.hasOwn(suites, mode) || process.argv.length !== 4) {
-    console.error('Usage: node test-memory.js images|anonymous|reclaim <ShellBridge build directory>|--list');
+    console.error('Usage: node test-memory.js images|anonymous|reclaim|purgeable <ShellBridge build directory>|--list');
     process.exitCode = 2;
 } else if (source === '--list') {
     console.log(mode + ': ' + memoryCases[mode].length + ' cases');

@@ -49,11 +49,12 @@ THREAD_WAIT=16384.
 `FEATURE_THREAD_JOIN=65536` advertises argument-bearing threads and join/detach.
 `FEATURE_RECLAIM=131072` advertises per-process reclaim priority queries and updates.
 `FEATURE_PROCESS_GROUP=262144` advertises reclaim groups and the self-query.
-The current feature mask is 524287. Clients detect features by testing individual bits.
+`FEATURE_PURGEABLE=524288` advertises discardable anonymous regions and pins.
+The current feature mask is 1048575. Clients detect features by testing individual bits.
 These indicate implemented mechanisms, not grants to use every mechanism.
 Unknown feature bits must not be interpreted as authority. Unknown syscalls
-return S_INVALID. Add future syscall IDs before SYS_CALL_END; the sentinel is not
-a callable interface. Strict policy remains a default-deny allowlist.
+return S_INVALID. Add future syscall IDs before `SYS_CALL_END`, currently `0x15b`.
+Strict policy remains a default-deny allowlist.
 
 ## Reclaim priority
 
@@ -84,7 +85,6 @@ unchanged.
 `SYS_PROCESS_GROUP=0x157` returns the caller's positive group ID. EBX, ECX and
 EDX must be zero. Both strict and compatibility processes can use the query
 through `ProcessGroup()` in the SDK. Nonzero arguments return `S_INVALID`.
-`SYS_CALL_END` is `0x158`.
 
 Independent launches use their full PID as the group ID. This includes ordinary
 and tracked spawn, host-managed runs, and each new interactive session root.
@@ -235,7 +235,7 @@ region per allocation and returns null on failure. `free(NULL)` is a no-op.
 Valid non-null pointers passed to `free` must come from a live `malloc` in the
 same process. Process teardown reclaims outstanding regions on exit or fault.
 
-Phase E centralizes syscall user-buffer preparation. The kernel checks the
+Syscall user-buffer preparation checks the
 entire requested range for read or write permission before reading or writing
 it. Nested request pointers are prepared before operations consume input, write
 files, or publish handles or results. Bounded strings are read through their
@@ -244,10 +244,38 @@ first NUL, including a NUL at the end of a mapped page. An invalid range returns
 before allocating missing pages. On physical OOM the syscall returns `S_NOMEM`
 before consuming input, modifying the file or writing the caller's output.
 Any pages already prepared remain owned by the mapping and are reclaimed on
-unmap or exit. A user instruction that reaches physical OOM at first touch
-terminates the process with `PROCESS_FAULTED`, vector 14. Protection violations
+unmap or exit. If first touch still cannot be satisfied after any eligible
+reclaim retry, the process exits with `PROCESS_FAULTED`, vector 14. Protection violations
 and references outside live regions follow the usual fault path. Program images,
 argument pages and thread stacks still receive backing at creation.
+
+### Discardable anonymous memory
+
+Both policies may manage their own anonymous regions. All operations take the
+exact live region base in EBX and require EDX to be zero.
+
+| Syscall | ECX | SDK |
+| --- | --- | --- |
+| `SYS_ANON_PURGEABLE=0x158` | 0 clears the designation, 1 marks discardable, 2 queries contents | `AnonSetPurgeable(base, enabled)`, `AnonQuery(base)` |
+| `SYS_ANON_LOCK=0x159` | 0 | `AnonLock(base)` |
+| `SYS_ANON_UNLOCK=0x15a` | 0 | `AnonUnlock(base)` |
+
+The first mark leaves the region unlocked. Locks are counted across threads,
+and any outstanding lock prevents pressure-driven discard. Locking or
+unlocking a regular region, an unmatched unlock, invalid arguments, and
+unknown or interior bases return `S_INVALID`. A lock at the 65535 limit
+returns `S_LIMIT`. Clearing the designation or unmapping a locked region
+returns `S_BUSY`.
+
+`AnonQuery` returns `S_OK` for content that has not been discarded and
+`S_CHANGED` after discard. Residency is still lazy. Discard retains the
+reservation and quota charge, and later accesses get fresh zero pages. The
+loss status persists across new page allocations and across clearing the
+designation. To use a cache, lock before checking and reading it. If the
+query returns `S_CHANGED`, rebuild the cache under the lock and mark it again
+to acknowledge the rebuild. Marking an already discardable, discarded region
+while unlocked returns `S_BUSY`. Threads coordinate their own data writes and
+hold the lock through any syscall that uses the cache buffer.
 
 ## SNX image layout and physical pool
 

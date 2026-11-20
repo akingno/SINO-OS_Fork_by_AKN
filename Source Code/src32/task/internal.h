@@ -60,7 +60,12 @@ struct Thread {
 };
 static_assert(__is_trivially_copyable(Thread), "thread state needs no runtime construction");
 
-struct AnonRegion { u32 base, bytes; };
+struct AnonRegion {
+  u32 base, bytes;
+  u16 resident, lock_count;
+  bool purgeable, purged;
+};
+static_assert(ANON_MAX_BYTES / PAGE_SIZE <= 0xffffu, "anonymous region resident count fits u16");
 enum class ReclaimClass : i16 {
   System = -1000, Service = -800, Foreground = 0, InteractiveBackground = 200,
   Background = 400
@@ -97,6 +102,7 @@ extern Process* current;
 extern int currentThread;
 void reapAndExpireRuns();
 bool reclaimLowest();
+bool purgeOneRegion();
 void requestReclaim();
 void initScheduler();
 void waitSelfTest();

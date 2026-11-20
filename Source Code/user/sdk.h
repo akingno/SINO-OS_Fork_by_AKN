@@ -55,6 +55,14 @@ static inline int SetReclaimPriority(i32 priority) {
   return api(SYS_RECLAIM_PRIORITY, (u32)ReclaimPriorityOp::Set, (u32)priority, 0);
 }
 static inline int ProcessGroup(void) { return api(SYS_PROCESS_GROUP, 0, 0, 0); }
+static inline int AnonSetPurgeable(void* base, bool enabled) {
+  return api(SYS_ANON_PURGEABLE, (u32)base, (u32)(enabled ? AnonPurgeableOp::Mark : AnonPurgeableOp::Clear), 0);
+}
+static inline int AnonQuery(const void* base) {
+  return api(SYS_ANON_PURGEABLE, (u32)base, (u32)AnonPurgeableOp::Query, 0);
+}
+static inline int AnonLock(void* base) { return api(SYS_ANON_LOCK, (u32)base, 0, 0); }
+static inline int AnonUnlock(void* base) { return api(SYS_ANON_UNLOCK, (u32)base, 0, 0); }
 /* Map returns a positive base or an S_* error. Unmap takes the exact base. */
 static inline int AnonMap(u32 bytes) {
   return api(SYS_ANON_MAP, bytes, 0, 0);
