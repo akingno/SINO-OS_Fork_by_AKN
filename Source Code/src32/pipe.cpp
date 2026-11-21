@@ -3,6 +3,7 @@
 #include "pipe.h"
 #include "task/task.h"
 #include "lib/kstring.h"
+#include "mm/kmalloc.h"
 #include "mm/page.h"
 typedef struct {
   u8* data;
@@ -11,7 +12,9 @@ typedef struct {
 } Pipe;
 static u32 pipe_count;
 static void destroy(Pipe* p) {
-  kpage_free(p->data); kpage_free(p); pipe_count--;
+  kpage_free(p->data);
+  kfree(p);
+  pipe_count--;
 }
 void pipe_release(Object* endpoint) {
   Pipe* p = (Pipe*)endpoint->value;
@@ -35,16 +38,14 @@ void pipe_limits(PipeLimits* out) {
   *out = (PipeLimits){sizeof(*out), 1, PIPE_COUNT, PIPE_BYTES, RUN_IO_MAX,
                       STREAM_WAIT_MAX, 31, 0};
 }
-/* 【简化实现：管道内存】元数据和缓冲各占一整页，即使容量很小也分配两页；
- * 全局数量和容量采用固定配额。替换方向：元数据改用内核小对象分配器，
- * 缓冲按需分配；配额仍需保留，是否扩容应与对象、句柄和进程预算一起决定。 */
+/* 管道元数据共享 slab 页。字节缓冲按整页分配，数量和容量由固定配额限制。 */
 int pipe_create(Handle* owner, u32 capacity, PipePair* out) {
   if (!capacity || capacity > PIPE_BYTES) return S_INVALID;
   if (pipe_count >= PIPE_COUNT) return S_LIMIT;
-  Pipe* p = (Pipe*)kpage_alloc();
+  auto* p = static_cast<Pipe*>(kzalloc(sizeof(Pipe)));
   if (!p) return S_NOMEM;
   p->data = (u8*)kpage_alloc();
-  if (!p->data) { kpage_free(p); return S_NOMEM; }
+  if (!p->data) { kfree(p); return S_NOMEM; }
   pipe_count++; p->capacity = capacity;
   int reader = object_new(ObjType::PIPE_READ, (int)p);
   if (reader < 0) { destroy(p); return reader; }
