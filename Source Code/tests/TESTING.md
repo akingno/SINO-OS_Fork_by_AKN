@@ -57,6 +57,8 @@ task 子系统提取按实际接口选测：process 8 项、policy 2 项；Threa
 
 物理页分配器迁移到 buddy 时，选 process 8 项、images 11 项、anonymous 7 项及普通启动 1 项，共 27 项。现有启动自检包含精确连续页分配、守护页和空闲链一致性，images 核对 E820 和 8 字节/PFN 的元数据预算，不新增 ID。
 
+新增 slab 缓存及页归属时沿用上述 27 项。普通启动和 process 启动用例核对 slab 自检标记，覆盖大小类、跨页扩容、对象隔离、非法及重复释放、空 slab 归还，不新增 ID。调用模块迁移后按对应模块选测。
+
 调度/主循环空闲决策变化选 process 8 项、shell-waits 5 项、普通启动 1 项；后台待办查询涉及网络与 RTC 时各加对应 1 项。process 原有启动/抢占用例包含就绪/到期状态自检、实际 idle_halt 的 `sti; hlt; ret` 字节、`probe.snx /schedule` 主动让出/有限睡眠/竞争读重试，以及有界候选和空闲统计检查，不新增固定 ID。`task_schedule_stats` 仅供宿主观察，不是用户 ABI。
 
 ## VM 配置基线

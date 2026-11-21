@@ -147,7 +147,7 @@ bool BuddyZone::release(u32 first, u32 count, PageState state) {
   }
   const u32 last = first + count;
   for (u32 pfn = first; pfn < last; ++pfn) {
-    if (frame(pfn).state() != state) {
+    if (frame(pfn).state() != state || frame(pfn).isSlab()) {
       return false;
     }
   }
@@ -438,13 +438,44 @@ int kpage_free(void* page) {
   return kpage_free_run(page, 1);
 }
 
+void* mm::slab_page_alloc(u32 cache) {
+  if (cache >= SlabCacheCount) {
+    return nullptr;
+  }
+  void* page = kpage_alloc();
+  if (page) {
+    page_frames[virt_to_phys(page) / PAGE_SIZE].setSlab(cache);
+  }
+  return page;
+}
+
+int mm::slab_page_cache(const void* address) {
+  const u32 pfn = virt_to_phys(address) / PAGE_SIZE;
+  if (!low.contains(pfn, 1) || !page_frames[pfn].isSlab()) {
+    return -1;
+  }
+  return static_cast<int>(page_frames[pfn].slabCache());
+}
+
+bool mm::slab_page_free(void* base, u32 cache) {
+  const phys_t address = virt_to_phys(base);
+  if (!page_aligned(address) || cache >= SlabCacheCount ||
+      slab_page_cache(base) != static_cast<int>(cache)) {
+    return false;
+  }
+  const u32 pfn = address / PAGE_SIZE;
+  low.addFreeRange(pfn, pfn + 1);
+  ++free_pages;
+  return true;
+}
+
 /* Guard transitions preserve ownership. Paging restores the PTE before
  * changing Guarded back to Kernel so the owner can free the original run. */
 int kpage_guard_claim(void* page) {
   const phys_t address = virt_to_phys(page);
   const u32 pfn = address / PAGE_SIZE;
   if (!page_aligned(address) || !direct_map_end || !low.contains(pfn, 1) ||
-      page_frames[pfn].state() != PageState::Kernel) {
+      page_frames[pfn].state() != PageState::Kernel || page_frames[pfn].isSlab()) {
     return 0;
   }
   page_frames[pfn].reset(PageState::Guarded);

@@ -4,6 +4,7 @@
 #include "mm/page.h"
 #include "mm/paging.h"
 #include "mm/kmap.h"
+#include "mm/slab.h"
 #include "storage.h"
 #include "disk.h"
 #include "task/task.h"
@@ -325,6 +326,7 @@ void ps2_byte(int aux, u8 value) {
 
 void kernel_tests(void) {
   page_allocator_test();
+  mm::slab_selftest();
   kmap_selftest();
   __asm__ volatile("int3");
   u32 v = 2;

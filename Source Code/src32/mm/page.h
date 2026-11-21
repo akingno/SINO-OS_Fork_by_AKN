@@ -27,6 +27,7 @@ extern u32 free_pages, nr_pages;
 
 namespace mm {
 enum class PageState : u8 { Free, Used, Reserved, Kernel, Guarded, Heap };
+inline constexpr u32 SlabCacheCount = 8;
 
 struct PageFrame {
   static constexpr u32 PfnMask = PHYS_LIMIT_PAGES - 1;
@@ -34,6 +35,8 @@ struct PageFrame {
   PageState state() const { return static_cast<PageState>((lo >> 20) & 7u); }
   u32 order() const { return (lo >> 23) & 15u; }
   bool isHead() const { return (lo & HeadBit) != 0; }
+  bool isSlab() const { return (lo & SlabBit) != 0; }
+  u32 slabCache() const { return (hi >> 20) & (SlabCacheCount - 1); }
   bool isFreeHead(u32 expected) const {
     return isHead() && state() == PageState::Free && order() == expected;
   }
@@ -47,16 +50,26 @@ struct PageFrame {
     hi = 0;
   }
   void setFreeHead(u32 order) { lo = HeadBit | (order << 23); }
+  void setSlab(u32 cache) {
+    lo |= SlabBit;
+    hi = (hi & PfnMask) | (cache << 20);
+  }
 
 private:
-  // lo: prev[19:0], state[22:20], order[26:23], head[27].
-  // hi: next[19:0]. Remaining bits are available for heap/slab ownership.
+  // lo: prev[19:0], state[22:20], order[26:23], head[27], slab[28].
+  // hi: next[19:0], slab cache index[22:20].
   static constexpr u32 HeadBit = 1u << 27;
+  static constexpr u32 SlabBit = 1u << 28;
   u32 lo, hi;
 };
 
 static_assert(sizeof(PageFrame) == 8 && PageFrame::PfnMask == 0xfffffu,
               "page metadata must fit the 20-bit PFN layout and boot budget");
+
+// Slab-owned pages cannot be freed or guarded via the regular page API.
+void* slab_page_alloc(u32 cache);
+int slab_page_cache(const void* address);  // -1 unless contained in a live slab.
+bool slab_page_free(void* base, u32 cache);
 }
 
 enum class PageWatermark : u8 { Normal, Low, Critical };

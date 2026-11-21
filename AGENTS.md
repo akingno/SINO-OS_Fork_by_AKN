@@ -91,6 +91,7 @@ Shell 宿主测试参数：`-ExpectedExitCode 1` 断言预期失败，`-TimeoutS
 | 构建、引导 | build32.ps1、build-image32.js、src32/loader.asm、src32/kernel.cpp:kmain | `tests/host/test-boot.js ` |
 | FAT12 启动卷 | src32/fs/boot_fat12.cpp:fs_init / fs_read / fs_read_at、src32/boot-ramdisk.h | 普通镜像无窗口启动；ShellBridge 验证 `/boot` 读取 |
 | 物理页分配、启动页表 | src32/mm/page.cpp:page_init / page_alloc_run、src32/mm/paging.cpp:paging_bootstrap / paging_kernel_init | 普通镜像无窗口启动，核对启动日志 |
+| 内核 slab 缓存 | src32/mm/slab.h、src32/mm/slab.cpp、src32/mm/page.h:PageFrame | 普通启动与 process 核对启动自检；页归属变更加 images、anonymous，详见 TESTING.md |
 | 用户页表、权限和线程栈 | src32/mm/paging.cpp、src32/mm/uaccess.cpp:uaccess_prepare、src32/task/process.cpp:launch_policy / alloc_user_stack | ShellBridge 中 `run -s /boot/poltest.snx paging-a/b` |
 | 多用户页表与动态地址窗口 | src32/mm/paging.cpp:paging_user_map / paging_user_find_gap | ShellBridge 中 `run -s /boot/poltest.snx paging-c` 系列 |
 | 匿名内存与 SDK 堆 | src32/task/process.cpp:anon_map / anon_unmap、user/runtime.cpp | ShellBridge 中 `run -s /boot/fstest.snx anon-*` 系列 |
