@@ -6,6 +6,7 @@
 #include "task/task.h"
 #include "task/wait.h"
 #include "lib/kstring.h"
+#include "mm/kmalloc.h"
 #include "mm/page.h"
 typedef struct {
   u32 refs, width, height, mode, foreground, closed, eof;
@@ -84,7 +85,7 @@ void terminal_release(int value, int client) {
     Terminal* t = c->terminal;
     if (t->foreground == c->pid)
       reset(t);
-    kpage_free(c);
+    kfree(c);
     unref(t);
   } else {
     Terminal* t = (Terminal*)value;
@@ -150,14 +151,14 @@ static int attach(Terminal* t, Handle* target, u32 pid) {
       break;
     }
   if (!handle) {
-    Client* c = (Client*)kpage_alloc();
+    auto* c = static_cast<Client*>(kzalloc(sizeof(Client)));
     if (!c)
       return S_NOMEM;
     c->terminal = t;
     c->pid = pid;
     int o = object_new(ObjType::TERM_CLIENT, (int)c);
     if (o < 0) {
-      kpage_free(c);
+      kfree(c);
       return o;
     }
     t->refs++;
@@ -300,14 +301,14 @@ int terminal_bind_interactive(void* session, Handle* handles, u32 pid,
   Terminal* t = (Terminal*)session;
   if (t->closed)
     return S_CLOSED;
-  Client* c = (Client*)kpage_alloc();
+  auto* c = static_cast<Client*>(kzalloc(sizeof(Client)));
   if (!c)
     return S_NOMEM;
   c->terminal = t;
   c->pid = pid;
   int object = object_new(ObjType::TERM_CLIENT, (int)c);
   if (object < 0) {
-    kpage_free(c);
+    kfree(c);
     return object;
   }
   t->refs++;

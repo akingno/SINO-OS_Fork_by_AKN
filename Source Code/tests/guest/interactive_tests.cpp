@@ -1,5 +1,8 @@
 #include "interactive.h"
 #include "stream.h"
+
+static constexpr char quota_gate[] = "/home/user/.brokerqa-process-quota";
+
 static void require(int yes, const char* why) {
   if (!yes) {
     Log("INTERACTIVE SELFTEST FAIL: ");
@@ -24,6 +27,16 @@ static void output(CliInfo* c, const char* text) {
   u32 n;
   require(StreamWriteAllFor(c->out, text, strlen(text), 200, &n) == 0,
           "session output");
+}
+static int hold_process_slot() {
+  const u32 start = StreamTicks();
+  char byte;
+  int status;
+  while ((status = Read(quota_gate, &byte, 1)) == 1 && StreamTicks() - start < 1000) {
+    Yield(5);
+  }
+  require(status == S_NOTFOUND, "process quota gate removed");
+  return 0;
 }
 enum { GSH_SMOKE, GSH_HOLD_RESULT, GSH_REJECT_START, GSH_HANGUP };
 static int gsh_smoke(int scenario) {
@@ -110,6 +123,9 @@ static int gsh_smoke(int scenario) {
 int main(void) {
   StartInfo start;
   require(QueryStartInfo(&start) == 0, "startup policy");
+  if (start.policy == PROCESS_COMPAT && streq(Arguments(), "hold-process-slot")) {
+    return hold_process_slot();
+  }
   if (start.policy == PROCESS_COMPAT && streq(Arguments(), "shell-smoke"))
     return gsh_smoke(GSH_SMOKE);
   if (start.policy == PROCESS_COMPAT && streq(Arguments(), "shell-wait"))
@@ -246,9 +262,15 @@ int main(void) {
   u32 offset = 0;
   RunSpec finite = {
       48, 1, 0, (u32) "/boot/spin.snx", 0, 0, 0, (u32)&offset, 0, 0, 5000, 0};
-  int captures[2] = {StartRun(&finite), StartRun(&finite)};
-  require(captures[0] > 0 && captures[1] > 0 && StartRun(&finite) == S_LIMIT,
-          "independent finite capture quota");
+  RunLimits limits;
+  require(QueryRunLimits(&limits) == S_OK && limits.runs && limits.runs <= RUN_COUNT,
+          "finite run quota advertised");
+  int captures[RUN_COUNT];
+  for (u32 i = 0; i < limits.runs; ++i) {
+    captures[i] = StartRun(&finite);
+    require(captures[i] > 0, "independent finite capture available");
+  }
+  require(StartRun(&finite) == S_LIMIT, "independent finite capture quota");
   int control[2] = {a, b}, child[2] = {0, 0};
   u32 begin = StreamTicks();
   while ((!child[0] || !child[1]) && StreamTicks() - begin < 300) {
@@ -291,7 +313,7 @@ int main(void) {
     Close(shell[i]);
     Close(control[i]);
   }
-  for (int i = 0; i < 2; i++) {
+  for (u32 i = 0; i < limits.runs; ++i) {
     CancelProcess(captures[i]);
     ProcessCompletion done;
     require(ProcessWaitFor(captures[i], &done, 300) == 0,
@@ -303,10 +325,15 @@ int main(void) {
   s.rights = FS_READ | FS_LOOKUP;
   int root = InteractiveStart(t, &s, dir, 0);
   require(root > 0, "rollback root");
-  int blockers[6];
-  for (int i = 0; i < 6; i++) {
-    blockers[i] = SpawnTracked("/boot/spin.snx", "");
-    require(blockers[i] > 0, "fill process table");
+  SystemInfo system;
+  ProcessInfo active[3];
+  require(QuerySystemInfo(&system) == S_OK && system.max_processes > 2 &&
+              api(SYS_PROCESSES, 0, (u32)active, 3) == 2,
+          "process quota baseline");
+  // Untracked fillers isolate process exhaustion from the parent's handle quota.
+  require(Write(quota_gate, "x", 1) == S_OK, "create process quota gate");
+  for (u32 i = 2; i < system.max_processes; ++i) {
+    require(SpawnArgs("/boot/brokerqa.snx", "hold-process-slot") > 0, "fill process table");
   }
   InteractiveSpec request;
   begin = StreamTicks();
@@ -325,11 +352,14 @@ int main(void) {
   require(ProcessWaitFor(root, &result, 300) == 0 && !result.code,
           "failed intent delivered once");
   Close(root);
-  for (int i = 0; i < 6; i++) {
-    CancelProcess(blockers[i]);
-    require(ProcessWaitFor(blockers[i], &result, 300) == 0, "blocker cleanup");
-    Close(blockers[i]);
+  require(Remove(quota_gate, 0) == S_OK, "release process quota gate");
+  begin = StreamTicks();
+  int remaining;
+  while ((remaining = api(SYS_PROCESSES, 0, (u32)active, 3)) > 1 &&
+         StreamTicks() - begin < 300) {
+    Yield(1);
   }
+  require(remaining == 1, "process quota fillers reaped");
   Close(t);
   t = TerminalCreate(80, 25);
   s = spec(1, 0, "auto-fail");
