@@ -2,9 +2,11 @@
 /* Preemption only at user boundaries. Kernel remains non-preemptible. */
 #include "internal.h"
 #include "../identifiers.h"
+#include "../mm/kmalloc.h"
 #include "../mm/paging.h"
 #include "../mm/kmap.h"
 #include "../mm/uaccess.h"
+#include "../mm/vma.h"
 #include "../object.h"
 #include "../vfs.h"
 #include "../storage.h"
@@ -120,6 +122,7 @@ namespace task {
     if (p->interactive) {
       kpage_free(p->interactive);
     }
+    mm::vma_destroy(p->vma_root);
     if (p->pd) {
 #ifdef SINO_SHELL_BRIDGE
       mmtest::clear(p->pd);
@@ -190,15 +193,17 @@ namespace task {
     }
     return freed;
   }
-  static AnonRegion* anon_region(Process* p, u32 base) {
-    if (!base) { return nullptr; }
-    for (auto& region : p->anon) {
-      if (region.base == base) { return &region; }
-    }
-    return nullptr;
+  using mm::VmaNode;
+  using mm::VmaType;
+
+  static VmaNode* anon_region(Process* p, u32 base) {
+    if (!base || !page_aligned(base)) { return nullptr; }
+    VmaNode* region = mm::vma_find_exact(p->vma_root, base / PAGE_SIZE);
+    return region && region->type == VmaType::Anonymous ? region : nullptr;
   }
-  static u32 free_anon_pages(Process* p, AnonRegion& region) {
-    const u32 freed = free_user_pages(p, region.base, region.base + region.bytes);
+  static u32 free_anon_pages(Process* p, VmaNode& region) {
+    const u32 base = region.startPage * PAGE_SIZE;
+    const u32 freed = free_user_pages(p, base, base + region.pageCount * PAGE_SIZE);
     if (freed != region.resident || freed > p->pages_used) {
       panic("Anonymous resident page count", freed, region.resident);
     }
@@ -206,96 +211,100 @@ namespace task {
     region.resident = 0;
     return freed;
   }
-  static bool can_purge(const AnonRegion& region) {
-    return region.purgeable && !region.lock_count && region.resident;
+  static bool can_purge(const VmaNode& region) {
+    return region.type == VmaType::Anonymous && region.hasFlag(VmaNode::Flag::Purgeable) &&
+           !region.lock_count && region.resident;
   }
-  static void schedule_purge(const AnonRegion& region) {
+  static void schedule_purge(const VmaNode& region) {
     if (can_purge(region) && page_watermark() != PageWatermark::Normal) { requestReclaim(); }
   }
-  /* 【简化实现：虚拟区间】用 32 项数组保存匿名预留区，线性避开已映射页和
-  * 尚未落地的预留区，总量限制 16 MiB；物理页由缺页路径按需补齐。
-  * 替换方向：统一管理映像、栈和匿名区的虚拟区间，记录权限与后备类型，
-  * 支持查找、合并和拆分；保留地址预留与物理页分配的分离。 */
+  /* VMA records anonymous reservations. The page table also covers mappings
+   * made by the loader, so the first-fit search checks both. */
   static int anon_map(Process* p, u32 bytes) {
     if (!bytes || !page_ceil_checked(bytes, &bytes)) {
       return S_INVALID;
     }
-    AnonRegion* slot = 0;
-    u32 used = 0;
-    for (u32 i = 0; i < ANON_MAX_REGIONS; i++) {
-      AnonRegion* region = &p->anon[i];
-      used += region->bytes;
-      if (!region->base && !slot) {
-        slot = region;
-      }
-    }
-    if (!slot || bytes > ANON_MAX_BYTES - used) {
+    if (p->anon_count >= ANON_MAX_REGIONS || bytes > ANON_MAX_BYTES - p->vma_bytes) {
       return S_LIMIT;
     }
-    /* Reservations occupy virtual space even before there is a PTE. */
+    const u32 pages = bytes / PAGE_SIZE;
     u32 start = USER_DYNAMIC_BASE;
     for (;;) {
-      u32 base = paging_user_find_gap(p->pd, start, USER_DYNAMIC_END, bytes);
+      const u32 base = paging_user_find_gap(p->pd, start, USER_DYNAMIC_END, bytes);
       if (!base) {
         return S_LIMIT;
       }
-      u32 next = base;
-      for (u32 i = 0; i < ANON_MAX_REGIONS; i++) {
-        const AnonRegion* region = &p->anon[i];
-        u32 end = region->base + region->bytes;
-        if (region->base < base + bytes && end > next) {
-          next = end;
-        }
+      const u32 basePage = base / PAGE_SIZE;
+      const VmaNode* overlap = mm::vma_find(p->vma_root, basePage);
+      if (!overlap) {
+        const VmaNode* next = mm::vma_lower_bound(p->vma_root, basePage);
+        if (next && next->startPage < basePage + pages) { overlap = next; }
       }
-      if (next == base) {
-        if (p->reclaim_priority >= (i16)ReclaimClass::Background &&
-            page_watermark() != PageWatermark::Normal) {
-          return S_NOMEM;
-        }
-        *slot = AnonRegion{base, bytes, 0, 0, false, false};
-        return (int)base;
+      if (overlap) {
+        start = (overlap->startPage + overlap->pageCount) * PAGE_SIZE;
+        continue;
       }
-      start = next;
+      if (p->reclaim_priority >= (i16)ReclaimClass::Background &&
+          page_watermark() != PageWatermark::Normal) {
+        return S_NOMEM;
+      }
+      auto* region = static_cast<VmaNode*>(kmalloc(sizeof(VmaNode)));
+      if (!region) { return S_LIMIT; }
+      *region = VmaNode{basePage, pages, 0, 0, 0, VmaType::Anonymous};
+      region->setFlag(VmaNode::Flag::Read, true);
+      region->setFlag(VmaNode::Flag::Write, true);
+      if (!mm::vma_insert(p->vma_root, region)) {
+        kfree(region);
+        return S_LIMIT;
+      }
+      p->vma_bytes += bytes;
+      ++p->anon_count;
+      return (int)base;
     }
   }
   /* 【简化实现：解除映射】只接受区域起点并释放整区，不能解除中间或部分范围。
   * 替换方向：在统一虚拟区间管理中拆分/缩短区域，再回收实际存在的页；
   * 同时处理等待中的用户缓冲区失效及页表、TLB 的生命周期。 */
   static int anon_unmap(Process* p, u32 base) {
-    AnonRegion* region = anon_region(p, base);
+    VmaNode* region = anon_region(p, base);
     if (!region) { return S_INVALID; }
     if (region->lock_count) { return S_BUSY; }
+    if (!mm::vma_remove(p->vma_root, region)) {
+      panic("Anonymous VMA ownership", p->pid, base);
+    }
     free_anon_pages(p, *region);
-    *region = {};
+    p->vma_bytes -= region->pageCount * PAGE_SIZE;
+    --p->anon_count;
+    kfree(region);
     return S_OK;
   }
 
   static int anon_purgeable(Process* p, u32 base, AnonPurgeableOp operation) {
-    AnonRegion* region = anon_region(p, base);
+    VmaNode* region = anon_region(p, base);
     if (!region) { return S_INVALID; }
     switch (operation) {
       case AnonPurgeableOp::Clear:
         if (region->lock_count) { return S_BUSY; }
-        region->purgeable = false;
+        region->setFlag(VmaNode::Flag::Purgeable, false);
         return S_OK;
       case AnonPurgeableOp::Mark:
-        if (region->purgeable && region->purged) {
+        if (region->hasFlag(VmaNode::Flag::Purgeable) && region->hasFlag(VmaNode::Flag::Purged)) {
           if (!region->lock_count) { return S_BUSY; }
           // A locked owner may acknowledge that it rebuilt the contents.
-          region->purged = false;
+          region->setFlag(VmaNode::Flag::Purged, false);
         }
-        region->purgeable = true;
+        region->setFlag(VmaNode::Flag::Purgeable, true);
         schedule_purge(*region);
         return S_OK;
       case AnonPurgeableOp::Query:
-        return region->purged ? S_CHANGED : S_OK;
+        return region->hasFlag(VmaNode::Flag::Purged) ? S_CHANGED : S_OK;
     }
     return S_INVALID;
   }
 
   static int anon_lock(Process* p, u32 base, bool lock) {
-    AnonRegion* region = anon_region(p, base);
-    if (!region || !region->purgeable) { return S_INVALID; }
+    VmaNode* region = anon_region(p, base);
+    if (!region || !region->hasFlag(VmaNode::Flag::Purgeable)) { return S_INVALID; }
     if (lock) {
       if (region->lock_count == 0xffffu) { return S_LIMIT; }
       ++region->lock_count;
@@ -312,39 +321,35 @@ namespace task {
       page < USER_DYNAMIC_BASE || page >= USER_DYNAMIC_END) {
       return UserPageStatus::Invalid;
     }
-    for (u32 i = 0; i < ANON_MAX_REGIONS; i++) {
-      AnonRegion* region = &current->anon[i];
-      if (page >= region->base && page - region->base < region->bytes) {
-        if (!populate) {
-          return UserPageStatus::Ok;
-        }
-        if (paging_user_flags(pd, page) & PAGE_PRESENT) {
-          return UserPageStatus::Invalid;
-        }
-#ifdef SINO_SHELL_BRIDGE
-        if (mmtest::fail(current->pd, mmtest::Stage::Anonymous)) {
-          return UserPageStatus::DataNoMemory;
-        }
-#endif
-        const auto status = alloc_user_page(current, page, 1, true).status;
-        if (status == UserPageStatus::Ok) {
-          current->pages_used++;
-          region->resident++;
-          const auto watermark = page_watermark();
-          if (watermark == PageWatermark::Critical ||
-              (watermark == PageWatermark::Low && can_purge(*region))) {
-            requestReclaim();
-          }
-          return UserPageStatus::Ok;
-        }
-        if (status == UserPageStatus::DataNoMemory && page_watermark() == PageWatermark::Critical) {
-          requestReclaim();
-          return UserPageStatus::ReclaimDataNoMemory;
-        }
-        return status;
-      }
+    VmaNode* region = mm::vma_find(current->vma_root, page / PAGE_SIZE);
+    if (!region || region->type != VmaType::Anonymous) {
+      return UserPageStatus::Invalid;
     }
-    return UserPageStatus::Invalid;
+    if (!populate) {
+      return UserPageStatus::Ok;
+    }
+    if (paging_user_flags(pd, page) & PAGE_PRESENT) {
+      return UserPageStatus::Invalid;
+    }
+#ifdef SINO_SHELL_BRIDGE
+    if (mmtest::fail(current->pd, mmtest::Stage::Anonymous)) {
+      return UserPageStatus::DataNoMemory;
+    }
+#endif
+    const auto status = alloc_user_page(current, page, 1, true).status;
+    if (status == UserPageStatus::Ok) {
+      current->pages_used++;
+      region->resident++;
+      const auto watermark = page_watermark();
+      if (watermark == PageWatermark::Critical ||
+          (watermark == PageWatermark::Low && can_purge(*region))) {
+        requestReclaim();
+      }
+    } else if (status == UserPageStatus::DataNoMemory && page_watermark() == PageWatermark::Critical) {
+      requestReclaim();
+      return UserPageStatus::ReclaimDataNoMemory;
+    }
+    return status;
   }
 
   u32 userLimit(const u32* pd, u32 address) {
@@ -2087,27 +2092,27 @@ namespace task {
 
   bool purgeOneRegion() {
     Process* owner = nullptr;
-    AnonRegion* victim = nullptr;
+    VmaNode* victim = nullptr;
     for (auto& p : processes) {
       if (p.state != 1 || !p.pd || (owner && p.reclaim_priority < owner->reclaim_priority)) {
         continue;
       }
-      for (auto& region : p.anon) {
-        if (!can_purge(region)) { continue; }
-        if (!owner || p.reclaim_priority > owner->reclaim_priority || region.resident > victim->resident) {
+      for (VmaNode* region = mm::vma_first(p.vma_root); region; region = mm::vma_next(region)) {
+        if (!can_purge(*region)) { continue; }
+        if (!owner || p.reclaim_priority > owner->reclaim_priority || region->resident > victim->resident) {
           owner = &p;
-          victim = &region;
+          victim = region;
         }
       }
     }
     if (!victim) { return false; }
     // Only the unbound scheduler reaches this path. The reservation stays owned.
     const u32 freed = free_anon_pages(owner, *victim);
-    victim->purged = true;
+    victim->setFlag(VmaNode::Flag::Purged, true);
     pr_debug("MEM purge pid=");
     pr_debug_hex(owner->pid);
     pr_debug(" base=");
-    pr_debug_hex(victim->base);
+    pr_debug_hex(victim->startPage * PAGE_SIZE);
     pr_debug(" pages=");
     pr_debug_hex(freed);
     pr_debug(" pass=");

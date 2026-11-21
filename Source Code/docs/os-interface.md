@@ -228,7 +228,7 @@ only `FEATURE_ANON_MEMORY` allocate and zero the entire mapping up front.
 - Both calls require ECX and EDX to be zero. Invalid inputs, including zero
   map size, rounding overflow, and unknown or interior unmap addresses, return
   `S_INVALID`. Each process can hold up to 32 regions and 16 MiB in total after
-  rounding. Quota or address-space exhaustion returns `S_LIMIT`.
+  rounding. Quota, address-space or VMA metadata exhaustion returns `S_LIMIT`.
 
 SDK `AnonMap` and `AnonUnmap` preserve the syscall status. `malloc` maps one
 region per allocation and returns null on failure. `free(NULL)` is a no-op.

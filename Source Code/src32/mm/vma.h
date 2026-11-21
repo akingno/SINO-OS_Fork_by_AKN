@@ -8,17 +8,25 @@ namespace mm {
 enum class VmaType : u8 { Anonymous, Stack, Code };
 
 struct VmaNode {
+  enum class Flag : u8 { Read = 1, Write = 2, Execute = 4, Purgeable = 8, Purged = 16 };
+
   u32 startPage;
   u32 pageCount;
   u16 resident;
   u16 lock_count;
-  u8 flags;  // Read, write, execute, purgeable and purged, in that order.
+  u8 flags;
   VmaType type;
   i8 balance;
   bool linked;
   VmaNode* left;
   VmaNode* right;
   VmaNode* parent;
+
+  bool hasFlag(Flag flag) const { return flags & static_cast<u8>(flag); }
+  void setFlag(Flag flag, bool enabled) {
+    const u8 bit = static_cast<u8>(flag);
+    flags = enabled ? flags | bit : flags & ~bit;
+  }
 };
 static_assert(sizeof(VmaNode) == 28, "VMA node must fit the 32-byte slab class");
 
@@ -31,6 +39,9 @@ bool vma_remove(VmaNode*& root, VmaNode* node);
 VmaNode* vma_find(VmaNode* root, u32 page);
 VmaNode* vma_find_exact(VmaNode* root, u32 startPage);
 VmaNode* vma_lower_bound(VmaNode* root, u32 page);
+// Walk in ascending address order while the tree is unchanged.
+VmaNode* vma_first(VmaNode* root);
+VmaNode* vma_next(VmaNode* node);
 
 // Every linked node must have been allocated by kmalloc. Clears root.
 u32 vma_destroy(VmaNode*& root);

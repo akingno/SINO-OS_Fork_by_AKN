@@ -440,7 +440,8 @@ async function purgeableContracts(source) {
         await check('memory.purgeable.abi-and-lock-limits', ['purgeable ABI, reservation ownership and lock count edges'], () =>
             probe('run -s /boot/reclaim.snx purge-abi', /PURGE ABI PASS/));
 
-        await check('memory.purgeable.low-discard-and-rebuild', ['LOW discards resident cache, preserves neighbors and supports rebuild'], async () => {
+        await check('memory.purgeable.low-discard-and-rebuild', ['LOW discards resident cache, preserves neighbors and supports rebuild',
+            'equal discardable candidates in one process are ordered by virtual address'], async () => {
             const offset = guestLog().length;
             const log = () => guestLog().slice(offset);
             try {
@@ -456,6 +457,19 @@ async function purgeableContracts(source) {
                 await reset();
                 await until(() => log().includes('PURGE CACHE PASS'));
                 await until(async () => !(await processes()).has(pid));
+            } finally { await cleanup(); }
+
+            const tieOffset = guestLog().length;
+            const tieLog = () => guestLog().slice(tieOffset);
+            try {
+                const pid = await launch('purge-address-order', 'PURGE ADDRESS ORDER READY');
+                assert.deepEqual(await processes(), new Map([[pid, 2]]));
+                const before = await currentFree();
+                // Reclaiming one page crosses back to NORMAL, leaving the other candidate resident.
+                await override(before - 32, before, 1);
+                await until(() => tieLog().includes('PURGE ADDRESS ORDER PASS'));
+                assert.deepEqual(purges(tieLog()).map(item => [item.pid, item.pages]), [[pid, 1]]);
+                assert.deepEqual(await processes(), new Map([[pid, 1]]));
             } finally { await cleanup(); }
         });
 

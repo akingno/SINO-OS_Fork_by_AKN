@@ -7,6 +7,8 @@
 #include "collections.h"
 #include "wait.h"
 
+namespace mm { struct VmaNode; }
+
 // 仅 task 实现使用；其他子系统通过 task.h 的窄接口访问。
 namespace task {
 inline constexpr int MaxProcesses = 64;
@@ -60,11 +62,6 @@ struct Thread {
 };
 static_assert(__is_trivially_copyable(Thread), "thread state needs no runtime construction");
 
-struct AnonRegion {
-  u32 base, bytes;
-  u16 resident, lock_count;
-  bool purgeable, purged;
-};
 static_assert(ANON_MAX_BYTES / PAGE_SIZE <= 0xffffu, "anonymous region resident count fits u16");
 enum class ReclaimClass : i16 {
   System = -1000, Service = -800, Foreground = 0, InteractiveBackground = 200,
@@ -88,8 +85,10 @@ struct Process {
   u32 boot_directory;
   u32 desktop_owner;
   u32 pages_used;
+  mm::VmaNode* vma_root;
+  u32 vma_bytes;
   i16 reclaim_priority;
-  AnonRegion anon[ANON_MAX_REGIONS];
+  u16 anon_count;
   QueueLink<Process> reapLink;
   TimerNode timer;
   QueueLink<Process>& queueLink() { return reapLink; }

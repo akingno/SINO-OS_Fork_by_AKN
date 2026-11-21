@@ -76,7 +76,8 @@ Node* first_node(Node* node) {
   return node;
 }
 
-const VmaNode* next_node(const VmaNode* node) {
+template <typename Node>
+Node* next_node(Node* node) {
   if (node->right) {
     return first_node(node->right);
   }
@@ -288,6 +289,14 @@ VmaNode* vma_lower_bound(VmaNode* root, u32 page) {
     }
   }
   return next;
+}
+
+VmaNode* vma_first(VmaNode* root) {
+  return first_node(root);
+}
+
+VmaNode* vma_next(VmaNode* node) {
+  return node ? next_node(node) : nullptr;
 }
 
 u32 vma_destroy(VmaNode*& root) {

@@ -88,6 +88,9 @@ int purgeAbi() {
   require(AnonQuery(base) == S_OK && AnonSetPurgeable(base, true) == S_OK &&
           AnonSetPurgeable(base, true) == S_OK && AnonUnlock(base) == S_INVALID,
           "a newly marked region starts unlocked");
+  void* unaligned = (void*)(address + 1);
+  require(AnonQuery(unaligned) == S_INVALID && AnonSetPurgeable(unaligned, false) == S_INVALID &&
+          AnonLock(unaligned) == S_INVALID, "marked regions reject unaligned bases");
   require(AnonLock(base) == S_OK && AnonLock(base) == S_OK && AnonUnlock(base) == S_OK &&
           AnonSetPurgeable(base, false) == S_BUSY && AnonUnmap(base) == S_BUSY &&
           AnonUnlock(base) == S_OK && AnonSetPurgeable(base, false) == S_OK &&
@@ -136,6 +139,24 @@ int purgeCache() {
   return 0;
 }
 
+[[noreturn]] void purgeAddressOrder() {
+  void* hole = (void*)reserve(1);
+  volatile u8* lower = reserve(1);
+  require(AnonUnmap(hole) == S_OK, "open a one-page hole below the first candidate");
+  // The larger reservation skips the hole but would reuse its old region slot.
+  volatile u8* higher = reserve(2);
+  require((u32)higher > (u32)lower, "later candidate is above the first");
+  *lower = 0x41;
+  *higher = 0x42;
+  require(AnonSetPurgeable((void*)lower, true) == S_OK &&
+          AnonSetPurgeable((void*)higher, true) == S_OK, "mark two equally resident candidates");
+  Log("PURGE ADDRESS ORDER READY\n");
+  waitForDiscard((void*)lower);
+  require(AnonQuery((void*)higher) == S_OK && *higher == 0x42, "the higher candidate survives the tie");
+  Log("PURGE ADDRESS ORDER PASS\n");
+  hold();
+}
+
 [[noreturn]] void purgeUnlock() {
   volatile u8* cache = reserve(1);
   void* base = (void*)cache;
@@ -166,6 +187,7 @@ int main() {
 
   if (streq(mode, "purge-abi")) { return purgeAbi(); }
   if (streq(mode, "purge-cache")) { return purgeCache(); }
+  if (streq(mode, "purge-address-order")) { purgeAddressOrder(); }
   if (streq(mode, "purge-unlock")) { purgeUnlock(); }
   if (streq(mode, "purge-hold") || streq(mode, "purge-hold-large")) {
     const u32 pages = streq(mode, "purge-hold") ? 2 : 4;
