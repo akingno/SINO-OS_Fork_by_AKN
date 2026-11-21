@@ -21,6 +21,7 @@
 | 开机文字控制台、ASCII 键盘和 Shell 前端 | 普通 `dev.ps1 -BuildOnly` 后运行 `node 'Source Code/tests/host/test-console.js' <构建目录>`；9 项，`--list` 预览 | 自动保存变化加同入口 `--persistence`（3 项，支持 `--list --persistence`）及 files / persistence；键盘滚屏或行编辑显示变化加 `test-terminal-model.cpp` / `test-line-model.cpp` 宿主模型；设备授权改动追加 policy；会话等待变化加 shell-waits |
 | 引导、镜像、FAT12 启动卷 | `.\dev.ps1 -BuildOnly`，再 `node 'Source Code/tests/host/test-boot.js' '<本次普通构建目录>'`；1 项 | 涉及用户态启动/隔离时追加相应进程或内存专项 |
 | 匿名映射、懒分配、SDK 堆；`anon_map/unmap` | 下方内存命令的 `anonymous`；7 项 | 映像、高页或线程栈布局变化时追加 `images` |
+| 用户态 slab 分配器核心；`user/heap.h` | `node 'Source Code/tests/development/user/heap/test-user-heap.js'`；8 项，先 `--list` 预览 | 当前宿主专项覆盖大小类、复用、映射失败和调试涂抹；接入 SDK 时再验证真实匿名内存 |
 | 匿名映射保护与片段身份；`protect_anon` | `mprotect` 6 项覆盖整区权限与缺页重试，`e1` 6 项覆盖范围改权、合并和分配身份 | 分配或释放变化加 `anonymous`，可丢弃条件或回收路径变化加 `purgeable` 或 `reclaim` |
 | 匿名范围解除映射；`anon_unmap_range` | `e2` 6 项，覆盖配额、空洞复用、定向分配失败和阻塞读输出缓冲区重校验 | 影响匿名预留或释放时加 `anonymous`，修改 syscall 准入时加 `policy` |
 | 匿名分配 ID、字节和片段配额；`ANON_MAX_REGIONS / ANON_MAX_BYTES / ANON_MAX_FRAGMENTS` | `anonymous` 7 项、`e1` 6 项、`e2` 6 项、`process` 8 项及普通启动 1 项，共 28 项 | 现有用例验证跨位图字槽复用、128 MiB 预留，以及 512 片段满额时的回滚和批量回收 |
