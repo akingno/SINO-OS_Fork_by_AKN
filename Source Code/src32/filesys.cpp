@@ -5,6 +5,7 @@
 #include "vfs.h"
 #include "storage.h"
 #include "lib/kstring.h"
+#include "mm/kmalloc.h"
 #include "mm/page.h"
 
 typedef struct {
@@ -14,7 +15,6 @@ typedef struct {
   char name[VFS_NAME];
   u8* pages[VFS_PAGES];
 } FileObject;
-static_assert(sizeof(FileObject) <= 4096, "file object fits one page");
 
 static FileObject* value(Object* o) { return (FileObject*)o->value; }
 static int live(int n, u32 generation) {
@@ -37,15 +37,15 @@ void filesys_release(int pointer) {
   if (f->node >= 0 && live(f->node, f->generation)) vfs_refs[f->node]--;
   if (f->parent >= 0 && live(f->parent, f->parent_generation)) vfs_refs[f->parent]--;
   for (u32 i = 0; i < VFS_PAGES; i++) if (f->pages[i]) kpage_free(f->pages[i]);
-  kpage_free(f);
+  kfree(f);
 }
 /* Reserve resources before a create/truncate can become visible. */
 static int reserve(Handle* owner, ObjType type, u32 rights, FileObject** out) {
-  FileObject* f = (FileObject*)kpage_alloc();
+  auto* f = static_cast<FileObject*>(kzalloc(sizeof(FileObject)));
   if (!f) return S_NOMEM;
   f->node = f->parent = -1;
   int object = object_new(type, (int)f);
-  if (object < 0) { kpage_free(f); return object; }
+  if (object < 0) { kfree(f); return object; }
   int h = handle_open(owner, object, rights);
   if (h < 0) { object_unref(object); return h; }
   *out = f;
