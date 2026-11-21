@@ -14,7 +14,9 @@
 
 内核内存子系统独立为 `src32/mm/` 模块：
 
-- **物理页分配器**（`page.cpp`）：管理当前地址布局允许的 E820 可用物理页，支持连续页分配（`page_alloc_run`）与启动自检
+- **物理页分配器**（`page.cpp`、`page_internal.h`）：Buddy 双向链表管理低端和高端两个池的 E820 可用物理页，支持对齐拆分/合并及连续页线性兜底（`kpage_alloc_run`），启动自检覆盖位压缩元数据、zone 隔离与空闲链一致性
+- **Slab 缓存**（`slab.cpp`）：8–1024 字节八个 power-of-2 大小类，整页管理，分配位图检测双释放，空页即还 buddy
+- **内核通用堆**（`kmalloc.cpp`）：`kmalloc`/`kzalloc`/`kfree`，≤1024 字节走 slab，更大请求取完整 buddy 块；页归属隔离普通内核页与堆页
 - **分页管理**（`paging.cpp`）：
   - 启动阶段：`paging_bootstrap` 建立初始临时页表，`paging_kernel_init` 切换到正式内核页表（两阶段 CR3 不同）
   - 每进程独立页目录，内核恒等映射共享且仅限 Ring 0

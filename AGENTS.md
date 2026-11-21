@@ -10,7 +10,7 @@
 | `Source Code/src32/` | 内核（C++17 + x86 汇编） |
 | `Source Code/src32/task/` | 进程、线程、调度；task.h 为跨模块接口，internal.h 不向其他子系统暴露 |
 | `Source Code/src32/sync/` | 单核短临界区与同步边界；IrqGuard 保存/恢复原 IF |
-| `Source Code/src32/mm/` | 独立内存管理子系统（page.cpp、paging.cpp、uaccess.cpp） |
+| `Source Code/src32/mm/` | 独立内存管理子系统（page.cpp、slab.cpp、kmalloc.cpp、paging.cpp、uaccess.cpp） |
 | `Source Code/user/` | Ring 3 CLI 程序（gsh、gcmd、tview、writer 等） |
 | `Source Code/tools/` | 构建、发布与共享开发工具 |
 | `Source Code/tests/` | 稳定套件、Ring 3 探针、共享工具；TESTING.md 为 AI 选测入口 |
@@ -90,7 +90,7 @@ Shell 宿主测试参数：`-ExpectedExitCode 1` 断言预期失败，`-TimeoutS
 | 开机文字 Shell | user/console_host.cpp、src32/console.cpp、task/process.cpp:SYS_CONSOLE、loader.asm | `node 'Source Code/tests/host/test-console.js' <普通 BuildOnly 目录>`；9 项；追加 `--persistence` 为 3 项跨重启自动保存检查；契约 docs/text-console.md |
 | 构建、引导 | build32.ps1、build-image32.js、src32/loader.asm、src32/kernel.cpp:kmain | `tests/host/test-boot.js ` |
 | FAT12 启动卷 | src32/fs/boot_fat12.cpp:fs_init / fs_read / fs_read_at、src32/boot-ramdisk.h | 普通镜像无窗口启动；ShellBridge 验证 `/boot` 读取 |
-| 物理页分配、启动页表 | src32/mm/page.cpp:page_init / page_alloc_run、src32/mm/paging.cpp:paging_bootstrap / paging_kernel_init | 普通镜像无窗口启动，核对启动日志 |
+| 物理页分配、启动页表 | src32/mm/page.cpp:page_init / kpage_alloc_run、page_internal.h:BuddyZone、src32/mm/paging.cpp:paging_bootstrap / paging_kernel_init | 普通镜像无窗口启动，核对启动日志 |
 | 内核 slab 缓存 | src32/mm/slab.h、src32/mm/slab.cpp、src32/mm/page.h:PageFrame | 普通启动与 process 核对启动自检；页归属变更加 images、anonymous，详见 TESTING.md |
 | 内核通用堆 | src32/mm/kmalloc.h、src32/mm/kmalloc.cpp、src32/mm/page.cpp:heap_page_alloc / heap_page_free | 普通启动与 process 核对大小类、清零、多页释放及页归属，基线见 TESTING.md |
 | 用户页表、权限和线程栈 | src32/mm/paging.cpp、src32/mm/uaccess.cpp:uaccess_prepare、src32/task/process.cpp:launch_policy / alloc_user_stack | ShellBridge 中 `run -s /boot/poltest.snx paging-a/b` |

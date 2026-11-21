@@ -150,6 +150,9 @@ u32 BuddyZone::allocate(u32 count, PageState state) {
   return first;
 }
 
+// Large heap allocations keep an order-aligned block for kfree.
+// Revisit exact-run allocation and its release rules if alignment fragmentation
+// repeatedly causes multi-page heap requests to fail in practice.
 u32 BuddyZone::allocateHeap(u32 order) {
   const u32 first = takeAligned(order);
   if (first) {
