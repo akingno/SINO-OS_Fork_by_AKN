@@ -100,6 +100,8 @@ void waitForDiscard(const void* base) {
 }
 
 using Protection = MemoryProtection;
+constexpr unsigned FragmentQuotaPages = ANON_MAX_FRAGMENTS + 4;
+constexpr unsigned FragmentQuotaSplitPage = ANON_MAX_FRAGMENTS + 1;
 volatile u8* faultAddress;
 
 void writeFault() {
@@ -107,20 +109,32 @@ void writeFault() {
   require(false, "protected write resumed");
 }
 
+void fillFragmentQuota(volatile u8* base) {
+  // A two-page head lets range-unmap start inside it and traverse every fragment.
+  require(sino::mprotect((void*)base, 2 * PageBytes, Protection::Read) == S_OK,
+          "read-only two-page head");
+  for (unsigned i = 3; i < ANON_MAX_FRAGMENTS; i += 2) {
+    require(sino::mprotect((void*)(base + i * PageBytes), PageBytes, Protection::Read) == S_OK,
+            "fill fragment quota with alternating flags");
+  }
+}
+
 int fragmentTest(const char* mode) {
   const bool budget = streq(mode, "e1-budget");
-  volatile u8* page = reserve(budget ? 100 : 4);
+  volatile u8* page = reserve(budget ? FragmentQuotaPages : 4);
   auto addr = [&](unsigned i) { return (void*)(page + i * PageBytes); };
   auto protect = [&](unsigned i, unsigned n, bool write) {
     return sino::mprotect(addr(i), n * PageBytes, write ? Protection::ReadWrite : Protection::Read);
   };
   auto output = [&](unsigned i) { return QuerySystemInfo((SystemInfo*)addr(i)); };
   if (budget) {
-    for (unsigned i = 0; i < 95; i += 2) {
-      require(protect(i, 1, false) == S_OK, "fill fragment budget");
-    }
-    require(protect(96, 1, false) == S_LIMIT && output(96) == S_OK, "fragment limit rollback");
-    require(protect(94, 1, true) == S_OK && protect(96, 1, false) == S_OK, "reuse fragment budget");
+    fillFragmentQuota(page);
+    require(AnonMap(1) == S_LIMIT && protect(FragmentQuotaSplitPage, 1, false) == S_LIMIT &&
+            output(FragmentQuotaSplitPage) == S_OK, "fragment quota and protection rollback");
+    require(protect(ANON_MAX_FRAGMENTS - 1, 1, true) == S_OK &&
+            protect(FragmentQuotaSplitPage, 1, false) == S_OK, "reuse fragment quota");
+    require(protect(0, FragmentQuotaPages, true) == S_OK && output(FragmentQuotaSplitPage) == S_OK &&
+            AnonSetPurgeable(addr(0), true) == S_OK, "coalesce all fragments at the quota");
   } else if (streq(mode, "e1-oom")) {
     page[PageBytes] = 61;
     require(protect(1, 1, false) == S_LIMIT && page[PageBytes] == 61 && output(1) == S_OK &&
@@ -263,6 +277,19 @@ int unmapRangeTest(const char* mode) {
     require(api(SYS_ANON_UNMAP_RANGE, (u32)addr(1), PageBytes, 1) == S_INVALID, "edx nonzero");
     require(page[0] == 0x10, "atomic reject");
     require(AnonUnmap(addr(0)) == S_OK && AnonUnmap((void*)adjacent) == S_OK, "cleanup cross");
+
+    auto* fragmented = reserve(FragmentQuotaPages);
+    auto* split = fragmented + FragmentQuotaSplitPage * PageBytes;
+    fragmented[0] = 0x49;
+    *split = 0x52;
+    fillFragmentQuota(fragmented);
+    require(AnonUnmapRange((void*)split, PageBytes) == S_LIMIT && *split == 0x52,
+            "range unmap leaves the mapping intact when it would exceed the fragment quota");
+    require(AnonUnmapRange((void*)(fragmented + PageBytes), (FragmentQuotaPages - 1) * PageBytes) == S_OK &&
+            fragmented[0] == 0x49 && reserve(FragmentQuotaPages - 1) == fragmented + PageBytes,
+            "range unmap traverses every fragment and releases the hole");
+    require(AnonUnmap((void*)fragmented) == S_OK && AnonUnmap((void*)(fragmented + PageBytes)) == S_OK,
+            "release original head and independent hole allocation");
   } else if (streq(mode, "e2-reuse")) {
     require(unmap(3, 2) == S_OK, "punch hole");
     int nb = AnonMap(2 * PageBytes);

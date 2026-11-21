@@ -123,15 +123,25 @@ static int anon_mapping_test(void) {
   require(AnonUnmap((void*)(u32)second_base) == S_OK, "release independent region");
 
   u32 regions[ANON_MAX_REGIONS];
-  u32 i = 0;
-  for (; i < ANON_MAX_REGIONS; i++) {
-    int base = AnonMap(1);
-    if (base <= 0) break;
+  for (u32 i = 0; i < ANON_MAX_REGIONS; ++i) {
+    const int base = AnonMap(1);
+    require(base > 0, "reserve every anonymous region slot");
     regions[i] = (u32)base;
   }
-  require(i == ANON_MAX_REGIONS && AnonMap(1) == S_LIMIT &&
-          AnonUnmap((void*)regions[0]) == S_OK &&
-          AnonMap(1) == (int)regions[0], "region limit and slot reuse");
+  require(AnonMap(1) == S_LIMIT, "exact region quota");
+  constexpr u32 boundarySlots[] = {0, 31, 32, 63, 64, 95, 96, ANON_MAX_REGIONS - 1};
+  for (const u32 slot : boundarySlots) {
+    *(volatile u8*)regions[slot] = (u8)(slot + 1);
+  }
+  for (const u32 slot : boundarySlots) {
+    auto* address = (volatile u8*)regions[slot];
+    require(AnonUnmap((void*)address) == S_OK && AnonMap(1) == (int)regions[slot] &&
+            AnonMap(1) == S_LIMIT && *address == 0, "reuse region slot with zero backing");
+    *address = (u8)(slot + 1);
+    for (const u32 other : boundarySlots) {
+      require(*(volatile u8*)regions[other] == (u8)(other + 1), "independent IDs across bitmap words");
+    }
+  }
   /* Exit with the regions still mapped to exercise process-wide reclamation. */
   Log("ANON MAPPING PASS\n");
   return 0;

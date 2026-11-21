@@ -218,15 +218,24 @@ namespace task {
   static void schedule_purge(const VmaNode& region) {
     if (can_purge(region) && page_watermark() != PageWatermark::Normal) { requestReclaim(); }
   }
+  static u32 find_anon_id(const Process* p) {
+    for (u32 word = 0; word < ANON_MAX_REGIONS / AnonIdWordBits; ++word) {
+      const u32 available = ~p->anonIds[word];
+      if (available) { return word * AnonIdWordBits + (u32)__builtin_ctz(available); }
+    }
+    return ANON_MAX_REGIONS;
+  }
   /* VMA records anonymous reservations. The page table also covers mappings
    * made by the loader, so the first-fit search checks both. */
   static int anon_map(Process* p, u32 bytes) {
     if (!bytes || !page_ceil_checked(bytes, &bytes)) {
       return S_INVALID;
     }
-    if (p->anonFragments >= 96 || p->anon_count >= ANON_MAX_REGIONS || bytes > ANON_MAX_BYTES - p->vma_bytes) {
+    if (p->anonFragments >= ANON_MAX_FRAGMENTS || bytes > ANON_MAX_BYTES - p->vma_bytes) {
       return S_LIMIT;
     }
+    const u32 id = find_anon_id(p);
+    if (id == ANON_MAX_REGIONS) { return S_LIMIT; }
     const u32 pages = bytes / PAGE_SIZE;
     u32 start = USER_DYNAMIC_BASE;
     for (;;) {
@@ -251,7 +260,7 @@ namespace task {
       auto* region = static_cast<VmaNode*>(kmalloc(sizeof(VmaNode)));
       if (!region) { return S_LIMIT; }
       *region = VmaNode{basePage, pages, 0, 0, 0, VmaType::Anonymous};
-      region->allocId = (u8)__builtin_ctz(~p->anonIds);
+      region->allocId = (u8)id;
       region->setFlag(VmaNode::Flag::Head, true);
       region->setFlag(VmaNode::Flag::Read, true);
       region->setFlag(VmaNode::Flag::Write, true);
@@ -260,9 +269,8 @@ namespace task {
         return S_LIMIT;
       }
       p->vma_bytes += bytes;
-      p->anonIds |= 1u << region->allocId;
+      p->anonIds[id / AnonIdWordBits] |= 1u << (id % AnonIdWordBits);
       ++p->anonFragments;
-      ++p->anon_count;
       return (int)base;
     }
   }
@@ -322,7 +330,7 @@ namespace task {
     append(begin, end, write);
     append(end, last->startPage + last->pageCount, last->hasFlag(VmaNode::Flag::Write));
 
-    VmaNode* nodes[96];
+    VmaNode* nodes[ANON_MAX_FRAGMENTS];
     unsigned inputs = 0, oldResident = 0;
     const bool head = first->hasFlag(VmaNode::Flag::Head);
     for (auto* n = first;; n = mm::vma_next(n)) {
@@ -330,7 +338,7 @@ namespace task {
       oldResident += n->resident;
       if (n == last) { break; }
     }
-    if (p->anonFragments - inputs + outputs > 96) { return S_LIMIT; }
+    if (p->anonFragments - inputs + outputs > ANON_MAX_FRAGMENTS) { return S_LIMIT; }
     for (unsigned i = inputs; i < outputs; ++i) {
       nodes[i] = nullptr;
 #ifdef SINO_SHELL_BRIDGE
@@ -384,8 +392,7 @@ namespace task {
       }
       n = next;
     }
-    p->anonIds &= ~(1u << id);
-    --p->anon_count;
+    p->anonIds[id / AnonIdWordBits] &= ~(1u << (id % AnonIdWordBits));
     return S_OK;
   }
 
@@ -412,13 +419,13 @@ namespace task {
     const bool keepFront = begin > first->startPage;
     const bool keepBack = end < last->startPage + last->pageCount;
     const unsigned outputs = (keepFront ? 1u : 0u) + (keepBack ? 1u : 0u);
-    VmaNode* nodes[96];
+    VmaNode* nodes[ANON_MAX_FRAGMENTS];
     unsigned inputs = 0;
     for (auto* n = first;; n = mm::vma_next(n)) {
       nodes[inputs++] = n;
       if (n == last) { break; }
     }
-    if (p->anonFragments - inputs + outputs > 96) { return S_LIMIT; }
+    if (p->anonFragments - inputs + outputs > ANON_MAX_FRAGMENTS) { return S_LIMIT; }
     for (unsigned i = inputs; i < outputs; ++i) {
       nodes[i] = nullptr;
 #ifdef SINO_SHELL_BRIDGE

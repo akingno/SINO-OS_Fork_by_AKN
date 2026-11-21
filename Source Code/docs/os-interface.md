@@ -226,8 +226,8 @@ only `FEATURE_ANON_MEMORY` allocate and zero the entire mapping up front.
   A released address may be reused by a later map.
 - Both calls require ECX and EDX to be zero. Invalid inputs, including zero
   map size, rounding overflow, and unknown or interior unmap addresses, return
-  `S_INVALID`. Each process can hold up to 32 live allocations, 96 anonymous
-  fragments including allocation heads, and 16 MiB of reserved pages.
+  `S_INVALID`. Each process can hold up to 128 live allocations, 512 anonymous
+  fragments including allocation heads, and 128 MiB of reserved pages.
   Quota, address-space or VMA metadata exhaustion returns `S_LIMIT`.
 
 SDK `AnonMap` and `AnonUnmap` preserve the syscall status. `malloc` maps one

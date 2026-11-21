@@ -23,6 +23,7 @@
 | 匿名映射、懒分配、SDK 堆；`anon_map/unmap` | 下方内存命令的 `anonymous`；7 项 | 映像、高页或线程栈布局变化时追加 `images` |
 | 匿名映射保护与片段身份；`protect_anon` | `mprotect` 6 项覆盖整区权限与缺页重试，`e1` 6 项覆盖范围改权、合并和分配身份 | 分配或释放变化加 `anonymous`，可丢弃条件或回收路径变化加 `purgeable` 或 `reclaim` |
 | 匿名范围解除映射；`anon_unmap_range` | `e2` 6 项，覆盖配额、空洞复用、定向分配失败和阻塞读输出缓冲区重校验 | 影响匿名预留或释放时加 `anonymous`，修改 syscall 准入时加 `policy` |
+| 匿名分配 ID、字节和片段配额；`ANON_MAX_REGIONS / ANON_MAX_BYTES / ANON_MAX_FRAGMENTS` | `anonymous` 7 项、`e1` 6 项、`e2` 6 项、`process` 8 项及普通启动 1 项，共 28 项 | 现有用例验证跨位图字槽复用、128 MiB 预留，以及 512 片段满额时的回滚和批量回收 |
 | 物理页、页表、高页、SNX、用户栈；`page_* / paging_*` | 下方内存命令的 `images`；11 项 | 涉及匿名映射/OOM 时加 `anonymous`；启动页表/物理池初始化变化时加普通启动检查 |
 | E820 对齐/重叠、地址溢出、uaccess 复制契约 | `node 'Source Code/tests/host/test-mm-boundaries.js'`；10 项，`--list` 预览 | 替代页表与分配边界的宿主检查；系统路径仍按下列 images / anonymous 及追加条件选测 |
 | 用户缓冲区；`uaccess_*` | `anonymous`；7 项，含跨页文件/管道 I/O | 文件或终端系统调用校验路径变化时，加对应 `files` 或 `terminal-waits`；新的非法指针边界另加针对性探针 |

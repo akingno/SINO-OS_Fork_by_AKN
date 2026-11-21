@@ -14,7 +14,7 @@
   },
   {
     "id": "memory.e1.budget",
-    "name": "Fragment budget rollback and reuse"
+    "name": "512-fragment quota, protection rollback, reuse and full coalescing"
   },
   {
     "id": "memory.e1.oom",
@@ -32,7 +32,7 @@
   },
   {
     "id": "memory.e2.cross",
-    "name": "Cross-permission success and atomic rejection"
+    "name": "Cross-permission success, atomic rejection and range unmap at the 512-fragment quota"
   },
   {
     "id": "memory.e2.reuse",
@@ -213,15 +213,15 @@
         "malformed and interior unmap leave data intact",
         "released address and double-unmap rejected",
         "first-fit reuse starts zeroed",
-        "32-region quota and slot reuse",
+        "128-region quota, slot reuse and independence across bitmap words",
         "exit releases outstanding regions"
       ]
     },
     {
-      "id": "memory.anonymous.exact-16-mib-quota-and-one-byte-excess",
-      "name": "exact 16 MiB quota and one-byte excess",
+      "id": "memory.anonymous.exact-byte-quota-and-one-byte-excess",
+      "name": "exact 128 MiB quota and one-byte excess",
       "conditions": [
-        "exact 16 MiB quota and one-byte excess",
+        "exact 128 MiB quota and one-byte excess",
         "unaligned and external unmap rejected",
         "last byte of the exact region is accessible",
         "full unmap returns quota and space"

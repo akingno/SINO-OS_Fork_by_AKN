@@ -211,9 +211,9 @@ async function anonymousContracts(source) {
         await check('memory.anonymous.strict-feature-discovery', ['strict feature discovery', 'zero, overflow and reserved map arguments',
             'rounded aligned independent regions', 'zero-filled pages and independent writes',
             'malformed and interior unmap leave data intact', 'released address and double-unmap rejected',
-            'first-fit reuse starts zeroed', '32-region quota and slot reuse', 'exit releases outstanding regions'], () =>
+            'first-fit reuse starts zeroed', '128-region quota, slot reuse and independence across bitmap words', 'exit releases outstanding regions'], () =>
             probe('run -s /boot/fstest.snx anon-map', /ANON MAPPING PASS/));
-        await check('memory.anonymous.exact-16-mib-quota-and-one-byte-excess', ['exact 16 MiB quota and one-byte excess', 'unaligned and external unmap rejected',
+        await check('memory.anonymous.exact-byte-quota-and-one-byte-excess', ['exact 128 MiB quota and one-byte excess', 'unaligned and external unmap rejected',
             'last byte of the exact region is accessible', 'full unmap returns quota and space'], () =>
             probe('run -s /boot/fstest.snx anon-d-quota', /ANON D QUOTA PASS/));
         await check('memory.anonymous.strict-granted-cross-page-file-i-o', ['strict granted cross-page file I/O', 'anonymous pipe I/O and teardown'], () =>

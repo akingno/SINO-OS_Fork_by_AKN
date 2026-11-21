@@ -63,6 +63,11 @@ struct Thread {
 static_assert(__is_trivially_copyable(Thread), "thread state needs no runtime construction");
 
 static_assert(ANON_MAX_BYTES / PAGE_SIZE <= 0xffffu, "anonymous region resident count fits u16");
+inline constexpr u32 AnonIdWordBits = sizeof(u32) * 8;
+static_assert(ANON_MAX_REGIONS % AnonIdWordBits == 0 && ANON_MAX_REGIONS <= 256u,
+              "anonymous ID bitmap uses whole words and IDs fit u8");
+static_assert(ANON_MAX_REGIONS <= ANON_MAX_FRAGMENTS && ANON_MAX_FRAGMENTS <= 0xffffu,
+              "anonymous fragment budget includes all allocation heads and fits u16");
 enum class ReclaimClass : i16 {
   System = -1000, Service = -800, Foreground = 0, InteractiveBackground = 200,
   Background = 400
@@ -88,9 +93,8 @@ struct Process {
   mm::VmaNode* vma_root;
   u32 vma_bytes;
   i16 reclaim_priority;
-  u16 anon_count;
   u16 anonFragments;
-  u32 anonIds;
+  u32 anonIds[ANON_MAX_REGIONS / AnonIdWordBits];
   QueueLink<Process> reapLink;
   TimerNode timer;
   QueueLink<Process>& queueLink() { return reapLink; }
