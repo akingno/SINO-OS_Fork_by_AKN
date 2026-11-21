@@ -12,11 +12,14 @@ struct MapResult {
 };
 
 // map rounds to pages and returns a page-aligned base on success.
-// Failed unmaps leave the mapping intact.
+// Failed unmaps leave the mapping intact. fatalUnmap reports a heap invariant
+// failure and terminates the process.
 struct MappingBackend {
   void* context;
   MapResult (*map)(void* context, u32 bytes);
   int (*unmap)(void* context, void* base);
+  int (*setPurgeable)(void* context, void* base, bool enabled);
+  void (*fatalUnmap)(void* context, void* base, int status);
 };
 
 namespace detail {
@@ -28,6 +31,8 @@ constexpr u32 SlabHeaderBytes = 64;
 constexpr u32 ChunkSizes[] = {16, 32, 64, 128, 256, 496, 1008, 2032, 4080};
 constexpr u32 ClassCount = sizeof(ChunkSizes) / sizeof(ChunkSizes[0]);
 constexpr u32 NoChunk = ~0u;
+constexpr u32 HotLimit = 4;
+constexpr u32 ColdLimit = 12;
 
 inline void fillBytes(void* start, u32 bytes, u8 value) {
   auto* cursor = static_cast<u8*>(start);
@@ -161,11 +166,12 @@ struct Allocator {
   BlockList full;
 };
 
-enum class BlockKind : u8 { Slab, Direct };
+enum class BlockKind : u8 { Active, Hot, Cold, Direct };
 
 struct RegistryEntry {
   void* base = nullptr;
-  BlockKind kind = BlockKind::Slab;
+  BlockKind kind = BlockKind::Active;
+  u8 sizeClass = 0;
 };
 
 struct BlockRegistry {
@@ -178,18 +184,38 @@ struct BlockRegistry {
     return nullptr;
   }
 
-  RegistryEntry* find(const void* pointer) {
+  const RegistryEntry* find(const void* pointer) const {
     const auto address = reinterpret_cast<Address>(pointer);
-    for (auto& entry : entries) {
+    for (const auto& entry : entries) {
       if (!entry.base) { continue; }
       const auto base = reinterpret_cast<Address>(entry.base);
       if (address < base) { continue; }
       const auto offset = address - base;
-      if (entry.kind == BlockKind::Slab ? offset < SlabBytes : offset == sizeof(BigBlock)) {
+      if (entry.kind == BlockKind::Direct ? offset == sizeof(BigBlock) : offset < SlabBytes) {
         return &entry;
       }
     }
     return nullptr;
+  }
+
+  RegistryEntry* find(const void* pointer) {
+    return const_cast<RegistryEntry*>(static_cast<const BlockRegistry&>(*this).find(pointer));
+  }
+};
+
+// Oldest entry first. All links remain valid even if a cold slab is purged.
+template<u32 Limit>
+struct SlabCache {
+  RegistryEntry* entries[Limit]{};
+  u32 count = 0;
+
+  bool full() const { return count == Limit; }
+
+  void append(RegistryEntry& entry) { entries[count++] = &entry; }
+
+  void remove(u32 index) {
+    for (u32 i = index + 1; i < count; ++i) { entries[i - 1] = entries[i]; }
+    entries[--count] = nullptr;
   }
 };
 
@@ -207,10 +233,10 @@ public:
     for (u32 sizeClass = 0; sizeClass < detail::ClassCount; ++sizeClass) {
       if (bytes <= detail::ChunkSizes[sizeClass]) { return allocateSmall(sizeClass); }
     }
-    void* base = mapBlock(bytes + sizeof(detail::BigBlock), detail::BlockKind::Direct);
-    if (!base) { return nullptr; }
-    ::new (base) detail::BigBlock{detail::BigBlock::Magic, bytes};
-    return static_cast<u8*>(base) + sizeof(detail::BigBlock);
+    auto* entry = reserveMapping(bytes + sizeof(detail::BigBlock), detail::BlockKind::Direct);
+    if (!entry) { return nullptr; }
+    ::new (entry->base) detail::BigBlock{detail::BigBlock::Magic, bytes};
+    return static_cast<u8*>(entry->base) + sizeof(detail::BigBlock);
   }
 
   void* allocateZeroed(u32 count, u32 bytes) {
@@ -221,26 +247,65 @@ public:
     return pointer;
   }
 
-  // Failure leaves any live allocation and its contents available to the caller.
+  u32 usableSize(const void* pointer) const {
+    const auto* entry = registry_.find(pointer);
+    if (!entry) { return 0; }
+    if (entry->kind == detail::BlockKind::Direct) {
+      const auto& header = *static_cast<const detail::BigBlock*>(entry->base);
+      return header.magic == detail::BigBlock::Magic ? header.bytes : 0;
+    }
+    if (entry->kind != detail::BlockKind::Active) { return 0; }
+    const auto& slab = *static_cast<const detail::ChunkedBlock*>(entry->base);
+    return slab.liveIndex(pointer) != detail::NoChunk ? slab.chunkSize() : 0;
+  }
+
+  void* reallocate(void* pointer, u32 bytes) {
+    if (!pointer) { return allocate(bytes); }
+    if (!bytes) {
+      release(pointer);
+      return nullptr;
+    }
+    const u32 capacity = usableSize(pointer);
+    if (!capacity) { return nullptr; }
+    if (bytes <= capacity) { return pointer; }
+    auto* destination = static_cast<u8*>(allocate(bytes));
+    if (!destination) { return nullptr; }
+    const auto* source = static_cast<const u8*>(pointer);
+    for (u32 i = 0; i < capacity; ++i) { destination[i] = source[i]; }
+    release(pointer);
+    return destination;
+  }
+
+  // Invalid pointers are rejected before reading cached or unmapped storage.
   bool release(void* pointer) {
     if (!pointer) { return true; }
     auto* entry = registry_.find(pointer);
     if (!entry) { return false; }
     if (entry->kind == detail::BlockKind::Direct) {
       const auto* header = static_cast<const detail::BigBlock*>(entry->base);
-      return header->magic == detail::BigBlock::Magic && unmapBlock(*entry);
+      if (header->magic != detail::BigBlock::Magic) { return false; }
+      unmapBlock(*entry);
+      return true;
     }
+    if (entry->kind != detail::BlockKind::Active) { return false; }
 
     auto& block = *static_cast<detail::ChunkedBlock*>(entry->base);
     const u32 index = block.liveIndex(pointer);
     if (index == detail::NoChunk) { return false; }
     auto& allocator = allocators_[block.sizeClass];
-    auto& list = block.freeCount ? allocator.usable : allocator.full;
     if (block.isLastLiveChunk()) {
+      const u32 sameClass = findHot(block.sizeClass);
+      if (sameClass < hot_.count) {
+        demoteHot(sameClass);
+      } else if (hot_.full()) {
+        demoteHot(0);
+      }
+      auto& list = block.freeCount ? allocator.usable : allocator.full;
       list.remove(block);
-      if (unmapBlock(*entry)) { return true; }
-      list.prepend(block);
-      return false;
+      block.putChunk(index);
+      entry->kind = detail::BlockKind::Hot;
+      hot_.append(*entry);
+      return true;
     }
     if (!block.freeCount) {
       allocator.full.remove(block);
@@ -255,9 +320,8 @@ private:
     auto& allocator = allocators_[sizeClass];
     auto* block = allocator.usable.head;
     if (!block) {
-      void* base = mapBlock(detail::SlabBytes, detail::BlockKind::Slab);
-      if (!base) { return nullptr; }
-      block = detail::ChunkedBlock::create(base, sizeClass);
+      block = activateSlab(sizeClass);
+      if (!block) { return nullptr; }
       allocator.usable.prepend(*block);
     }
     void* pointer = block->takeChunk();
@@ -268,24 +332,100 @@ private:
     return pointer;
   }
 
-  void* mapBlock(u32 bytes, detail::BlockKind kind) {
-    auto* entry = registry_.vacant();
-    if (!entry) { return nullptr; }
-    const MapResult result = backend_.map(backend_.context, bytes);
-    if (result.status != S_OK || !result.base) { return nullptr; }
-    *entry = {result.base, kind};
-    return result.base;
+  u32 findHot(u32 sizeClass) const {
+    for (u32 i = 0; i < hot_.count; ++i) {
+      if (hot_.entries[i]->sizeClass == sizeClass) { return i; }
+    }
+    return hot_.count;
   }
 
-  bool unmapBlock(detail::RegistryEntry& entry) {
-    if (backend_.unmap(backend_.context, entry.base) != S_OK) { return false; }
-    entry = {};
+  detail::ChunkedBlock* activateSlab(u32 sizeClass) {
+    const u32 hotIndex = findHot(sizeClass);
+    if (hotIndex < hot_.count) {
+      auto& entry = *hot_.entries[hotIndex];
+      hot_.remove(hotIndex);
+      entry.kind = detail::BlockKind::Active;
+      return static_cast<detail::ChunkedBlock*>(entry.base);
+    }
+    while (cold_.count) {
+      // The previous in-slab header may have been discarded by the kernel.
+      const u32 index = cold_.count - 1;
+      auto& entry = *cold_.entries[index];
+      if (backend_.setPurgeable(backend_.context, entry.base, false) == S_OK) {
+        cold_.remove(index);
+        entry.kind = detail::BlockKind::Active;
+        entry.sizeClass = static_cast<u8>(sizeClass);
+        return detail::ChunkedBlock::create(entry.base, sizeClass);
+      }
+      evict(cold_, index);
+    }
+    auto* entry = reserveMapping(detail::SlabBytes, detail::BlockKind::Active);
+    if (!entry) { return nullptr; }
+    entry->sizeClass = static_cast<u8>(sizeClass);
+    return detail::ChunkedBlock::create(entry->base, sizeClass);
+  }
+
+  void demoteHot(u32 index) {
+    auto& entry = *hot_.entries[index];
+    if (backend_.setPurgeable(backend_.context, entry.base, true) != S_OK) {
+      evict(hot_, index);
+      return;
+    }
+    if (cold_.full()) { evict(cold_, 0); }
+    hot_.remove(index);
+    entry.kind = detail::BlockKind::Cold;
+    cold_.append(entry);
+  }
+
+  template<u32 Limit>
+  void evict(detail::SlabCache<Limit>& cache, u32 index) {
+    unmapBlock(*cache.entries[index]);
+    cache.remove(index);
+  }
+
+  bool evictOldest() {
+    if (cold_.count) {
+      evict(cold_, 0);
+    } else if (hot_.count) {
+      evict(hot_, 0);
+    } else {
+      return false;
+    }
     return true;
+  }
+
+  detail::RegistryEntry* reserveMapping(u32 bytes, detail::BlockKind kind) {
+    for (u32 retry = 0; ; ++retry) {
+      if (auto* entry = registry_.vacant()) {
+        const MapResult result = backend_.map(backend_.context, bytes);
+        if (result.status == S_OK && result.base) {
+          *entry = {result.base, kind};
+          return entry;
+        }
+        if (result.status != S_LIMIT && result.status != S_NOMEM) { return nullptr; }
+      }
+      if (retry == 2 || !evictOldest()) { return nullptr; }
+      // Free one cached reservation for the common case, then drain once.
+      if (retry == 1) {
+        while (evictOldest()) {}
+      }
+    }
+  }
+
+  void unmapBlock(detail::RegistryEntry& entry) {
+    const int status = backend_.unmap(backend_.context, entry.base);
+    if (status != S_OK) {
+      backend_.fatalUnmap(backend_.context, entry.base, status);
+      __builtin_trap();
+    }
+    entry = {};
   }
 
   MappingBackend backend_;
   detail::Allocator allocators_[detail::ClassCount]{};
   detail::BlockRegistry registry_{};
+  detail::SlabCache<detail::HotLimit> hot_{};
+  detail::SlabCache<detail::ColdLimit> cold_{};
 };
 
 } // namespace sino::heap

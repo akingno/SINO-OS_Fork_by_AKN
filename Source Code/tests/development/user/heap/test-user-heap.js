@@ -7,7 +7,10 @@ const {tool} = require('../../../../tools/host-tools');
 const profiles = [
     {name:'normal', flags:[], cases:[
         'dense-small-allocations', 'full-slab-reuse', 'mixed-size-classes',
-        'lifo-and-release-validation', 'direct-mappings', 'zeroed-allocation-and-bounds'
+        'lifo-and-release-validation', 'direct-mappings', 'zeroed-allocation-and-bounds',
+        'realloc-null', 'realloc-zero', 'realloc-in-place', 'realloc-growth', 'realloc-failure',
+        'active-then-hot', 'cache-limits', 'cache-retry-one', 'usable-sizes', 'cold-rebuild',
+        'cache-retry-drain', 'cache-failure-paths'
     ]},
     {name:'debug', flags:['-DHEAP_DEBUG'], cases:['release-scrub', 'allocation-scrub']}
 ];

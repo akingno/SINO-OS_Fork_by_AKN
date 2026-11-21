@@ -5,4 +5,4 @@
 | 模块 / 功能 | 功能 README | 预览 / 执行命令 | 用例数 | 启用条件 | 收尾条件 |
 | --- | --- | --- | ---: | --- | --- |
 | mm/page — 高页分配 | [README](mm/highmem/README.md) | `node 'Source Code/tests/development/mm/highmem/test-highmem.js' '<ShellBridge 构建目录>'` | 5 | Phase 4（高页 > 1 GiB）开发 | Phase 4 完成后迁入 test-memory.js 或删除 |
-| user/heap — slab 分配器 | [README](user/heap/README.md) | `node 'Source Code/tests/development/user/heap/test-user-heap.js'`（`--list` 预览） | 8 | 用户堆分配、释放或块回收逻辑开发 | SDK 接入并验收后，将长期宿主契约迁入稳定套件 |
+| user/heap — slab 分配器 | [README](user/heap/README.md) | `node 'Source Code/tests/development/user/heap/test-user-heap.js'`（`--list` 预览） | 20 | 用户堆分配、释放或块回收逻辑开发 | SDK 接入并验收后，将长期宿主契约迁入稳定套件 |
