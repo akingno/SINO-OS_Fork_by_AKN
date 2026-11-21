@@ -53,6 +53,10 @@ async function boot(executable, directory, buildId) {
                 assert(log.includes(`SINO BUILD ID: ${buildId}\n`), 'Guest build ID mismatch');
                 assert(log.includes('FAT12 RAM disk ready'), 'FAT12 volume did not mount');
                 assert(log.includes('TIMER IRQ0 delivered'), 'Timer interrupt did not arrive');
+                assert(log.includes('PAGE allocator self-check passed'), 'Page allocator checks did not pass');
+                for (const pool of ['low', 'high']) {
+                    assert.match(log, new RegExp(`PAGE watermarks ${pool}=0x[0-9a-f]+ criticalBelow=0x[0-9a-f]+ normalAbove=0x[0-9a-f]+`, 'i'));
+                }
                 assert(log.includes('SLAB allocator self-check passed'), 'Slab allocator checks did not pass');
                 assert(log.includes('KMALLOC allocator self-check passed'), 'Kernel heap checks did not pass');
                 assert(log.includes('VMA tree self-check passed'), 'VMA tree checks did not pass');

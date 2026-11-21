@@ -128,12 +128,17 @@ async function geometry(qmp, directory, log, baseline) {
         metadataStart + metadataPages <= bootEnd, 'metadata fits inside the boot pool');
     assert(pages.subarray(metadataStart, metadataStart + metadataPages).every(page => page === 1),
         'metadata occupies one usable E820 span');
-    const publishedPages = pages.subarray(bootStart).reduce((sum, n) => sum + n, 0) - metadataPages;
-    const watermarks = log.match(/PAGE watermarks total=(0x[0-9a-f]+) criticalBelow=(0x[0-9a-f]+) normalAbove=(0x[0-9a-f]+)/i);
-    assert(watermarks, 'watermarks were finalized after publishing the full pool');
-    assert.deepEqual(watermarks.slice(1).map(Number), [publishedPages, Math.ceil(publishedPages * 5 / 100),
-        Math.floor(publishedPages * 15 / 100)], 'watermarks use published pages, including pages already allocated');
     assert.match(log, /Direct mapping: \[0, 0x40000000\)/i);
+    const directEnd = 0x40000;
+    const lowPublished = pages.subarray(bootStart, directEnd).reduce((sum, n) => sum + n, 0) - metadataPages;
+    const highPublished = pages.subarray(directEnd).reduce((sum, n) => sum + n, 0);
+    const publishedPages = lowPublished + highPublished;
+    for (const [pool, published] of Object.entries({total:publishedPages, low:lowPublished, high:highPublished})) {
+        const watermarks = log.match(new RegExp(`PAGE watermarks ${pool}=(0x[0-9a-f]+) criticalBelow=(0x[0-9a-f]+) normalAbove=(0x[0-9a-f]+)`, 'i'));
+        assert(watermarks, `published watermarks for ${pool}`);
+        assert.deepEqual(watermarks.slice(1).map(Number), [published, Math.ceil(published * 5 / 100),
+            Math.floor(published * 15 / 100)], `${pool} watermarks include pages already allocated`);
+    }
     assert(endPFN > 0x40000 && baseline > 0x40000, 'real pages above the direct map are available');
     assert(baseline < endPFN, 'reserved and kernel-owned pages are not free');
     return {e820Entries:count, endPFN, extendedPages, publishedPages, freePages:baseline};
@@ -258,10 +263,28 @@ function pressureTools({command, free, baseline, until, guestLog}) {
     return {launch, processes, currentFree, override, reset, cleanup};
 }
 
+function poolStats(output) {
+    const stats = ['Low', 'High'].map(pool => {
+        const match = output.match(new RegExp(`^${pool} pool: (\\d+) free / (\\d+) published \\(watermark: (Normal|Low|Critical)\\)$`, 'm'));
+        assert(match, `missing ${pool} pool statistics`);
+        const [, free, published, watermark] = match;
+        assert(Number(free) <= Number(published), `${pool} free pages exceed published pages`);
+        return {free:Number(free), published:Number(published), watermark};
+    });
+    assert.equal(stats[0].free + stats[1].free, Number(output.match(/\/ (\d+) pages/)?.[1]));
+    return stats;
+}
+
+const releaseFields = / low_before=(0x[\da-f]+) low_after=(0x[\da-f]+) high_before=(0x[\da-f]+) high_after=(0x[\da-f]+)/i.source;
+function releasedPools(lowBefore, lowAfter, highBefore, highAfter) {
+    return {low:Number(lowAfter) - Number(lowBefore), high:Number(highAfter) - Number(highBefore)};
+}
+
 function victims(log) {
-    return [...log.matchAll(/MEM reclaim pid=(0x[\da-f]+) priority=(0x[\da-f]+) pages=(0x[\da-f]+) pass=(0x[\da-f]+) before=(0x[\da-f]+) after=(0x[\da-f]+)/gi)]
-        .map(([, pid, score, pages, pass, before, after]) => ({pid:Number(pid), score:Number(score),
-            pages:Number(pages), pass:Number(pass), before:Number(before), after:Number(after)}));
+    const fields = /MEM reclaim pid=(0x[\da-f]+) priority=(0x[\da-f]+) pages=(0x[\da-f]+) pass=(0x[\da-f]+) before=(0x[\da-f]+) after=(0x[\da-f]+)/i.source;
+    return [...log.matchAll(new RegExp(fields + releaseFields, 'gi'))]
+        .map(([, pid, score, pages, pass, before, after, ...pools]) => ({pid:Number(pid), score:Number(score),
+            pages:Number(pages), pass:Number(pass), before:Number(before), after:Number(after), ...releasedPools(...pools)}));
 }
 
 async function reclaimContracts(source) {
@@ -308,6 +331,10 @@ async function reclaimContracts(source) {
                 assert.equal(reaped[0].after, before, 'first victim restores all owned frames');
                 assert.equal(reaped[1].before, before);
                 assert(reaped[1].after >= critical && reaped[1].after <= critical + 256, 'second victim restores LOW');
+                for (const victim of reaped) {
+                    assert(victim.low >= 9 && victim.high >= victim.pages, 'exit returns low kernel resources and high data');
+                    assert.equal(victim.low + victim.high, victim.after - victim.before, 'pool deltas reconcile with the global delta');
+                }
                 assert.deepEqual(await processes(), new Map([[protectedPid, 24], [medium, 16], [secondSmall, 2]]));
             } finally { await cleanup(); }
         });
@@ -433,8 +460,10 @@ async function purgeableContracts(source) {
         const {check, probe, until, guestLog} = context;
         const {launch, processes, currentFree, override, reset, cleanup} = pressureTools(context);
         function purges(log) {
-            return [...log.matchAll(/MEM purge pid=(0x[\da-f]+) base=(0x[\da-f]+) pages=(0x[\da-f]+) pass=(0x[\da-f]+)/gi)]
-                .map(([, pid, base, pages, pass]) => ({pid:Number(pid), base:Number(base), pages:Number(pages), pass:Number(pass)}));
+            const fields = /MEM purge pid=(0x[\da-f]+) base=(0x[\da-f]+) pages=(0x[\da-f]+) pass=(0x[\da-f]+)/i.source;
+            return [...log.matchAll(new RegExp(fields + releaseFields, 'gi'))]
+                .map(([, pid, base, pages, pass, ...pools]) => ({pid:Number(pid), base:Number(base),
+                    pages:Number(pages), pass:Number(pass), ...releasedPools(...pools)}));
         }
 
         await check('memory.purgeable.abi-and-lock-limits', ['purgeable ABI, reservation ownership and lock count edges'], () =>
@@ -450,7 +479,7 @@ async function purgeableContracts(source) {
                 const before = await currentFree();
                 await override(before - 32, before + 128, 1);
                 await until(() => log().includes('PURGE CACHE DROPPED'));
-                assert.deepEqual(purges(log()).map(item => [item.pid, item.pages]), [[pid, 3]]);
+                assert.deepEqual(purges(log()).map(item => [item.pid, item.pages, item.low, item.high]), [[pid, 3, 0, 3]]);
                 assert.equal(await currentFree(), before + 3, 'other mappings keep the shared page table alive');
                 assert.deepEqual(await processes(), new Map([[pid, 2]]));
                 assert.deepEqual(victims(log()), []);
@@ -482,7 +511,7 @@ async function purgeableContracts(source) {
                 const offset = guestLog().length;
                 await override(before + 1, before + 1, 2);
                 await until(() => purges(guestLog().slice(offset)).length > 0);
-                assert.deepEqual(purges(guestLog().slice(offset)).map(item => [item.pid, item.pages]), [[higher, 2]]);
+                assert.deepEqual(purges(guestLog().slice(offset)).map(item => [item.pid, item.pages, item.low, item.high]), [[higher, 2, 1, 2]]);
                 assert.deepEqual(victims(guestLog().slice(offset)), []);
                 assert.deepEqual(await processes(), new Map([[lower, 4], [higher, 0], [ordinary, 16]]));
             } finally { await cleanup(); }
@@ -531,6 +560,127 @@ async function purgeableContracts(source) {
                 assert.deepEqual(victims(log()), []);
                 assert.deepEqual(await processes(), new Map([[pid, 0]]));
             } finally { await cleanup(); }
+        });
+    });
+}
+
+async function poolContracts(source) {
+    function poolTools(context) {
+        const {command, baseline} = context;
+        const pressure = pressureTools(context);
+        async function pools() { return poolStats(await command('mem')); }
+        async function setPools(criticalLow, normalLow, criticalHigh, normalHigh, expected) {
+            assert.equal(await command(`mmtest-watermark ${criticalLow} ${normalLow} ${criticalHigh} ${normalHigh}`),
+                expected + '\n');
+        }
+        async function signal() {
+            // Global LOW releases the guest's reservation barrier without permitting process reclaim.
+            await pressure.override(0, baseline + 32, 1);
+        }
+        return {...pressure, pools, setPools, signal};
+    }
+
+    await boot(source, 'pools-dual', vm.memoryMiB, async context => {
+        const {check, command, until, guestLog} = context;
+        const {pools, setPools, launch, reset, cleanup, signal, processes} = poolTools(context);
+        await check('memory.pools.independent-watermarks', ['pool thresholds, independent transitions and atomic overrides'], async () => {
+            const original = await pools();
+            assert.deepEqual(poolStats(await command('free')), original);
+            const [low, high] = original.map(pool => pool.free);
+            assert(low > 0 && high > 0, 'both pools are published and have free pages');
+            const offset = guestLog().length;
+            const log = () => guestLog().slice(offset);
+            try {
+                await setPools(low - 1, low - 1, high + 1, high + 1, '0 2');
+                await until(() => /MEM watermark high from=0x00000000 to=0x00000002/i.test(log()));
+                await setPools(low - 1, low, high + 1, high + 1, '1 2');
+                await until(() => /MEM watermark low from=0x00000000 to=0x00000001/i.test(log()));
+                await setPools(low, low + 1, high + 1, high + 1, '1 2');
+                await setPools(low + 1, low + 1, high + 1, high + 1, '2 2');
+                await until(() => /MEM watermark low from=0x00000001 to=0x00000002/i.test(log()));
+                await setPools(low + 1, low + 1, high, high + 1, '2 1');
+                await setPools(low + 1, low + 1, high - 1, high, '2 1');
+                await setPools(low + 1, low + 1, high - 1, high - 1, '2 0');
+                const active = await pools();
+                assert.deepEqual(active, [{...original[0], watermark:'Critical'}, original[1]]);
+                assert.match(await command('mmtest-watermark 0 0 1 0', 1), /invalid pool thresholds/);
+                assert.deepEqual(await pools(), active, 'invalid high thresholds must leave low untouched');
+                await reset();
+                assert.deepEqual(await pools(), original);
+                assert.doesNotMatch(log(), /MEM watermark from=|MEM reclaim|MEM purge/);
+            } finally { await cleanup(); }
+        });
+
+        await check('memory.pools.high-preferred', ['high supplies data when low is Critical'], async () => {
+            const original = await pools();
+            const offset = guestLog().length;
+            try {
+                await launch('pool-populate', 'POOL POPULATE READY');
+                const [low, high] = await pools();
+                assert(high.free > 0);
+                await setPools(low.free + 1, low.free + 1, 0, 0, '2 0');
+                await signal();
+                await until(() => guestLog().slice(offset).includes('POOL POPULATE DONE'));
+                assert.deepEqual(await pools(), [{...low, watermark:'Critical'}, {...high, free:high.free - 1}]);
+                await reset();
+                await until(() => guestLog().slice(offset).includes('POOL POPULATE UNMAPPED'));
+                await until(async () => (await processes()).size === 0);
+                assert.deepEqual(await pools(), original);
+            } finally { await cleanup(); }
+        });
+
+        await check('memory.pools.global-admission', ['per-pool pressure leaves global reservation and reclaim decisions independent'], async () => {
+            const [low] = await pools();
+            const offset = guestLog().length;
+            const log = () => guestLog().slice(offset);
+            try {
+                // Leave enough of a gap that process startup keeps the simulated low pressure.
+                await setPools(low.free + 1, low.free + 1, 0, 0, '2 0');
+                const pid = await launch('low', 'RECLAIM LOW READY');
+                assert.deepEqual(await processes(), new Map([[pid, 0]]), 'strict process can reserve without populating');
+                assert.match(log(), /MEM watermark low from=0x00000000 to=0x00000002/i);
+                assert.doesNotMatch(log(), /MEM watermark from=|MEM reclaim|MEM purge/);
+                await signal();
+                await until(() => log().includes('RECLAIM LOW PASS'));
+                assert.doesNotMatch(log(), /MEM reclaim|MEM purge/);
+            } finally { await cleanup(); }
+        });
+    });
+
+    await boot(source, 'pools-low-only', 1024, async context => {
+        const {check, until, guestLog} = context;
+        const {pools, setPools, launch, reset, cleanup, signal, processes} = poolTools(context);
+        await check('memory.pools.single-pool-fallback', ['low-only fallback works at Low, denies at Critical and recovers'], async () => {
+            const original = await pools();
+            const emptyHigh = {free:0, published:0, watermark:'Normal'};
+            assert.deepEqual(original[1], emptyHigh);
+            const offset = guestLog().length;
+            try {
+                await launch('pool-populate', 'POOL POPULATE READY');
+                const [low] = await pools();
+                assert(low.free > 0);
+                await setPools(low.free, low.free, 1, 1, '1 0');
+                await signal();
+                await until(() => guestLog().slice(offset).includes('POOL POPULATE DONE'));
+                assert.deepEqual(await pools(), [{...low, free:low.free - 1, watermark:'Critical'}, emptyHigh]);
+                await reset();
+                await until(() => guestLog().slice(offset).includes('POOL POPULATE UNMAPPED'));
+                await until(async () => (await processes()).size === 0);
+                assert.deepEqual(await pools(), original);
+
+                const deniedOffset = guestLog().length;
+                await launch('pool-denied', 'POOL POPULATE READY');
+                const [before] = await pools();
+                assert(before.free > 0);
+                await setPools(before.free + 1, before.free + 1, 1, 1, '2 0');
+                await signal();
+                await until(() => guestLog().slice(deniedOffset).includes('POOL POPULATE DENIED'));
+                assert.deepEqual(await pools(), [{...before, watermark:'Critical'}, emptyHigh]);
+                await reset();
+                await until(() => guestLog().slice(deniedOffset).includes('POOL POPULATE DONE'));
+                assert.deepEqual(await pools(), [{...before, free:before.free - 1}, emptyHigh]);
+            } finally { await cleanup(); }
+            assert.deepEqual(await pools(), original);
         });
     });
 }
@@ -599,9 +749,9 @@ async function anonymousRangeContracts(source) {
         }
     });
 }
-const suites = {e1:anonymousRangeContracts, e2:anonymousRangeContracts, mprotect:protectionContracts, images:imageContracts, anonymous:anonymousContracts, reclaim:reclaimContracts, purgeable:purgeableContracts, vma:vmaContracts};
+const suites = {e1:anonymousRangeContracts, e2:anonymousRangeContracts, mprotect:protectionContracts, images:imageContracts, anonymous:anonymousContracts, reclaim:reclaimContracts, purgeable:purgeableContracts, pools:poolContracts, vma:vmaContracts};
 if (!Object.hasOwn(suites, mode) || process.argv.length !== 4) {
-    console.error('Usage: node test-memory.js images|anonymous|reclaim|purgeable|vma|mprotect|e1|e2 <ShellBridge build directory>|--list');
+    console.error('Usage: node test-memory.js images|anonymous|reclaim|purgeable|pools|vma|mprotect|e1|e2 <ShellBridge build directory>|--list');
     process.exitCode = 2;
 } else if (source === '--list') {
     console.log(mode + ': ' + memoryCases[mode].length + ' cases');

@@ -294,17 +294,42 @@ bool logged_extended_allocation, logged_high_allocation;
 struct Watermarks {
   u32 criticalBelow, normalAbove;
 
+  static Watermarks forPages(u32 published) {
+    // Non-PAE bounds the count to 1 Mi pages; both products fit u32.
+    return {(published * 5 + 99) / 100, published * 15 / 100};
+  }
+
   PageWatermark classify(u32 available) const {
     if (available < criticalBelow) { return PageWatermark::Critical; }
     return available <= normalAbove ? PageWatermark::Low : PageWatermark::Normal;
   }
 };
-Watermarks watermarks;
+Watermarks watermarks, low_watermarks, high_watermarks;
 bool watermarks_ready;
 #ifdef SINO_SHELL_BRIDGE
-Watermarks test_watermarks;
-bool test_watermarks_active;
+Watermarks test_watermarks, test_low_watermarks, test_high_watermarks;
+bool test_watermarks_active, test_pool_watermarks_active;
+const u32* test_watermarks_owner;
+
+bool valid_test_watermarks(u32 criticalBelow, u32 normalAbove) {
+  return normalAbove <= PHYS_LIMIT_PAGES && criticalBelow <= normalAbove;
+}
 #endif
+
+PageWatermark pool_watermark(const BuddyZone& zone, const Watermarks& limits) {
+  if (!watermarks_ready || !zone.publishedCount) { return PageWatermark::Normal; }
+  return limits.classify(zone.freeCount);
+}
+
+void log_watermarks(const char* label, u32 published, const Watermarks& limits) {
+  pr_debug(label);
+  pr_debug_hex(published);
+  pr_debug(" criticalBelow=");
+  pr_debug_hex(limits.criticalBelow);
+  pr_debug(" normalAbove=");
+  pr_debug_hex(limits.normalAbove);
+  pr_debug("\n");
+}
 
 void read_boot_memory_map() {
   const u32 count = *static_cast<volatile u16*>(phys_to_virt(E820_COUNT_ADDRESS));
@@ -357,6 +382,7 @@ void publish_pages(BuddyZone& zone, u32 first) {
     first = last;
   }
   const u32 added = zone.freeCount - before;
+  zone.publishedCount += added;
   free_pages += added;
   published_pages += added;
 }
@@ -394,16 +420,57 @@ PageWatermark page_watermark() {
   return watermarks_ready ? watermarks.classify(free_pages) : PageWatermark::Normal;
 }
 
+PageWatermark page_watermark_low() {
 #ifdef SINO_SHELL_BRIDGE
-bool mmtest::overrideWatermarks(u32 criticalBelow, u32 normalAbove) {
-  if (normalAbove > PHYS_LIMIT_PAGES || criticalBelow > normalAbove) {
+  if (test_pool_watermarks_active) { return pool_watermark(low, test_low_watermarks); }
+#endif
+  return pool_watermark(low, low_watermarks);
+}
+
+PageWatermark page_watermark_high() {
+#ifdef SINO_SHELL_BRIDGE
+  if (test_pool_watermarks_active) { return pool_watermark(high, test_high_watermarks); }
+#endif
+  return pool_watermark(high, high_watermarks);
+}
+
+PagePoolStats page_pool_low() {
+  return {low.freeCount, low.publishedCount, page_watermark_low()};
+}
+
+PagePoolStats page_pool_high() {
+  return {high.freeCount, high.publishedCount, page_watermark_high()};
+}
+
+#ifdef SINO_SHELL_BRIDGE
+bool mmtest::overrideWatermarks(u32 criticalBelow, u32 normalAbove, const u32* owner) {
+  if (!valid_test_watermarks(criticalBelow, normalAbove)) {
     return false;
   }
   test_watermarks = {criticalBelow, normalAbove};
+  test_watermarks_owner = owner;
   test_watermarks_active = true;
   return true;
 }
-void mmtest::restoreWatermarks() { test_watermarks_active = false; }
+
+void mmtest::restoreWatermarks(const u32* owner) {
+  if (!owner || owner == test_watermarks_owner) {
+    test_watermarks_active = false;
+    test_watermarks_owner = nullptr;
+  }
+}
+
+bool mmtest::overridePoolWatermarks(u32 critLow, u32 normLow, u32 critHigh, u32 normHigh) {
+  if (!valid_test_watermarks(critLow, normLow) || !valid_test_watermarks(critHigh, normHigh)) {
+    return false;
+  }
+  test_low_watermarks = {critLow, normLow};
+  test_high_watermarks = {critHigh, normHigh};
+  test_pool_watermarks_active = true;
+  return true;
+}
+
+void mmtest::restorePoolWatermarks() { test_pool_watermarks_active = false; }
 #endif
 
 int page_boot_usable(phys_t address) {
@@ -420,7 +487,7 @@ void page_init(void) {
     page_frames[pfn].reset(PageState::Reserved);
   }
 
-  low = {page_frames + LowStart, LowStart, boot_end, 0, {}};
+  low = {page_frames + LowStart, LowStart, boot_end, 0, 0, {}};
   publish_pages(low, LowStart);
   const u32 paging_pages = paging_bootstrap_page_budget(nr_pages);
   if (low.freeCount < paging_pages) {
@@ -440,23 +507,20 @@ void page_publish_extended(void) {
   const u32 before = free_pages, boot_end = low.end;
   const u32 direct_end = direct_map_end / PAGE_SIZE;
   low.end = nr_pages < direct_end ? nr_pages : direct_end;
-  high = {page_frames + low.end, low.end, nr_pages, 0, {}};
+  high = {page_frames + low.end, low.end, nr_pages, 0, 0, {}};
   publish_pages(low, boot_end);
   publish_pages(high, high.start);
   pr_debug("PAGE extended pages=");
   pr_debug_hex(free_pages - before);
   pr_debug("\n");
 
-  // Non-PAE 4 GiB bounds published_pages to 1 Mi pages, so these products fit u32.
-  watermarks = {(published_pages * 5 + 99) / 100, published_pages * 15 / 100};
+  watermarks = Watermarks::forPages(published_pages);
+  low_watermarks = Watermarks::forPages(low.publishedCount);
+  high_watermarks = Watermarks::forPages(high.publishedCount);
   watermarks_ready = true;
-  pr_debug("PAGE watermarks total=");
-  pr_debug_hex(published_pages);
-  pr_debug(" criticalBelow=");
-  pr_debug_hex(watermarks.criticalBelow);
-  pr_debug(" normalAbove=");
-  pr_debug_hex(watermarks.normalAbove);
-  pr_debug("\n");
+  log_watermarks("PAGE watermarks total=", published_pages, watermarks);
+  log_watermarks("PAGE watermarks low=", low.publishedCount, low_watermarks);
+  log_watermarks("PAGE watermarks high=", high.publishedCount, high_watermarks);
 }
 
 void* kpage_alloc_run(u32 count) {
@@ -571,6 +635,7 @@ void kpage_guard_release(void* page) {
 phys_t page_alloc(void) {
   u32 pfn = high.allocate(1, PageState::Used);
   if (!pfn) {
+    if (page_watermark_low() == PageWatermark::Critical) { return PHYS_NULL; }
     pfn = low.allocate(1, PageState::Used);
   }
   if (!pfn) {
@@ -627,7 +692,7 @@ void page_frame_test() {
 void buddy_run_test() {
   constexpr u32 base = 16, count = 16;
   PageFrame frames[count];
-  BuddyZone zone{frames, base, base + count, 0, {}};
+  BuddyZone zone{frames, base, base + count, 0, 0, {}};
   zone.addFreeRange(base, base + count);
 
   if (zone.allocateHeap(3) != base || zone.frame(base).heapPages() != 4 ||
@@ -698,8 +763,8 @@ void buddy_boundary_test() {
   for (PageFrame& frame : frames) {
     frame.reset(PageState::Reserved);
   }
-  BuddyZone lower{frames, base, base + 1, 0, {}};
-  BuddyZone upper{frames + 1, base + 1, base + 4, 0, {}};
+  BuddyZone lower{frames, base, base + 1, 0, 0, {}};
+  BuddyZone upper{frames + 1, base + 1, base + 4, 0, 0, {}};
   lower.addFreeRange(base, base + 1);
   upper.addFreeRange(base + 1, base + 2);
   upper.addFreeRange(base + 3, base + 4);
@@ -717,6 +782,7 @@ void buddy_boundary_test() {
 void page_allocator_test(void) {
   const u32 before = free_pages;
   const PageWatermark before_watermark = page_watermark();
+  const auto low_before = page_pool_low(), high_before = page_pool_high();
   for (u32 offset = 0; offset < metadata_pages; ++offset) {
     if (page_frames[metadata_pfn + offset].state() != PageState::Reserved) {
       panic("PAGE metadata reservation", metadata_pfn, offset);
@@ -765,10 +831,14 @@ void page_allocator_test(void) {
   page_frame_test();
   buddy_run_test();
   buddy_boundary_test();
-  const u32 checked = low.check() + high.check();
-  if (checked != published_pages || low.freeCount + high.freeCount != free_pages ||
+  const u32 checked_low = low.check(), checked_high = high.check();
+  if (checked_low != low.publishedCount || checked_high != high.publishedCount ||
+      checked_low + checked_high != published_pages ||
+      low.freeCount + high.freeCount != free_pages ||
+      low_before.free != low.freeCount || high_before.free != high.freeCount ||
+      low_before.watermark != page_watermark_low() || high_before.watermark != page_watermark_high() ||
       free_pages != before || page_watermark() != before_watermark) {
-    panic("PAGE allocator totals", checked, free_pages);
+    panic("PAGE allocator totals", checked_low + checked_high, free_pages);
   }
   pr_debug("PAGE allocator self-check passed\n");
 }

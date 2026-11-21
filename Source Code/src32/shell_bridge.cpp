@@ -93,6 +93,16 @@ static void num(Sink* s, u32 n) {
   number(n, b);
   put(s, b);
 }
+static void pool_stats(Sink* out, const char* label, PagePoolStats stats) {
+  static constexpr const char* state[] = {"Normal", "Low", "Critical"};
+  put(out, label);
+  num(out, stats.free);
+  put(out, " free / ");
+  num(out, stats.published);
+  put(out, " published (watermark: ");
+  put(out, state[(u32)stats.watermark]);
+  put(out, ")\n");
+}
 static int error(Sink* s, const char* command, const char* reason) {
   put(s, command);
   put(s, ": ");
@@ -781,6 +791,8 @@ static int command(Context* c, int argc, char** argv) {
     put(out, " KiB / ");
     num(out, free_pages);
     put(out, " pages (4 KiB each)\n");
+    pool_stats(out, "Low pool: ", page_pool_low());
+    pool_stats(out, "High pool: ", page_pool_high());
     return 0;
   }
   if (streq(cmd, "df")) {
@@ -886,6 +898,19 @@ static int command(Context* c, int argc, char** argv) {
   if (streq(cmd, "mmtest-watermark")) {
     if (argc == 2 && streq(argv[1], "reset")) {
       mmtest::restoreWatermarks();
+      mmtest::restorePoolWatermarks();
+    } else if (argc == 5) {
+      u32 critLow, normLow, critHigh, normHigh;
+      if (!parse_number(argv[1], &critLow) || !parse_number(argv[2], &normLow) ||
+          !parse_number(argv[3], &critHigh) || !parse_number(argv[4], &normHigh) ||
+          !mmtest::overridePoolWatermarks(critLow, normLow, critHigh, normHigh)) {
+        return error(out, cmd, "invalid pool thresholds");
+      }
+      num(out, (u32)page_watermark_low());
+      put(out, " ");
+      num(out, (u32)page_watermark_high());
+      put(out, "\n");
+      return 0;
     } else {
       u32 criticalBelow, normalAbove;
       if (argc != 3 || !parse_number(argv[1], &criticalBelow) ||

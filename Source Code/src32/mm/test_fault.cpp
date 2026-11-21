@@ -52,7 +52,7 @@ bool fail(const u32* owner, Stage stage) {
   for (auto& fault : faults) {
     if (fault.owner == owner && fault.take(stage)) {
       if (stage == Stage::ReclaimData && !pressureOwner) {
-        if (!overrideWatermarks(free_pages + 1, free_pages + 1)) {
+        if (!overrideWatermarks(free_pages + 1, free_pages + 1, owner)) {
           panic("Invalid reclaim probe watermarks", free_pages, 0);
         }
         pressureOwner = owner;
@@ -65,7 +65,7 @@ bool fail(const u32* owner, Stage stage) {
 
 void clear(const u32* owner) {
   if (pressureOwner == owner) {
-    restoreWatermarks();
+    restoreWatermarks(owner);
     pressureOwner = nullptr;
   }
   for (auto& fault : faults) {

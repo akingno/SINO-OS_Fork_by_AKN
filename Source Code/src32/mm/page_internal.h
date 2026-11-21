@@ -10,7 +10,7 @@ struct BuddyZone {
 
   PageFrame* frames;  // Metadata for start, not for PFN 0.
   u32 start, end;
-  u32 freeCount;
+  u32 freeCount, publishedCount;
   u32 heads[MaxOrder + 1];
 
   bool contains(u32 pfn, u32 count) const {

@@ -54,6 +54,7 @@
 | `test-memory.js anonymous <ShellBridge 目录>` | 7 | 匿名映射、配额、跨页 I/O、定向 OOM/首次触页故障及可写副本注入隔离 |
 | `test-memory.js reclaim <ShellBridge 目录>` | 5 | 水位精确边界、预留准入、按评分和驻留页排序、回收后补页、失败语义、进程组继承与回收 |
 | `test-memory.js purgeable <ShellBridge 目录>` | 5 | 可丢弃 ABI、锁计数、LOW 丢弃和重建、CRITICAL 回收顺序及最后解锁重启丢弃 |
+| `test-memory.js pools <ShellBridge 目录>` | 4 | 4096 MiB 双池边界和独立转换、低端 Critical 时优先用高端、1024 MiB 纯低端兜底、全局准入与回收独立性 |
 | `test-memory.js vma <ShellBridge 目录>` | 2 | 映像和工作线程栈的 VMA 登记失败回滚及资源复用 |
 | `test-memory.js mprotect <ShellBridge 目录>` | 6 | 整区权限校验和恢复、未驻留与驻留页的写保护故障、跨页 I/O、缺页重试 |
 | `test-memory.js e1 <ShellBridge 目录>` | 6 | 匿名权限拆分与合并、分配身份、旧基址要求、片段上限、VMA 节点分配失败回滚及可丢弃条件 |

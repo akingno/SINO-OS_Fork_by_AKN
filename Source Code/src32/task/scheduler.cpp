@@ -14,7 +14,7 @@ namespace task {
   namespace {
     u32 quantum_end;
     phys_t kernelDirectory;
-    PageWatermark observedWatermark;
+    PageWatermark observedWatermark, observedLowWatermark, observedHighWatermark;
     bool reclaimPending;
 
     void requireUnbound(bool interrupts) {
@@ -22,6 +22,20 @@ namespace task {
           !!(sync::readState() & sync::InterruptEnabled) != interrupts) {
         panic("Scheduler context/CR3/IF contract", read_cr3(), (u32)currentThread);
       }
+    }
+
+    void observePoolWatermark(const char* pool, PagePoolStats stats, PageWatermark& observed) {
+      if (stats.watermark == observed) { return; }
+      pr_debug("MEM watermark ");
+      pr_debug(pool);
+      pr_debug(" from=");
+      pr_debug_hex((u32)observed);
+      pr_debug(" to=");
+      pr_debug_hex((u32)stats.watermark);
+      pr_debug(" free=");
+      pr_debug_hex(stats.free);
+      pr_debug("\n");
+      observed = stats.watermark;
     }
 
     void observeWatermark() {
@@ -37,6 +51,8 @@ namespace task {
         observedWatermark = watermark;
         reclaimPending = watermark != PageWatermark::Normal;
       }
+      observePoolWatermark("low", page_pool_low(), observedLowWatermark);
+      observePoolWatermark("high", page_pool_high(), observedHighWatermark);
     }
 
     void containFault(u32 vector) {

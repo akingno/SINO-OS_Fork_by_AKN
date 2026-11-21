@@ -195,6 +195,12 @@
     {"id": "memory.purgeable.insufficient-cache-falls-back", "name": "insufficient discardable cache falls back to process reclaim on a later pass"},
     {"id": "memory.purgeable.last-unlock-rearms-pressure", "name": "last unlock schedules discard again under unchanged LOW pressure"}
   ],
+  "pools": [
+    {"id": "memory.pools.independent-watermarks", "name": "pool thresholds, independent transitions and atomic overrides"},
+    {"id": "memory.pools.high-preferred", "name": "high supplies data when low is Critical"},
+    {"id": "memory.pools.single-pool-fallback", "name": "low-only fallback works at Low, denies at Critical and recovers"},
+    {"id": "memory.pools.global-admission", "name": "per-pool pressure leaves global reservation and reclaim decisions independent"}
+  ],
   "anonymous": [
     {
       "id": "memory.anonymous.strict-feature-discovery",

@@ -86,6 +86,16 @@ bool heap_page_free(void* base);
 }
 
 enum class PageWatermark : u8 { Normal, Low, Critical };
+struct PagePoolStats {
+  u32 free, published;
+  PageWatermark watermark;
+};
+
+// The global watermark drives reclaim. Pool watermarks describe each allocator.
 PageWatermark page_watermark();
+PageWatermark page_watermark_low();
+PageWatermark page_watermark_high();
+PagePoolStats page_pool_low();
+PagePoolStats page_pool_high();
 #endif
 #endif

@@ -9,8 +9,10 @@ enum class Stage : u32 { None = 0, Image = 1, Table = 2, Anonymous = 3, ReclaimD
 void arm(const u32* owner, Stage stage, u32 allowed, bool repeat = false);
 bool fail(const u32* owner, Stage stage);
 void clear(const u32* owner);
-bool overrideWatermarks(u32 criticalBelow, u32 normalAbove);
-void restoreWatermarks();
+bool overrideWatermarks(u32 criticalBelow, u32 normalAbove, const u32* owner = nullptr);
+void restoreWatermarks(const u32* owner = nullptr);
+bool overridePoolWatermarks(u32 critLow, u32 normLow, u32 critHigh, u32 normHigh);
+void restorePoolWatermarks();
 }
 #endif
 #endif

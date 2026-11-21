@@ -2358,6 +2358,18 @@ namespace task {
     reapProcesses();
   }
 
+  static void logPoolRelease(u32 lowBefore, u32 highBefore) {
+    pr_debug(" low_before=");
+    pr_debug_hex(lowBefore);
+    pr_debug(" low_after=");
+    pr_debug_hex(page_pool_low().free);
+    pr_debug(" high_before=");
+    pr_debug_hex(highBefore);
+    pr_debug(" high_after=");
+    pr_debug_hex(page_pool_high().free);
+    pr_debug("\n");
+  }
+
   bool purgeOneRegion() {
     Process* owner = nullptr;
     VmaNode* victim = nullptr;
@@ -2375,6 +2387,7 @@ namespace task {
     }
     if (!victim) { return false; }
     // Only the unbound scheduler reaches this path. The reservation stays owned.
+    const u32 lowBefore = page_pool_low().free, highBefore = page_pool_high().free;
     const u32 freed = free_anon_pages(owner, *victim);
     victim->setFlag(VmaNode::Flag::Purged, true);
     pr_debug("MEM purge pid=");
@@ -2385,7 +2398,7 @@ namespace task {
     pr_debug_hex(freed);
     pr_debug(" pass=");
     pr_debug_hex(task_schedule_stats.passes);
-    pr_debug("\n");
+    logPoolRelease(lowBefore, highBefore);
     return true;
   }
 
@@ -2422,6 +2435,7 @@ namespace task {
       }
     }
     const u32 before = free_pages;
+    const u32 lowBefore = page_pool_low().free, highBefore = page_pool_high().free;
     release(victim);
     pr_debug("MEM reclaim pid=");
     pr_debug_hex(pid);
@@ -2435,7 +2449,7 @@ namespace task {
     pr_debug_hex(before);
     pr_debug(" after=");
     pr_debug_hex(free_pages);
-    pr_debug("\n");
+    logPoolRelease(lowBefore, highBefore);
     return true;
   }
 

@@ -67,6 +67,28 @@ void waitForPressure(bool expected) {
   }
 }
 
+int poolPopulate(bool denied) {
+  volatile u8* memory = reserve(2);
+  memory[0] = 0x4b; // Keep the page table alive while the second page is absent.
+  auto* output = (SystemInfo*)(memory + PageBytes);
+  Log("POOL POPULATE READY\n");
+  // The host sets the pool limits before sending global LOW as the start signal.
+  waitForPressure(true);
+  if (denied) {
+    require(QuerySystemInfo(output) == S_NOMEM, "low pool reserve denies population");
+    Log("POOL POPULATE DENIED\n");
+    waitForPressure(false);
+  }
+  require(QuerySystemInfo(output) == S_OK && output->size == sizeof(SystemInfo) &&
+          memory[0] == 0x4b, "populate second page in the existing table");
+  Log("POOL POPULATE DONE\n");
+  if (denied) { hold(); }
+  waitForPressure(false);
+  require(AnonUnmap((void*)memory) == S_OK, "release the populated reservation");
+  Log("POOL POPULATE UNMAPPED\n");
+  return 0;
+}
+
 void waitForDiscard(const void* base) {
   const u32 start = StreamTicks();
   for (;;) {
@@ -444,6 +466,9 @@ int main() {
   if (mode[0] == 'e' && mode[1] == '1') { return fragmentTest(mode); }
   if (mode[0] == 'e' && mode[1] == '2') { return unmapRangeTest(mode); }
   if (mode[0] == 'm' && mode[1] == 'p' && mode[2] == '-') { return protectionTest(mode); }
+  if (streq(mode, "pool-populate") || streq(mode, "pool-denied")) {
+    return poolPopulate(streq(mode, "pool-denied"));
+  }
   if (streq(mode, "purge-abi")) { return purgeAbi(); }
   if (streq(mode, "purge-cache")) { return purgeCache(); }
   if (streq(mode, "purge-address-order")) { purgeAddressOrder(); }
