@@ -1,4 +1,8 @@
 {
+  "vma": [
+    {"id":"memory.vma.image-rollback","name":"image VMA allocation rollback and relaunch"},
+    {"id":"memory.vma.stack-rollback","name":"worker stack VMA allocation rollback and slot reuse"}
+  ],
   "images": [
     {
       "id": "memory.images.4-gib-e820-pool-and-single-core-identity",

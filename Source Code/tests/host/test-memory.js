@@ -536,9 +536,25 @@ async function purgeableContracts(source) {
 }
 
 const [mode, source] = process.argv.slice(2);
-const suites = {images:imageContracts, anonymous:anonymousContracts, reclaim:reclaimContracts, purgeable:purgeableContracts};
+async function vmaContracts(source) {
+    await boot(source, 'vma', vm.memoryMiB, async ({check, channel, command, free, baseline, guestLog, probe}) => {
+        await check('memory.vma.image-rollback', ['image VMA allocation rollback and relaunch'], async () => {
+            const session = new RunSession(channel);
+            await session.hello();
+            const offset = guestLog().length;
+            await assert.rejects(session.start('/boot/memv2.snx', ['oom-vma-image']), e => e.guestStatus === -2);
+            assert.match(guestLog().slice(offset), /MM PROBE injected stage=0x00000005/i);
+            assert.equal(free(await command('mem')), baseline);
+            assert.doesNotMatch(await command('ps'), /memv2/i);
+            await probe('run -s /boot/memv2.snx wide', /Launch VMA coverage passed[\s\S]*SNX V2 PASS/);
+        });
+        await check('memory.vma.stack-rollback', ['worker stack VMA allocation rollback and slot reuse'], () =>
+            probe('run -s /boot/memv2.snx oom-vma-stack', /MM PROBE injected stage=0x00000005[\s\S]*VMA STACK RETRY PASS/i));
+    });
+}
+const suites = {images:imageContracts, anonymous:anonymousContracts, reclaim:reclaimContracts, purgeable:purgeableContracts, vma:vmaContracts};
 if (!Object.hasOwn(suites, mode) || process.argv.length !== 4) {
-    console.error('Usage: node test-memory.js images|anonymous|reclaim|purgeable <ShellBridge build directory>|--list');
+    console.error('Usage: node test-memory.js images|anonymous|reclaim|purgeable|vma <ShellBridge build directory>|--list');
     process.exitCode = 2;
 } else if (source === '--list') {
     console.log(mode + ': ' + memoryCases[mode].length + ' cases');

@@ -18,6 +18,17 @@ static void worker(void) {
 }
 
 int main(void) {
+  if (streq(Arguments(), "oom-vma-stack")) {
+    require(api(SYS_THREAD, (u32)worker, 0, 0) == S_NOMEM, "stack VMA failure reported");
+    require(QueryStartInfo((StartInfo*)(USER_V2_STACK(1) - sizeof(StartInfo))) == S_INVALID,
+            "failed stack unmapped");
+    require(api(SYS_THREAD, (u32)worker, 0, 0) == 1, "failed slot reused");
+    const u32 begin = StreamTicks();
+    while (!worker_done && StreamTicks() - begin < 100) { Yield(1); }
+    require(worker_done, "replacement worker ran");
+    Log("VMA STACK RETRY PASS\n");
+    return 0;
+  }
   SystemInfo info;
   require(QuerySystemInfo(&info) == S_OK && (info.features & FEATURE_SNX_V2) &&
           info.image_bytes == SNX_V2_IMAGE_BYTES, "reported v2 image limit");

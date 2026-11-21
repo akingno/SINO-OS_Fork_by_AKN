@@ -132,6 +132,8 @@ task 提取契约见 [task-subsystem.md](Source Code/docs/task-subsystem.md)。C
 
 ## 关键边界
 
+加载器和用户栈 VMA 登记专项：`node 'Source Code/tests/host/test-memory.js' vma '<ShellBridge 构建目录>'`，2 项，先用 `vma --list` 预览。对应组合见 TESTING.md。
+
 - 用户栈 16 KiB，SNX v1 映像上限 192 KiB，v2 上限 16 MiB，基址 `0x40000000`
 - VFS 全局 128 节点，单文件 64 KiB（含磁盘 SNX）
 - 64 进程，每进程 4 线程，24 句柄

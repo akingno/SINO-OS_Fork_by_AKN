@@ -5,7 +5,7 @@
 
 namespace mm {
 
-enum class VmaType : u8 { Anonymous, Stack, Code };
+enum class VmaType : u8 { Anonymous, Stack, Image, Params, Probe };
 
 struct VmaNode {
   enum class Flag : u8 { Read = 1, Write = 2, Execute = 4, Purgeable = 8, Purged = 16 };

@@ -371,6 +371,32 @@ namespace task {
   static u32 user_stack_top(const Process* p, int thread) {
     return p->abi == 2 ? USER_V2_STACK(thread) : USER_V1_STACK(thread);
   }
+  static int register_mapping(Process* p, u32 base, u32 bytes, VmaType type, bool writable, bool code = false) {
+#ifdef SINO_SHELL_BRIDGE
+    if (mmtest::fail(p->pd, mmtest::Stage::Vma)) { return S_NOMEM; }
+#endif
+    auto* node = static_cast<VmaNode*>(kmalloc(sizeof(VmaNode)));
+    if (!node) { return S_NOMEM; }
+    *node = VmaNode{base / PAGE_SIZE, bytes / PAGE_SIZE, 0, 0, 0, type};
+    node->setFlag(VmaNode::Flag::Read, true);
+    node->setFlag(VmaNode::Flag::Write, writable);
+    node->setFlag(VmaNode::Flag::Execute, code);
+    if (!mm::vma_insert(p->vma_root, node)) {
+      kfree(node);
+      return S_INVALID;
+    }
+    return S_OK;
+  }
+  static void release_user_stack(Process* p, int slot) {
+    const u32 top = user_stack_top(p, slot);
+    const u32 start = top - UserStackBytes;
+    VmaNode* node = mm::vma_find_exact(p->vma_root, start / PAGE_SIZE);
+    if (!node || node->type != VmaType::Stack || !mm::vma_remove(p->vma_root, node)) {
+      panic("User stack VMA ownership", p->pid, start);
+    }
+    free_user_pages(p, start, top);
+    kfree(node);
+  }
   static int alloc_user_stack(Process* p, int thread) {
     u32 top = user_stack_top(p, thread), start = top - UserStackBytes;
     for (u32 va = start; va < top; va += PAGE_SIZE) {
@@ -379,10 +405,27 @@ namespace task {
         return 0;
       }
     }
+    if (register_mapping(p, start, UserStackBytes, VmaType::Stack, true) != S_OK) {
+      free_user_pages(p, start, top);
+      return 0;
+    }
     return 1;
   }
 #ifdef SINO_SHELL_BRIDGE
   /* Test-only mappings for the strict paging probe on the read-only boot disk. */
+  static void check_launch_mappings(Process* p) {
+    u32 count = 0;
+    for (auto* node = mm::vma_first(p->vma_root); node; node = mm::vma_next(node)) {
+      const u32 flags = PAGE_PRESENT | PAGE_USER | (node->hasFlag(VmaNode::Flag::Write) ? PAGE_WRITE : 0);
+      for (u32 i = 0; i < node->pageCount; ++i) {
+        const u32 va = (node->startPage + i) * PAGE_SIZE;
+        if (paging_user_flags(p->pd, va) != flags) { panic("Launch VMA permissions", va, flags); }
+        ++count;
+      }
+    }
+    if (count != paging_user_count(p->pd)) { panic("Launch VMA coverage", count, p->pid); }
+    pr_debug("Launch VMA coverage passed\n");
+  }
   static int paging_probe_setup(Process* p, int exhaust) {
     u32 cross = USER_DYNAMIC_BASE + TABLE_BYTES - PAGE_SIZE;
     u32 high = USER_DYNAMIC_END - PAGE_SIZE;
@@ -404,7 +447,10 @@ namespace task {
       return S_INVALID;
     }
     if (!exhaust) {
-      return alloc_user_page(p, high, 0).page ? S_OK : S_NOMEM;
+      if (!alloc_user_page(p, high, 0).page) { return S_NOMEM; }
+      int status = register_mapping(p, cross, 2 * PAGE_SIZE, VmaType::Probe, true);
+      if (status != S_OK) { return status; }
+      return register_mapping(p, high, PAGE_SIZE, VmaType::Probe, false);
     }
 
     // 数据页实际分配成功，仅使此页目录的下一次页表分配失败，检查回滚。
@@ -566,6 +612,10 @@ namespace task {
       streq(probe_mode, "oom-image")) {
       mmtest::arm(p->pd, mmtest::Stage::Image, 8);
     }
+    if (policy == PROCESS_STRICT && n == vfs_lookup("/boot/memv2.snx") &&
+        streq(probe_mode, "oom-vma-image")) {
+      mmtest::arm(p->pd, mmtest::Stage::Vma, 1);
+    }
     if (policy == PROCESS_STRICT && n == vfs_lookup("/boot/fstest.snx") &&
       (streq(probe_mode, "anon-oom") || streq(probe_mode, "anon-fault-oom"))) {
       mmtest::arm(p->pd, mmtest::Stage::Anonymous, 1, true);
@@ -587,13 +637,23 @@ namespace task {
         kunmap(mapped);
       }
     }
-    phys_t params_page = alloc_user_page(p, p->abi == 2 ? USER_V2_ARGUMENTS : USER_V1_ARGUMENTS, 0).page;
+    u32 imageBytes = 0;
+    int status = register_mapping(p, USER_BASE, h->data_offset, VmaType::Image, false, true);
+    if (!page_ceil_checked(h->memory_bytes, &imageBytes)) { status = S_INVALID; }
+    if (status == S_OK && imageBytes > h->data_offset) {
+      status = register_mapping(p, USER_BASE + h->data_offset, imageBytes - h->data_offset, VmaType::Image, true);
+    }
+    if (status != S_OK) { release(p); return status; }
+    const u32 paramsBase = p->abi == 2 ? USER_V2_ARGUMENTS : USER_V1_ARGUMENTS;
+    phys_t params_page = alloc_user_page(p, paramsBase, 0).page;
     if (!params_page) {
       release(p);
       return S_NOMEM;
     }
     char executable[128];
     vfs_path(n, executable);
+    status = register_mapping(p, paramsBase, PAGE_SIZE, VmaType::Params, false);
+    if (status != S_OK) { release(p); return status; }
     u8* params = (u8*)kmap(params_page);
     memcpy(params, arguments, strlen(arguments) + 1);
     memcpy(params + 256, executable, strlen(executable) + 1);
@@ -624,6 +684,11 @@ namespace task {
         release(p);
         return status;
       }
+      check_launch_mappings(p);
+    }
+    if (policy == PROCESS_STRICT && n == vfs_lookup("/boot/memv2.snx")) {
+      if (streq(probe_mode, "wide")) { check_launch_mappings(p); }
+      if (streq(probe_mode, "oom-vma-stack")) { mmtest::arm(p->pd, mmtest::Stage::Vma, 0); }
     }
 #endif
     if (run) {
@@ -1154,7 +1219,7 @@ namespace task {
         if (object < 0) { result = object; }
       }
       if (result != S_OK) {
-        free_user_pages(current, top - UserStackBytes, top);
+        release_user_stack(current, (int)slot);
         return result;
       }
       const u32 tid = (threadGeneration.issue() << 3) | (slot + 1);
@@ -1198,8 +1263,7 @@ namespace task {
   static void exitThread(Frame* f, int code) {
     Thread& t = current->thread[currentThread];
     t.cancel();
-    const u32 top = user_stack_top(current, currentThread);
-    free_user_pages(current, top - UserStackBytes, top);
+    release_user_stack(current, currentThread);
     t.exitCode = code;
     if (t.joinObject) {
       t.state = ThreadState::EXITED;
