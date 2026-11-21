@@ -52,8 +52,8 @@ int main(void) {
 
   const u32 size = 13 * 1024 * 1024;
   volatile u8* heap = (volatile u8*)malloc(size);
-  require(heap && (u32)heap >= end && !heap[0] && !heap[size - 1],
-          "heap skips the wide image and starts zero-filled");
+  require(heap && (u32)heap >= end && malloc_size((const void*)heap) >= size,
+          "heap skips the wide image and reports its capacity");
   for (u32 i = 0; i < size; i++) heap[i] = (u8)(i ^ (i >> 12) ^ 0x3c);
   for (u32 i = 0; i < size; i++)
     if (heap[i] != (u8)(i ^ (i >> 12) ^ 0x3c)) require(0, "large heap byte mismatch");

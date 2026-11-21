@@ -1,23 +1,94 @@
 #include "sdk.h"
+#include "heap.h"
+
+namespace {
+
+sino::heap::MapResult mapHeapRegion(void*, u32 bytes) {
+  const int result = AnonMap(bytes);
+  if (result <= 0) { return {nullptr, result}; }
+  return {(void*)(u32)result, S_OK};
+}
+
+int unmapHeapRegion(void*, void* base) { return AnonUnmap(base); }
+
+int setHeapRegionPurgeable(void*, void* base, bool enabled) {
+  return AnonSetPurgeable(base, enabled);
+}
+
+void fatalHeapUnmap(void*, void*, int status) {
+  Log("USER HEAP: failed to unmap owned region\n");
+  Exit(status);
+}
+
+sino::heap::Heap processHeap({nullptr, mapHeapRegion, unmapHeapRegion,
+                             setHeapRegionPurgeable, fatalHeapUnmap});
+
+struct HeapLock {
+  u32 held = 0;
+
+  void lock() {
+    while (__atomic_exchange_n(&held, 1u, __ATOMIC_ACQUIRE)) { Yield(0); }
+  }
+
+  void unlock() { __atomic_store_n(&held, 0u, __ATOMIC_RELEASE); }
+};
+
+HeapLock heapLock;
+
+} // namespace
+
 /* GCC's MinGW C entry hook: no host CRT or C++ constructors in native ABI 1. */
 extern "C" void __main(void) {
 }
 extern "C" __attribute__((cdecl,noreturn)) void sino_thread_start(int (*entry)(void*), void* argument) {
   sino::thread::exit(entry(argument));
 }
-/* 【简化实现：用户态堆】每次 malloc 都直接预留一个匿名区域，首次访问才分配
- * 物理页；小对象也按页占空间，并受每进程 32 个区域、合计 16 MiB 的限制。
- * TODO（用户态堆，后置）：以匿名映射作为堆的底层来源，在区域内按对齐的小块
- * 分配、复用和合并，让多个小对象共享 AnonRegion；大块可单独映射。free 先识别
- * 所属块，不能继续直接 AnonUnmap；多线程共享堆需要同步。这不要求先实现内核
- * buddy/slab，本轮进程与调度改造只保留此 TODO，不改变 malloc/free 的行为。 */
 void *malloc(u32 bytes) {
-  int base = AnonMap(bytes);
-  return base > 0 ? (void*)(u32)base : 0;
+  heapLock.lock();
+  void* pointer = processHeap.allocate(bytes);
+  heapLock.unlock();
+  return pointer;
 }
 void free(void *pointer) {
-  if (pointer)
-    AnonUnmap(pointer);
+  if (!pointer) { return; }
+  heapLock.lock();
+  processHeap.release(pointer);
+  heapLock.unlock();
+}
+void *calloc(u32 count, u32 bytes) {
+  if (!bytes || count > (~0u) / bytes) { return nullptr; }
+  const u32 total = count * bytes;
+  void* pointer = malloc(total);
+  if (pointer) { memset(pointer, 0, total); }
+  return pointer;
+}
+void *realloc(void *pointer, u32 bytes) {
+  if (!pointer) { return malloc(bytes); }
+  if (!bytes) {
+    free(pointer);
+    return nullptr;
+  }
+
+  heapLock.lock();
+  const u32 capacity = processHeap.usableSize(pointer);
+  void* replacement = nullptr;
+  if (capacity) {
+    replacement = bytes <= capacity ? pointer : processHeap.allocate(bytes);
+  }
+  heapLock.unlock();
+
+  // Both allocations stay live while copying. The caller owns the old block.
+  if (replacement && replacement != pointer) {
+    memcpy(replacement, pointer, capacity);
+    free(pointer);
+  }
+  return replacement;
+}
+u32 malloc_size(const void *pointer) {
+  heapLock.lock();
+  const u32 capacity = processHeap.usableSize(pointer);
+  heapLock.unlock();
+  return capacity;
 }
 void *memcpy(void *d, const void *s, u32 n) {
   u8 *a = (u8*)d;

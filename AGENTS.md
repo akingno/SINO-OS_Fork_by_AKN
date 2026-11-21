@@ -97,6 +97,7 @@ Shell 宿主测试参数：`-ExpectedExitCode 1` 断言预期失败，`-TimeoutS
 | 多用户页表与动态地址窗口 | src32/mm/paging.cpp:paging_user_map / paging_user_find_gap | ShellBridge 中 `run -s /boot/poltest.snx paging-c` 系列 |
 | 匿名内存与 SDK 堆 | src32/task/process.cpp:anon_map / anon_unmap / protect_anon / anon_unmap_range、user/runtime.cpp | ShellBridge 中 `run -s /boot/fstest.snx anon-*` 系列；范围改权与部分解除映射按 TESTING.md 选 e1 / e2 |
 | 用户态 slab 分配器 | user/heap.h | `node 'Source Code/tests/development/user/heap/test-user-heap.js'`；20 项，先 `--list` 预览 |
+| SDK 堆接入与线程同步 | user/runtime.cpp、user/sdk.h | `node 'Source Code/tests/host/test-memory.js' heap '<ShellBridge 构建目录>'`；7 项，先 `heap --list` 预览；接入选测组合见 TESTING.md |
 | 内存范围与用户复制边界 | src32/mm/e820.h、addr.h、uaccess.cpp；docs/mm-access.md | `node 'Source Code/tests/host/test-mm-boundaries.js'`；10 项，`--list` 预览；系统验收按 images / anonymous 选测 |
 | 用户缓冲区校验 | src32/mm/uaccess.cpp、src32/task/process.cpp | ShellBridge 中 fstest.snx / termtest.snx 的 uaccess 系列 |
 | 匿名页按需分配 | src32/task/process.cpp:anon_map / anonPage；task/scheduler.cpp:interrupt | ShellBridge 中 anon-lazy / anon-oom / anon-fault |

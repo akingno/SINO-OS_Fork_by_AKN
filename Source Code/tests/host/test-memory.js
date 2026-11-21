@@ -287,6 +287,64 @@ function victims(log) {
             pages:Number(pages), pass:Number(pass), before:Number(before), after:Number(after), ...releasedPools(...pools)}));
 }
 
+function purges(log) {
+    const fields = /MEM purge pid=(0x[\da-f]+) base=(0x[\da-f]+) pages=(0x[\da-f]+) pass=(0x[\da-f]+)/i.source;
+    return [...log.matchAll(new RegExp(fields + releaseFields, 'gi'))]
+        .map(([, pid, base, pages, pass, ...pools]) => ({pid:Number(pid), base:Number(base),
+            pages:Number(pages), pass:Number(pass), ...releasedPools(...pools)}));
+}
+
+async function heapContracts(source) {
+    await boot(source, 'heap', vm.memoryMiB, async context => {
+        const {channel, check, guestLog, until, baseline} = context;
+        const {processes, currentFree, override, reset, cleanup} = pressureTools(context);
+        const session = new RunSession(channel);
+        await session.hello();
+        for (const item of memoryCases.heap) {
+            const probeMode = item.id.split('.').pop();
+            await check(item.id, [item.name, 'all pages return to baseline after exit'], async () => {
+                const offset = guestLog().length;
+                const log = () => guestLog().slice(offset);
+                const program = '/boot/heaptest.snx';
+                let result;
+                if (probeMode === 'purge') {
+                    const token = await session.start(program, [probeMode], Buffer.alloc(0), 1800);
+                    try {
+                        await until(() => /HEAP PURGE READY \d+\n/.test(log()));
+                        const base = Number(log().match(/HEAP PURGE READY (\d+)/)[1]);
+                        const active = await processes();
+                        assert.equal(active.size, 1);
+                        const [[pid, pages]] = active;
+                        const before = await currentFree();
+                        await override(before - 32, before + 128, 1);
+                        await until(() => log().includes('HEAP PURGE DROPPED'));
+                        const dropped = purges(log());
+                        assert.equal(dropped.length, 1);
+                        assert.equal(dropped[0].pid, pid);
+                        assert.equal(dropped[0].base, base);
+                        assert(dropped[0].pages > 0 && dropped[0].pages < pages);
+                        assert.equal(await currentFree(), before + dropped[0].pages);
+                        assert.deepEqual(await processes(), new Map([[pid, pages - dropped[0].pages]]));
+                        assert.deepEqual(victims(log()), []);
+                        await reset();
+                        await until(async () => (result = await session.poll(token)) !== null);
+                    } finally {
+                        await session.release(token);
+                        await cleanup();
+                    }
+                } else {
+                    result = await session.run(program, [probeMode], Buffer.alloc(0), {timeoutTicks:1800});
+                }
+                assert.doesNotMatch(log(), /SELFTEST FAIL|KERNEL PANIC/);
+                assert.equal(result.reason, 1);
+                assert.equal(result.code, 0);
+                assert.match(log(), /HEAP PASS/);
+                await until(async () => await currentFree() === baseline);
+            });
+        }
+    });
+}
+
 async function reclaimContracts(source) {
     await boot(source, 'reclaim', vm.memoryMiB, async context => {
         const {check, command, baseline, until, guestLog, channel, qmp, directory} = context;
@@ -459,13 +517,6 @@ async function purgeableContracts(source) {
     await boot(source, 'purgeable', vm.memoryMiB, async context => {
         const {check, probe, until, guestLog} = context;
         const {launch, processes, currentFree, override, reset, cleanup} = pressureTools(context);
-        function purges(log) {
-            const fields = /MEM purge pid=(0x[\da-f]+) base=(0x[\da-f]+) pages=(0x[\da-f]+) pass=(0x[\da-f]+)/i.source;
-            return [...log.matchAll(new RegExp(fields + releaseFields, 'gi'))]
-                .map(([, pid, base, pages, pass, ...pools]) => ({pid:Number(pid), base:Number(base),
-                    pages:Number(pages), pass:Number(pass), ...releasedPools(...pools)}));
-        }
-
         await check('memory.purgeable.abi-and-lock-limits', ['purgeable ABI, reservation ownership and lock count edges'], () =>
             probe('run -s /boot/reclaim.snx purge-abi', /PURGE ABI PASS/));
 
@@ -749,9 +800,9 @@ async function anonymousRangeContracts(source) {
         }
     });
 }
-const suites = {e1:anonymousRangeContracts, e2:anonymousRangeContracts, mprotect:protectionContracts, images:imageContracts, anonymous:anonymousContracts, reclaim:reclaimContracts, purgeable:purgeableContracts, pools:poolContracts, vma:vmaContracts};
+const suites = {e1:anonymousRangeContracts, e2:anonymousRangeContracts, mprotect:protectionContracts, images:imageContracts, anonymous:anonymousContracts, heap:heapContracts, reclaim:reclaimContracts, purgeable:purgeableContracts, pools:poolContracts, vma:vmaContracts};
 if (!Object.hasOwn(suites, mode) || process.argv.length !== 4) {
-    console.error('Usage: node test-memory.js images|anonymous|reclaim|purgeable|pools|vma|mprotect|e1|e2 <ShellBridge build directory>|--list');
+    console.error('Usage: node test-memory.js images|anonymous|heap|reclaim|purgeable|pools|vma|mprotect|e1|e2 <ShellBridge build directory>|--list');
     process.exitCode = 2;
 } else if (source === '--list') {
     console.log(mode + ': ' + memoryCases[mode].length + ' cases');

@@ -16,6 +16,7 @@ const apps = [
  ['termtest', 'tests/guest/terminal_tests.cpp', 0],
  ['pipetest', 'tests/guest/pipe_tests.cpp', 0],
  ['fstest', 'tests/guest/file_tests.cpp', 0],
+ ['heaptest', 'tests/guest/heap_probe.cpp', 0, 2],
  ['reclaim', 'tests/guest/reclaim_probe.cpp', 0],
  ['clitest', 'tests/guest/cli_tests.cpp', 0],
  ['comptest', 'tests/guest/completion_tests.cpp', 0],

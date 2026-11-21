@@ -11,6 +11,9 @@ int streq(const char *, const char *);
 void number(u32, char *);
 void *malloc(u32 bytes);
 void free(void *pointer);
+void *calloc(u32 count, u32 bytes);
+void *realloc(void *pointer, u32 bytes);
+u32 malloc_size(const void *pointer);
 static inline int api(u32 n, u32 a, u32 b, u32 c) {
   __asm__ volatile("int $0x80"
                    : "+a"(n)

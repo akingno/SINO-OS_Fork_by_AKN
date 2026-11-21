@@ -11,6 +11,11 @@ static void require(int ok, const char* why) {
   checks++;
   if (!ok) { Log("FILESYS SELFTEST FAIL: "); Log(why); Log("\n"); Exit(1); }
 }
+static u8* map_test_pages(u32 bytes) {
+  const int base = AnonMap(bytes);
+  require(base > 0, "reserve anonymous test pages");
+  return (u8*)(u32)base;
+}
 static int same(const u8* a, const u8* b, u32 size) {
   for (u32 i = 0; i < size; i++) if (a[i] != b[i]) return 0;
   return 1;
@@ -91,10 +96,10 @@ static int anon_mapping_test(void) {
           "anonymous memory advertised to strict processes");
   require(AnonMap(0) == S_INVALID && AnonMap(0xffffffffu) == S_INVALID &&
           AnonMap(ANON_MAX_BYTES + 1) == S_LIMIT &&
-          api(SYS_ANON_MAP, 1, 1, 0) == S_INVALID && !malloc(0),
+          api(SYS_ANON_MAP, 1, 1, 0) == S_INVALID,
           "invalid sizes, overflow, quota and reserved map arguments");
 
-  u8* first = (u8*)malloc(8193);
+  u8* first = map_test_pages(8193);
   int second_base = AnonMap(1);
   require(first && !((u32)first & 4095) && (u32)first >= USER_DYNAMIC_BASE &&
           second_base > 0 && (u32)second_base >= (u32)first + 12288,
@@ -111,16 +116,15 @@ static int anon_mapping_test(void) {
           first[4095] == 0x56 && first[4096] == 0x78 && *second == 0x91,
           "partial or malformed unmap leaves both regions intact");
   u32 first_base = (u32)first;
-  free(first);
-  free(0);
+  require(AnonUnmap(first) == S_OK, "release first region");
   require(api(SYS_LOG, first_base, 0, 1) == S_INVALID &&
           AnonUnmap((void*)first_base) == S_INVALID && *second == 0x91,
           "released address rejects access and double unmap");
-  u8* replacement = (u8*)malloc(8193);
+  u8* replacement = map_test_pages(8193);
   require((u32)replacement == first_base && !replacement[4095] &&
           !replacement[4096] && *second == 0x91, "hole reused with clean pages");
-  free(replacement);
-  require(AnonUnmap((void*)(u32)second_base) == S_OK, "release independent region");
+  require(AnonUnmap(replacement) == S_OK && AnonUnmap((void*)(u32)second_base) == S_OK,
+          "release independent regions");
 
   u32 regions[ANON_MAX_REGIONS];
   for (u32 i = 0; i < ANON_MAX_REGIONS; ++i) {
@@ -149,8 +153,8 @@ static int anon_mapping_test(void) {
 static int anon_io_test(void) {
   int dir = StartDirectory();
   int file = OpenAt(dir, "phase-d-anon.bin", FS_READ | FS_WRITE, OPEN_CREATE | OPEN_EXCLUSIVE);
-  u8* in = (u8*)malloc(8192);
-  u8* out = (u8*)malloc(8192);
+  u8* in = map_test_pages(8192);
+  u8* out = map_test_pages(8192);
   require(dir > 0 && file > 0 && in && out, "explicit grant and anonymous buffers");
   for (u32 i = 0; i < 32; i++) in[4080 + i] = (u8)(i * 13);
   require(FileWriteAt(file, 0, in + 4080, 32) == 32 &&
@@ -164,15 +168,14 @@ static int anon_io_test(void) {
   require(Close(pipe.read) == S_OK && Close(pipe.write) == S_OK &&
           Close(file) == S_OK && RemoveAt(dir, "phase-d-anon.bin", 0) == S_OK &&
           Close(dir) == S_OK, "file and pipe resources released");
-  free(out);
-  free(in);
+  require(AnonUnmap(out) == S_OK && AnonUnmap(in) == S_OK, "unmap I/O buffers");
   Log("ANON I/O PASS\n");
   return 0;
 }
 static int uaccess_io_test(void) {
   int dir = StartDirectory();
-  u8* buffer = (u8*)malloc(8192);
-  u8* edge = (u8*)malloc(4096);
+  u8* buffer = map_test_pages(8192);
+  u8* edge = map_test_pages(4096);
   require(dir > 0 && buffer && edge, "uaccess workspace and test pages");
 
   StartInfo* cross = (StartInfo*)(buffer + 4092);
@@ -218,8 +221,7 @@ static int uaccess_io_test(void) {
           "bad pipe write produces no output");
   require(Close(pipe.read) == S_OK && Close(pipe.write) == S_OK && Close(file) == S_OK &&
           RemoveAt(dir, "uae", 0) == S_OK && Close(dir) == S_OK, "uaccess fixture cleanup");
-  free(edge);
-  free(buffer);
+  require(AnonUnmap(edge) == S_OK && AnonUnmap(buffer) == S_OK, "unmap uaccess buffers");
   Log("UACCESS FILE AND PIPE PASS\n");
   return 0;
 }
@@ -227,8 +229,8 @@ static int anon_lazy_test(void) {
   SystemInfo info;
   require(QuerySystemInfo(&info) == S_OK && (info.features & FEATURE_ANON_LAZY),
           "on-demand mapping is discoverable");
-  volatile u8* first = (u8*)malloc(8192);
-  volatile u8* second = (u8*)malloc(8192);
+  volatile u8* first = map_test_pages(8192);
+  volatile u8* second = map_test_pages(8192);
   require(first && second && (u32)second >= (u32)first + 8192,
           "untouched reservations cannot overlap");
   require(QueryStartInfo((StartInfo*)((u32)second + 8188)) == S_INVALID,
@@ -252,7 +254,7 @@ static int anon_lazy_test(void) {
 }
 
 static int anon_oom_test(int fault) {
-  u8* edge = (u8*)malloc(3 * 4096);
+  u8* edge = map_test_pages(3 * 4096);
   PipePair pipe;
   require(edge && PipeCreate(16, &pipe) == S_OK &&
           StreamWrite(pipe.write, "queued!!", 8) == 8, "prepare OOM fixtures");
@@ -315,7 +317,8 @@ int main(void) {
   if (streq(Arguments(), "anon-fault-oom")) return anon_oom_test(1);
   if (streq(Arguments(), "anon-fault")) {
     int base = AnonMap(4096);
-    require(base > 0 && malloc(8192), "fault fixture has two regions");
+    require(base > 0, "reserve region to release before fault");
+    map_test_pages(8192);
     *(volatile u8*)(u32)base = 0x5a;
     require(AnonUnmap((void*)(u32)base) == S_OK,
             "release one region while keeping another live");

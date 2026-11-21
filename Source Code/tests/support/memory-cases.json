@@ -1,4 +1,13 @@
 {
+  "heap": [
+    {"id": "memory.heap.st", "name": "SDK size classes, aligned slots and zeroed reuse"},
+    {"id": "memory.heap.mt", "name": "Four threads allocate and free overlapping sets of live objects"},
+    {"id": "memory.heap.large", "name": "Direct mapping lifetime is independent of small slabs"},
+    {"id": "memory.heap.realloc", "name": "Resize in place, move payload and preserve it on quota failure"},
+    {"id": "memory.heap.exhaust", "name": "Region exhaustion evicts cache and allows a bounded retry"},
+    {"id": "memory.heap.recycle", "name": "Hot reuse, cold reclassification and oldest-cache eviction"},
+    {"id": "memory.heap.purge", "name": "Kernel discards a cold slab and SDK rebuilds it after pressure"}
+  ],
   "e1": [
   {
     "id": "memory.e1.range",

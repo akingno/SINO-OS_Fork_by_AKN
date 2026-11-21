@@ -230,10 +230,17 @@ only `FEATURE_ANON_MEMORY` allocate and zero the entire mapping up front.
   fragments including allocation heads, and 128 MiB of reserved pages.
   Quota, address-space or VMA metadata exhaustion returns `S_LIMIT`.
 
-SDK `AnonMap` and `AnonUnmap` preserve the syscall status. `malloc` maps one
-region per allocation and returns null on failure. `free(NULL)` is a no-op.
-Valid non-null pointers passed to `free` must come from a live `malloc` in the
-same process. Process teardown reclaims outstanding regions on exit or fault.
+SDK `AnonMap` and `AnonUnmap` preserve the syscall status. The SDK heap provides
+16-byte-aligned allocations, using shared slabs for small objects and independent
+anonymous mappings for large ones. Use the raw anonymous APIs for page-aligned
+reservations or page protection. `malloc` returns null for zero size or reservation
+failure. `calloc` checks the product for overflow and zeroes the requested bytes.
+`realloc(NULL, n)` allocates, and `realloc(p, 0)` releases `p` and returns null.
+A failed growth preserves the original allocation. `malloc_size` returns the
+small allocation's class capacity or the large allocation's recorded payload
+size. `free(NULL)` is a no-op. The heap serializes metadata across threads.
+Callers coordinate access to, and release or resizing of, the same allocation.
+Process teardown reclaims outstanding regions on exit or fault.
 
 Syscall user-buffer preparation checks the
 entire requested range for read or write permission before reading or writing
