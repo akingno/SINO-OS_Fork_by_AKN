@@ -38,6 +38,7 @@ struct PageFrame {
   bool isHead() const { return (lo & HeadBit) != 0; }
   bool isSlab() const { return (lo & SlabBit) != 0; }
   u32 slabCache() const { return (hi >> 20) & (SlabCacheCount - 1); }
+  u32 heapPages() const { return (hi >> HeapCountShift) & HeapCountMask; }
   bool isFreeHead(u32 expected) const {
     return isHead() && state() == PageState::Free && order() == expected;
   }
@@ -51,7 +52,10 @@ struct PageFrame {
     hi = 0;
   }
   void setFreeHead(u32 order) { lo = HeadBit | (order << 23); }
-  void setHeapHead(u32 order) { lo |= HeadBit | (order << 23); }
+  void setHeapHead(u32 pages) {
+    lo |= HeadBit;
+    hi = (hi & ~(HeapCountMask << HeapCountShift)) | (pages << HeapCountShift);
+  }
   void setSlab(u32 cache) {
     lo |= SlabBit;
     hi = (hi & PfnMask) | (cache << 20);
@@ -59,9 +63,12 @@ struct PageFrame {
 
 private:
   // lo: prev[19:0], state[22:20], order[26:23], head[27], slab[28].
-  // hi: next[19:0], slab cache index[22:20].
+  // hi: next[19:0], slab cache index[22:20], heap head page count[30:23].
   static constexpr u32 HeadBit = 1u << 27;
   static constexpr u32 SlabBit = 1u << 28;
+  static constexpr u32 HeapCountShift = 23;
+  static constexpr u32 HeapCountMask = 0xff;
+  static_assert(MaxPageRun <= HeapCountMask, "heap page count must fit in the frame");
   u32 lo, hi;
 };
 
@@ -73,7 +80,7 @@ void* slab_page_alloc(u32 cache);
 int slab_page_cache(const void* address);  // -1 unless contained in a live slab.
 bool slab_page_free(void* base, u32 cache);
 
-// Heap allocations own an entire buddy block. Only its original base frees it.
+// Heap allocations own a contiguous run. Only its original base frees it.
 void* heap_page_alloc(u32 pages);
 bool heap_page_free(void* base);
 }

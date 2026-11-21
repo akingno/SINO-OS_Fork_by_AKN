@@ -113,6 +113,17 @@ void BuddyZone::takeRun(u32 first, u32 last) {
   addBlocks(last, first);
 }
 
+u32 BuddyZone::takeExact(u32 count) {
+  if (count == 1) {
+    return NoPfn;
+  }
+  const u32 first = findRun(count);
+  if (first) {
+    takeRun(first, first + count);
+  }
+  return first;
+}
+
 static u32 order_for_count(u32 count) {
   u32 order = 0;
   while ((1u << order) < count) {
@@ -136,11 +147,8 @@ u32 BuddyZone::allocate(u32 count, PageState state) {
   u32 first = takeAligned(order);
   if (first) {
     addBlocks(first + count, first + (1u << order));
-  } else if (count > 1) {
-    first = findRun(count);
-    if (first) {
-      takeRun(first, first + count);
-    }
+  } else {
+    first = takeExact(count);
   }
   if (!first) {
     return NoPfn;
@@ -150,16 +158,36 @@ u32 BuddyZone::allocate(u32 count, PageState state) {
   return first;
 }
 
-// Large heap allocations keep an order-aligned block for kfree.
-// Revisit exact-run allocation and its release rules if alignment fragmentation
-// repeatedly causes multi-page heap requests to fail in practice.
-u32 BuddyZone::allocateHeap(u32 order) {
-  const u32 first = takeAligned(order);
+// Keep the whole aligned block on the fast path. Under fragmentation, take
+// only the requested pages and record their actual count for kfree.
+u32 BuddyZone::allocateHeap(u32 pages) {
+  if (!pages || pages > MaxPageRun || pages > freeCount) {
+    return NoPfn;
+  }
+  const u32 order = order_for_count(pages);
+  u32 first = takeAligned(order);
   if (first) {
-    markAllocated(first, 1u << order, PageState::Heap);
-    frame(first).setHeapHead(order);
+    pages = 1u << order;
+  } else {
+    first = takeExact(pages);
+  }
+  if (first) {
+    markAllocated(first, pages, PageState::Heap);
+    frame(first).setHeapHead(pages);
   }
   return first;
+}
+
+u32 BuddyZone::releaseHeap(u32 first) {
+  if (!contains(first, 1)) {
+    return 0;
+  }
+  const PageFrame& head = frame(first);
+  if (head.state() != PageState::Heap || !head.isHead()) {
+    return 0;
+  }
+  const u32 pages = head.heapPages();
+  return pages <= MaxPageRun && release(first, pages, PageState::Heap) ? pages : 0;
 }
 
 bool BuddyZone::release(u32 first, u32 count, PageState state) {
@@ -194,11 +222,12 @@ u32 BuddyZone::check() const {
       ++pfn;
       continue;
     }
-    const u32 order = head.order(), count = 1u << order;
-    if (!head.isHead() || head.isSlab() || order > MaxOrder ||
-        (state == PageState::Heap && count > MaxPageRun) || (pfn & (count - 1)) ||
-        !contains(pfn, count)) {
-      panic("PAGE invalid buddy block", pfn, order);
+    const u32 order = head.order();
+    const bool isHeap = state == PageState::Heap;
+    const u32 count = isHeap ? head.heapPages() : 1u << order;
+    if (!head.isHead() || head.isSlab() || !count || !contains(pfn, count) ||
+        (isHeap ? count > MaxPageRun : order > MaxOrder || (pfn & (count - 1)))) {
+      panic("PAGE invalid free block or heap run", pfn, count);
     }
     for (u32 offset = 1; offset < count; ++offset) {
       const PageFrame& tail = frame(pfn + offset);
@@ -498,30 +527,22 @@ bool mm::slab_page_free(void* base, u32 cache) {
 }
 
 void* mm::heap_page_alloc(u32 pages) {
-  if (!pages || pages > MaxPageRun) {
-    return nullptr;
-  }
-  const u32 order = order_for_count(pages);
-  const u32 pfn = low.allocateHeap(order);
+  const u32 pfn = low.allocateHeap(pages);
   if (!pfn) {
     return nullptr;
   }
-  free_pages -= 1u << order;
+  free_pages -= low.frame(pfn).heapPages();
   return phys_to_virt(pfn * PAGE_SIZE);
 }
 
 bool mm::heap_page_free(void* base) {
   const phys_t address = virt_to_phys(base);
-  const u32 pfn = address / PAGE_SIZE;
-  if (!page_aligned(address) || !low.contains(pfn, 1)) {
+  if (!page_aligned(address)) {
     return false;
   }
-  const PageFrame& head = low.frame(pfn);
-  if (head.state() != PageState::Heap || !head.isHead()) {
-    return false;
-  }
-  const u32 count = 1u << head.order();
-  return !(pfn & (count - 1)) && free_run(address, count, PageState::Heap);
+  const u32 pages = low.releaseHeap(address / PAGE_SIZE);
+  free_pages += pages;
+  return pages != 0;
 }
 
 /* Guard transitions preserve ownership. Paging restores the PTE before
@@ -589,8 +610,15 @@ void page_frame_test() {
       frame.next() != PageFrame::PfnMask) {
     panic("PAGE frame order and links", frame.prev(), frame.next());
   }
+  frame.reset(PageState::Heap);
+  frame.setHeapHead(MaxPageRun);
+  if (frame.state() != PageState::Heap || !frame.isHead() ||
+      frame.heapPages() != MaxPageRun || frame.next()) {
+    panic("PAGE frame heap count", frame.heapPages(), frame.next());
+  }
   frame.reset(PageState::Used);
   if (frame.state() != PageState::Used || frame.isHead() || frame.order() ||
+      frame.heapPages() ||
       frame.prev() != BuddyZone::NoPfn || frame.next() != BuddyZone::NoPfn) {
     panic("PAGE frame reset", frame.prev(), frame.next());
   }
@@ -602,9 +630,11 @@ void buddy_run_test() {
   BuddyZone zone{frames, base, base + count, 0, {}};
   zone.addFreeRange(base, base + count);
 
-  if (zone.allocateHeap(2) != base || zone.freeCount != count - 4 ||
+  if (zone.allocateHeap(3) != base || zone.frame(base).heapPages() != 4 ||
+      zone.freeCount != count - 4 ||
       zone.check() != count || zone.release(base, 4, PageState::Kernel) ||
-      !zone.release(base, 4, PageState::Heap) || !zone.frame(base).isFreeHead(4)) {
+      zone.releaseHeap(base + 1) || zone.releaseHeap(base) != 4 ||
+      !zone.frame(base).isFreeHead(4)) {
     panic("PAGE heap block ownership", zone.freeCount, zone.heads[4]);
   }
   if (zone.allocate(9, PageState::Kernel) != base || zone.freeCount != 7 ||
@@ -616,9 +646,23 @@ void buddy_run_test() {
   // Isolate the free span so an aligned block elsewhere cannot mask fallback.
   if (zone.allocate(count, PageState::Kernel) != base ||
       !zone.release(base + 1, 2, PageState::Kernel) || zone.heads[1] ||
-      zone.allocateHeap(1) ||
+      zone.allocateHeap(2) != base + 1 || zone.freeCount ||
+      zone.releaseHeap(base + 1) != 2 ||
       zone.allocate(2, PageState::Kernel) != base + 1 || zone.freeCount) {
     panic("PAGE unaligned 2-page buddy run", zone.freeCount, zone.heads[1]);
+  }
+  if (!zone.release(base + 1, 3, PageState::Kernel) ||
+      !zone.release(base + 5, 1, PageState::Kernel) ||
+      zone.allocateHeap(4) || zone.freeCount != 4 ||
+      zone.allocateHeap(3) != base + 1 || zone.freeCount != 1 ||
+      zone.frame(base + 1).heapPages() != 3 || zone.check() != count ||
+      zone.releaseHeap(base + 2) || zone.releaseHeap(base) ||
+      zone.release(base + 1, 3, PageState::Kernel) ||
+      zone.releaseHeap(base + 1) != 3 || zone.releaseHeap(base + 1) ||
+      zone.frame(base + 4).state() != PageState::Kernel || zone.freeCount != 4 ||
+      zone.allocate(3, PageState::Kernel) != base + 1 ||
+      zone.allocate(1, PageState::Kernel) != base + 5) {
+    panic("PAGE exact heap run and release", zone.freeCount, zone.heads[1]);
   }
   if (!zone.release(base + 1, 5, PageState::Kernel) ||
       zone.allocate(4, PageState::Kernel) != base + 1 ||

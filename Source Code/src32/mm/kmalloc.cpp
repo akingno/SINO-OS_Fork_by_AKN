@@ -17,12 +17,15 @@ bool release_allocation(void* pointer) {
   return mm::heap_page_free(pointer);
 }
 
-void check_size(u32 size, u32 alignment, u32 pages) {
+void check_size(u32 size, u32 alignment, u32 roundedPages) {
   const u32 before = free_pages;
   auto* memory = static_cast<u8*>(kmalloc(size));
   mm::SlabCache* expected = alignment < PAGE_SIZE ? mm::slab_cache_create(alignment) : nullptr;
+  const u32 requestedPages = (size - 1) / PAGE_SIZE + 1;
+  const u32 chargedPages = before - free_pages;
   if (!memory || (virt_to_phys(memory) & (alignment - 1)) ||
-      mm::slab_cache_for(memory) != expected || free_pages + pages != before) {
+      mm::slab_cache_for(memory) != expected ||
+      (chargedPages != roundedPages && chargedPages != requestedPages)) {
     panic("KMALLOC size or alignment", size, free_pages);
   }
   memory[0] = 0x25;
@@ -36,21 +39,23 @@ void check_size(u32 size, u32 alignment, u32 pages) {
 void check_release() {
   const u32 before = free_pages;
   auto* block = static_cast<u8*>(kmalloc(2 * PAGE_SIZE + 1));
+  const u32 blockPages = before - free_pages;
   auto* ordinary = static_cast<u8*>(kpage_alloc());
   auto* small = static_cast<u8*>(kmalloc(16));
   auto* live = static_cast<u8*>(kmalloc(16));
-  if (!block || !ordinary || !small || !live || free_pages + 6 != before) {
+  if (!block || (blockPages != 3 && blockPages != 4) ||
+      !ordinary || !small || !live || free_pages + blockPages + 2 != before) {
     panic("KMALLOC ownership setup", free_pages, before);
   }
 
   KernelGuard guard{};
-  if (kpage_free_run(block, 4) || kpage_free(block + PAGE_SIZE) ||
+  if (kpage_free_run(block, blockPages) || kpage_free(block + PAGE_SIZE) ||
       page_free(virt_to_phys(block)) || paging_kernel_guard(block, &guard) != S_INVALID ||
       paging_kernel_guard(block + PAGE_SIZE, &guard) != S_INVALID || guard.id ||
       release_allocation(block + 1) || release_allocation(block + PAGE_SIZE) ||
       release_allocation(ordinary) || release_allocation(small + 1) ||
       release_allocation(reinterpret_cast<void*>(0xfffff000u)) ||
-      free_pages + 6 != before) {
+      free_pages + blockPages + 2 != before) {
     panic("KMALLOC ownership rejection", free_pages, before);
   }
 
@@ -135,11 +140,11 @@ void mm::kmalloc_selftest() {
   }
   check_size(1025, PAGE_SIZE, 1);
   check_size(PAGE_SIZE, PAGE_SIZE, 1);
-  check_size(PAGE_SIZE + 1, 2 * PAGE_SIZE, 2);
-  check_size(2 * PAGE_SIZE + 1, 4 * PAGE_SIZE, 4);
+  check_size(PAGE_SIZE + 1, PAGE_SIZE, 2);
+  check_size(2 * PAGE_SIZE + 1, PAGE_SIZE, 4);
   // The largest request can legitimately fail on a fragmented boot pool.
   if (void* max = kmalloc(MaxBytes)) {
-    if (free_pages + MaxPageRun != before || virt_to_phys(max) % MaxBytes) {
+    if (free_pages + MaxPageRun != before || !page_aligned(virt_to_phys(max))) {
       panic("KMALLOC maximum block", free_pages, before);
     }
     kfree(max);
