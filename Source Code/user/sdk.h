@@ -70,6 +70,9 @@ static inline int AnonMap(u32 bytes) {
 static inline int AnonUnmap(void *base) {
   return api(SYS_ANON_UNMAP, (u32)base, 0, 0);
 }
+static inline int AnonUnmapRange(void *base, u32 bytes) {
+  return api(SYS_ANON_UNMAP_RANGE, (u32)base, bytes, 0);
+}
 /* The child is strict; this call returns an owned observation/cancel handle. */
 static inline int SpawnTracked(const char *path, const char *args) {
   return api(SYS_SPAWN_TRACKED, (u32)path, (u32)args, 0);

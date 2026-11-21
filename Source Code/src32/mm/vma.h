@@ -8,7 +8,7 @@ namespace mm {
 enum class VmaType : u8 { Anonymous, Stack, Image, Params, Probe };
 
 struct VmaNode {
-  enum class Flag : u8 { Read = 1, Write = 2, Execute = 4, Purgeable = 8, Purged = 16 };
+  enum class Flag : u8 { Read = 1, Write = 2, Execute = 4, Purgeable = 8, Purged = 16, Head = 32 };
 
   u32 startPage;
   u32 pageCount;
@@ -18,6 +18,7 @@ struct VmaNode {
   VmaType type;
   i8 balance;
   bool linked;
+  u8 allocId;
   VmaNode* left;
   VmaNode* right;
   VmaNode* parent;
@@ -28,7 +29,7 @@ struct VmaNode {
     flags = enabled ? flags | bit : flags & ~bit;
   }
 };
-static_assert(sizeof(VmaNode) == 28, "VMA node must fit the 32-byte slab class");
+static_assert(sizeof(VmaNode) == 32, "VMA node must fit the 32-byte slab class");
 
 // Insert a zero-initialized or previously detached node with a valid range.
 // Intervals are half-open in page numbers. Keep the range fixed while linked.

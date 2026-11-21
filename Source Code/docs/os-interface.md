@@ -50,10 +50,13 @@ THREAD_WAIT=16384.
 `FEATURE_RECLAIM=131072` advertises per-process reclaim priority queries and updates.
 `FEATURE_PROCESS_GROUP=262144` advertises reclaim groups and the self-query.
 `FEATURE_PURGEABLE=524288` advertises discardable anonymous regions and pins.
-The current feature mask is 2097151. Clients detect features by testing individual bits.
+`FEATURE_MPROTECT=1048576` advertises anonymous mapping protection.
+`FEATURE_MPROTECT_RANGE=2097152` extends protection to page-aligned subranges.
+`FEATURE_ANON_UNMAP_RANGE=4194304` advertises partial anonymous unmap.
+The current feature mask is 8388607. Clients detect features by testing individual bits.
 These indicate implemented mechanisms, not grants to use every mechanism.
 Unknown feature bits must not be interpreted as authority. Unknown syscalls
-return S_INVALID. Add future syscall IDs before `SYS_CALL_END`, currently `0x15b`.
+return S_INVALID. Add future syscall IDs before `SYS_CALL_END`, currently `0x15d`.
 Strict policy remains a default-deny allowlist.
 
 ## Reclaim priority
@@ -223,12 +226,14 @@ only `FEATURE_ANON_MEMORY` allocate and zero the entire mapping up front.
 - `SYS_ANON_MAP` (`0x14e`) takes the requested byte count in EBX. The kernel
   rounds up to 4096 bytes and chooses a page-aligned base in
   `[0x40400000, 0x80000000)` and returns the positive base.
-- `SYS_ANON_UNMAP` (`0x14f`) takes the exact live base in EBX and releases the
-  entire region, returning `S_OK`. A released base may be reused by a later map.
+- `SYS_ANON_UNMAP` (`0x14f`) takes the original allocation base in EBX and
+  releases every remaining fragment of that allocation, returning `S_OK`.
+  A released address may be reused by a later map.
 - Both calls require ECX and EDX to be zero. Invalid inputs, including zero
   map size, rounding overflow, and unknown or interior unmap addresses, return
-  `S_INVALID`. Each process can hold up to 32 regions and 16 MiB in total after
-  rounding. Quota, address-space or VMA metadata exhaustion returns `S_LIMIT`.
+  `S_INVALID`. Each process can hold up to 32 live allocations, 96 anonymous
+  fragments including allocation heads, and 16 MiB of reserved pages.
+  Quota, address-space or VMA metadata exhaustion returns `S_LIMIT`.
 
 SDK `AnonMap` and `AnonUnmap` preserve the syscall status. `malloc` maps one
 region per allocation and returns null on failure. `free(NULL)` is a no-op.
@@ -252,19 +257,43 @@ argument pages and thread stacks still receive backing at creation.
 ### Anonymous mapping protection
 
 `FEATURE_MPROTECT=1048576` advertises `SYS_MPROTECT=0x15b` for both policies.
-EBX is the exact allocation base, ECX the full page-rounded size and EDX either
-1 (read) or 3 (read/write). The SDK exposes `sino::mprotect` and `MemoryProtection`.
-Success returns S_OK, including an unchanged permission. Invalid arguments,
-non-anonymous mappings, discardable, pinned or unacknowledged purged regions
-return S_INVALID. Marking a read-only region discardable also returns S_INVALID.
-Resident and lazy pages follow the same write permission. Protection preserves
-data and residency. A prohibited user write faults with vector 14. Syscall
-buffer preparation rejects prohibited output before consuming input.
+EBX is the base, ECX is the byte count and EDX is 1 (read) or 3 (read/write).
+Kernels with `FEATURE_MPROTECT_RANGE` accept any page-aligned base and nonzero
+page-multiple length covering live pages of one anonymous allocation. On kernels
+with only `FEATURE_MPROTECT`, pass the original base and full rounded length.
+The SDK exposes `sino::mprotect` and `MemoryProtection`.
+
+Success returns `S_OK`, including an unchanged permission. A range that crosses
+a hole or allocation boundary, or includes discardable, locked or purged pages,
+returns `S_INVALID`. The kernel splits fragments as needed and coalesces adjacent
+fragments of the same allocation when their permissions match. Fragment budget
+or metadata exhaustion returns `S_LIMIT` and leaves the mapping intact.
+Protection preserves contents, reservation size and residency. Resident and lazy
+pages follow the same write permission. A prohibited user write faults with
+vector 14. Syscall buffer preparation rejects prohibited output before consuming
+input.
+
+### Partial anonymous unmap
+
+`FEATURE_ANON_UNMAP_RANGE` advertises `SYS_ANON_UNMAP_RANGE=0x15c` for both
+policies. Pass the page-aligned base in EBX, a nonzero page-multiple length in
+ECX and zero in EDX. The SDK exposes `AnonUnmapRange(base, bytes)`.
+The range must lie within the dynamic window and contain only contiguous
+ordinary anonymous pages of one allocation. A hole, another allocation,
+the original base page, or discardable, locked or purged pages cause `S_INVALID`.
+Fragment budget or metadata exhaustion returns `S_LIMIT` and preserves the mapping.
+
+Success returns `S_OK`, frees the backing pages present in the range and releases
+the range's virtual quota. A subsequent first-fit allocation can reuse the hole
+independently. `AnonUnmap` on the original base releases the remaining fragments
+of the original allocation. When a blocked read retries, it checks the current
+mapping and its write permission. A hole or read-only replacement yields
+`S_INVALID` and leaves input queued. A writable replacement can receive it.
 
 ### Discardable anonymous memory
 
 Both policies may manage their own anonymous regions. All operations take the
-exact live region base in EBX and require EDX to be zero.
+original allocation base in EBX and require EDX to be zero.
 
 | Syscall | ECX | SDK |
 | --- | --- | --- |
@@ -272,7 +301,8 @@ exact live region base in EBX and require EDX to be zero.
 | `SYS_ANON_LOCK=0x159` | 0 | `AnonLock(base)` |
 | `SYS_ANON_UNLOCK=0x15a` | 0 | `AnonUnlock(base)` |
 
-The first mark leaves the region unlocked. Locks are counted across threads,
+Marking requires a single writable fragment. The first mark leaves the region
+unlocked. Locks are counted across threads,
 and any outstanding lock prevents pressure-driven discard. Locking or
 unlocking a regular region, an unmatched unlock, invalid arguments, and
 unknown or interior bases return `S_INVALID`. A lock at the 65535 limit

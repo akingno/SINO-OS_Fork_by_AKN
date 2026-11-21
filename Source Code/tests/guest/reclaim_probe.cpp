@@ -3,6 +3,8 @@
 static_assert(SYS_PROCESS_GROUP == 0x157 && FEATURE_PROCESS_GROUP == 262144u, "process group ABI");
 static_assert(SYS_ANON_PURGEABLE == 0x158 && SYS_ANON_LOCK == 0x159 &&
               SYS_ANON_UNLOCK == 0x15a && FEATURE_PURGEABLE == 524288u, "purgeable ABI");
+static_assert(SYS_MPROTECT == 0x15b && FEATURE_MPROTECT == 1048576u, "mprotect ABI");
+static_assert(SYS_ANON_UNMAP_RANGE == 0x15c && FEATURE_ANON_UNMAP_RANGE == 4194304u, "unmap range ABI");
 
 namespace {
 constexpr u32 PageBytes = 4096;
@@ -81,6 +83,184 @@ volatile u8* faultAddress;
 void writeFault() {
   *faultAddress = 7;
   require(false, "protected write resumed");
+}
+
+int fragmentTest(const char* mode) {
+  const bool budget = streq(mode, "e1-budget");
+  volatile u8* page = reserve(budget ? 100 : 4);
+  auto addr = [&](unsigned i) { return (void*)(page + i * PageBytes); };
+  auto protect = [&](unsigned i, unsigned n, bool write) {
+    return sino::mprotect(addr(i), n * PageBytes, write ? Protection::ReadWrite : Protection::Read);
+  };
+  auto output = [&](unsigned i) { return QuerySystemInfo((SystemInfo*)addr(i)); };
+  if (budget) {
+    for (unsigned i = 0; i < 95; i += 2) {
+      require(protect(i, 1, false) == S_OK, "fill fragment budget");
+    }
+    require(protect(96, 1, false) == S_LIMIT && output(96) == S_OK, "fragment limit rollback");
+    require(protect(94, 1, true) == S_OK && protect(96, 1, false) == S_OK, "reuse fragment budget");
+  } else if (streq(mode, "e1-oom")) {
+    page[PageBytes] = 61;
+    require(protect(1, 1, false) == S_LIMIT && page[PageBytes] == 61 && output(1) == S_OK &&
+            protect(1, 1, false) == S_OK, "second boundary rollback");
+  } else if (streq(mode, "e1-identity")) {
+    for (unsigned i = 0; i < 40; ++i) {
+      auto* other = reserve(1);
+      require(other == page + 4 * PageBytes && protect(3, 2, false) == S_INVALID &&
+              output(3) == S_OK && AnonUnmap((void*)other) == S_OK, "independent allocation");
+    }
+  } else {
+    page[PageBytes] = 42;
+    require(protect(1, 1, false) == S_OK && output(1) == S_INVALID &&
+            page[PageBytes] == 42 && output(2) == S_OK, "resident middle split");
+    if (streq(mode, "e1-range")) {
+      require(protect(0, 2, false) == S_OK && protect(2, 2, false) == S_OK &&
+              output(0) == S_INVALID && output(3) == S_INVALID, "prefix and suffix");
+    } else if (streq(mode, "e1-legacy")) {
+      require(AnonQuery(addr(1)) == S_INVALID && AnonUnmap(addr(2)) == S_INVALID &&
+              AnonLock(addr(1)) == S_INVALID, "reject interior bases");
+    } else {
+      require(AnonSetPurgeable(addr(0), true) == S_INVALID && protect(1, 1, true) == S_OK &&
+              page[PageBytes] == 42 && AnonSetPurgeable(addr(0), true) == S_OK, "merged RW region");
+      if (streq(mode, "e1-purge")) {
+        require(AnonLock(addr(0)) == S_OK && AnonUnmap(addr(0)) == S_BUSY &&
+                AnonUnlock(addr(0)) == S_OK, "merged allocation lock");
+      }
+    }
+  }
+  require(AnonUnmap(addr(0)) == S_OK && reserve(4) == page, "whole allocation released");
+  return 0;
+}
+
+struct RangeRead {
+  int handle;
+  void* buffer;
+  volatile bool started;
+};
+
+int readFromPipe(void* argument) {
+  auto& read = *static_cast<RangeRead*>(argument);
+  read.started = true;
+  return StreamReadBlocking(read.handle, read.buffer, 1, 0);
+}
+
+enum class ReadMapping : u8 { Hole, ReadOnly, ReadWrite };
+
+void waitAcrossUnmap(ReadMapping mapping) {
+  auto* base = reserve(3);
+  auto* buffer = base + PageBytes;
+  *buffer = 'A';
+  PipePair pipe;
+  require(PipeCreate(16, &pipe) == S_OK, "create range wait pipe");
+  RangeRead read{(int)pipe.read, (void*)buffer, false};
+  const int tid = sino::thread::create(readFromPipe, &read);
+  require(tid > 0, "start range waiter");
+  const u32 start = StreamTicks();
+  while (!read.started && StreamTicks() - start < 100) { Yield(1); }
+  // Give the reader a dispatch after announcing entry to the empty pipe read.
+  Yield(4);
+  ThreadResult result;
+  require(read.started && sino::thread::query(tid, &result) == S_AGAIN,
+          "empty pipe read is pending");
+  require(AnonUnmapRange((void*)buffer, PageBytes) == S_OK, "unmap pending read buffer");
+  if (mapping != ReadMapping::Hole) {
+    require(reserve(1) == buffer, "first fit replaces pending read buffer");
+    require(*buffer == 0, "replacement page has fresh backing");
+    *buffer = 'B';
+    if (mapping == ReadMapping::ReadOnly) {
+      require(sino::mprotect((void*)buffer, PageBytes, MemoryProtection::Read) == S_OK,
+              "make replacement buffer read-only");
+    }
+  }
+  require(StreamWrite(pipe.write, "R", 1) == 1, "wake pending range reader");
+  require(sino::thread::join(tid, &result, 100) == S_OK && result.tid == (u32)tid,
+          "range waiter completes normally");
+  char queued = 0;
+  if (mapping == ReadMapping::ReadWrite) {
+    require(result.code == 1 && *buffer == 'R' &&
+            StreamRead(pipe.read, &queued, 1) == S_AGAIN, "retry writes to the replacement buffer");
+  } else {
+    require(result.code == S_INVALID && StreamRead(pipe.read, &queued, 1) == 1 && queued == 'R',
+            "invalid output leaves pipe data queued");
+    if (mapping == ReadMapping::ReadOnly) {
+      require(*buffer == 'B', "read-only replacement retains its content");
+    }
+  }
+  require(Close(pipe.read) == S_OK && Close(pipe.write) == S_OK &&
+          AnonUnmap((void*)base) == S_OK, "release range wait fixture");
+  if (mapping != ReadMapping::Hole) {
+    require(AnonUnmap((void*)buffer) == S_OK, "release replacement buffer");
+  }
+}
+
+int unmapRangeTest(const char* mode) {
+  if (streq(mode, "e2-wait-hole")) {
+    waitAcrossUnmap(ReadMapping::Hole);
+    return 0;
+  }
+  if (streq(mode, "e2-wait-remap")) {
+    waitAcrossUnmap(ReadMapping::ReadOnly);
+    waitAcrossUnmap(ReadMapping::ReadWrite);
+    return 0;
+  }
+  using Protection = MemoryProtection;
+  volatile u8* page = reserve(8);
+  auto addr = [&](unsigned i) -> void* { return (void*)(page + i * PageBytes); };
+  auto unmap = [&](unsigned i, unsigned n) {
+    return AnonUnmapRange(addr(i), n * PageBytes);
+  };
+  for (unsigned i = 0; i < 8; ++i) { page[i * PageBytes] = (u8)(0x10 + i); }
+
+  if (streq(mode, "e2-shrink")) {
+    SystemInfo info;
+    require(QuerySystemInfo(&info) == S_OK && (info.features & FEATURE_ANON_UNMAP_RANGE),
+            "range-unmap feature bit");
+    const u32 quotaRemainder = ANON_MAX_BYTES - 4 * PageBytes;
+    require(AnonMap(quotaRemainder) == S_LIMIT, "full reservation charged");
+    require(unmap(6, 2) == S_OK, "tail shrink");
+    require(page[0] == 0x10 && page[5 * PageBytes] == 0x15, "tail content");
+    require(unmap(2, 2) == S_OK, "middle hole");
+    require(page[0] == 0x10 && page[PageBytes] == 0x11, "front after hole");
+    require(page[4 * PageBytes] == 0x14 && page[5 * PageBytes] == 0x15, "back after hole");
+    const int quota = AnonMap(quotaRemainder);
+    require(quota > 0 && AnonMap(PageBytes) == S_LIMIT && AnonUnmap((void*)(u32)quota) == S_OK,
+            "partial unmap releases exactly four pages of virtual quota");
+    require(AnonUnmap(addr(0)) == S_OK && reserve(8) == page, "cleanup shrink");
+  } else if (streq(mode, "e2-cross")) {
+    auto* adjacent = reserve(1);
+    require(adjacent == page + 8 * PageBytes &&
+            unmap(7, 2) == S_INVALID, "reject adjacent allocation boundary");
+    require(sino::mprotect(addr(4), 4 * PageBytes, Protection::Read) == S_OK, "split");
+    require(unmap(3, 3) == S_OK, "cross-permission");
+    require(page[2 * PageBytes] == 0x12 && page[6 * PageBytes] == 0x16, "cross-perm content");
+    require(unmap(1, 6) == S_INVALID, "cross-hole");
+    require(sino::mprotect(addr(1), 6 * PageBytes, Protection::Read) == S_INVALID, "protect across hole");
+    require(unmap(0, 2) == S_INVALID, "base covered");
+    require(AnonUnmapRange((void*)(page + 1), PageBytes) == S_INVALID, "misaligned");
+    require(AnonUnmapRange(addr(1), 0) == S_INVALID, "zero bytes");
+    require(api(SYS_ANON_UNMAP_RANGE, (u32)addr(1), PageBytes, 1) == S_INVALID, "edx nonzero");
+    require(page[0] == 0x10, "atomic reject");
+    require(AnonUnmap(addr(0)) == S_OK && AnonUnmap((void*)adjacent) == S_OK, "cleanup cross");
+  } else if (streq(mode, "e2-reuse")) {
+    require(unmap(3, 2) == S_OK, "punch hole");
+    int nb = AnonMap(2 * PageBytes);
+    require(nb == (int)(u32)addr(3), "reuse exact hole address");
+    volatile u8* np = (volatile u8*)(u32)nb;
+    np[0] = 0xAA;
+    require(AnonUnmap(addr(0)) == S_OK, "free old");
+    require(np[0] == 0xAA, "new survives");
+    require(AnonUnmap((void*)np) == S_OK, "free new");
+  } else if (streq(mode, "e2-oom")) {
+    page[3 * PageBytes] = 0x55;
+    require(unmap(3, 2) == S_LIMIT, "oom rollback");
+    require(page[3 * PageBytes] == 0x55, "content after oom");
+    require(AnonMap(ANON_MAX_BYTES - 6 * PageBytes) == S_LIMIT, "oom leaves reservation charged");
+    require(unmap(3, 2) == S_OK, "retry after oom");
+    require(AnonUnmap(addr(0)) == S_OK, "cleanup oom");
+  } else {
+    require(false, "unknown range-unmap probe mode");
+  }
+  return 0;
 }
 
 int protectionTest(const char* mode) {
@@ -258,6 +438,8 @@ int main() {
   char* argv[2];
   if (!*mode && CliArguments(&cli, argv, 2) == 1) { mode = argv[0]; }
 
+  if (mode[0] == 'e' && mode[1] == '1') { return fragmentTest(mode); }
+  if (mode[0] == 'e' && mode[1] == '2') { return unmapRangeTest(mode); }
   if (mode[0] == 'm' && mode[1] == 'p' && mode[2] == '-') { return protectionTest(mode); }
   if (streq(mode, "purge-abi")) { return purgeAbi(); }
   if (streq(mode, "purge-cache")) { return purgeCache(); }

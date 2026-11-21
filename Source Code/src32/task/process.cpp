@@ -199,7 +199,7 @@ namespace task {
   static VmaNode* anon_region(Process* p, u32 base) {
     if (!base || !page_aligned(base)) { return nullptr; }
     VmaNode* region = mm::vma_find_exact(p->vma_root, base / PAGE_SIZE);
-    return region && region->type == VmaType::Anonymous ? region : nullptr;
+    return region && region->type == VmaType::Anonymous && region->hasFlag(VmaNode::Flag::Head) ? region : nullptr;
   }
   static u32 free_anon_pages(Process* p, VmaNode& region) {
     const u32 base = region.startPage * PAGE_SIZE;
@@ -224,7 +224,7 @@ namespace task {
     if (!bytes || !page_ceil_checked(bytes, &bytes)) {
       return S_INVALID;
     }
-    if (p->anon_count >= ANON_MAX_REGIONS || bytes > ANON_MAX_BYTES - p->vma_bytes) {
+    if (p->anonFragments >= 96 || p->anon_count >= ANON_MAX_REGIONS || bytes > ANON_MAX_BYTES - p->vma_bytes) {
       return S_LIMIT;
     }
     const u32 pages = bytes / PAGE_SIZE;
@@ -251,6 +251,8 @@ namespace task {
       auto* region = static_cast<VmaNode*>(kmalloc(sizeof(VmaNode)));
       if (!region) { return S_LIMIT; }
       *region = VmaNode{basePage, pages, 0, 0, 0, VmaType::Anonymous};
+      region->allocId = (u8)__builtin_ctz(~p->anonIds);
+      region->setFlag(VmaNode::Flag::Head, true);
       region->setFlag(VmaNode::Flag::Read, true);
       region->setFlag(VmaNode::Flag::Write, true);
       if (!mm::vma_insert(p->vma_root, region)) {
@@ -258,41 +260,217 @@ namespace task {
         return S_LIMIT;
       }
       p->vma_bytes += bytes;
+      p->anonIds |= 1u << region->allocId;
+      ++p->anonFragments;
       ++p->anon_count;
       return (int)base;
     }
   }
-  /* 【简化实现：解除映射】只接受区域起点并释放整区，不能解除中间或部分范围。
-  * 替换方向：在统一虚拟区间管理中拆分/缩短区域，再回收实际存在的页；
-  * 同时处理等待中的用户缓冲区失效及页表、TLB 的生命周期。 */
+  static bool belongs(const VmaNode* n, u8 id) {
+    return n && n->type == VmaType::Anonymous && n->allocId == id;
+  }
+  static bool ordinary(const VmaNode* n, u8 id) {
+    return belongs(n, id) && !n->lock_count && !n->hasFlag(VmaNode::Flag::Purgeable) &&
+           !n->hasFlag(VmaNode::Flag::Purged);
+  }
+  static u16 count_resident(Process* p, u32 begin, u32 end) {
+    u16 count = 0;
+    for (u32 i = begin; i < end; ++i) {
+      if (paging_user_flags(p->pd, i * PAGE_SIZE) & PAGE_PRESENT) { ++count; }
+    }
+    return count;
+  }
   static int protect_anon(Process* p, u32 base, u32 bytes, u32 protection) {
-    VmaNode* region = anon_region(p, base);
-    const bool writable = protection == (u32)MemoryProtection::ReadWrite;
-    if ((!writable && protection != (u32)MemoryProtection::Read) || !region ||
-        bytes != region->pageCount * PAGE_SIZE || region->lock_count ||
-        region->hasFlag(VmaNode::Flag::Purgeable) || region->hasFlag(VmaNode::Flag::Purged)) {
-      return S_INVALID;
+    const bool write = protection == (u32)MemoryProtection::ReadWrite;
+    if ((!write && protection != (u32)MemoryProtection::Read) ||
+        !bytes || !page_aligned(bytes) || !page_aligned(base) || base < USER_DYNAMIC_BASE ||
+        base >= USER_DYNAMIC_END || bytes > USER_DYNAMIC_END - base) { return S_INVALID; }
+    const u32 begin = base / PAGE_SIZE, end = (base + bytes) / PAGE_SIZE;
+    auto* first = mm::vma_find(p->vma_root, begin);
+    if (!first) { return S_INVALID; }
+    const u8 id = first->allocId;
+    auto* last = first;
+    bool changed = false;
+    for (;;) {
+      if (!ordinary(last, id)) { return S_INVALID; }
+      changed |= last->hasFlag(VmaNode::Flag::Write) != write;
+      u32 next = last->startPage + last->pageCount;
+      if (next >= end) { break; }
+      last = mm::vma_next(last);
+      if (!last || last->startPage != next) { return S_INVALID; }
     }
-    if (region->hasFlag(VmaNode::Flag::Write) != writable) {
-      paging_user_protect(p->pd, base, base + bytes, writable);
-      region->setFlag(VmaNode::Flag::Write, writable);
+    if (!changed) { return S_OK; }
+    if (first->startPage == begin) {
+      auto* prev = mm::vma_find(p->vma_root, begin - 1);
+      if (ordinary(prev, id) && prev->hasFlag(VmaNode::Flag::Write) == write) { first = prev; }
     }
+    if (last->startPage + last->pageCount == end) {
+      auto* next = mm::vma_find_exact(p->vma_root, end);
+      if (ordinary(next, id) && next->hasFlag(VmaNode::Flag::Write) == write) { last = next; }
+    }
+
+    struct Piece { u32 begin, end; bool write; u16 resident; };
+    Piece pieces[3] = {};
+    unsigned outputs = 0;
+    auto append = [&](u32 lo, u32 hi, bool writable) {
+      if (lo == hi) { return; }
+      if (outputs && pieces[outputs - 1].end == lo && pieces[outputs - 1].write == writable) {
+        pieces[outputs - 1].end = hi;
+      } else { pieces[outputs++] = {lo, hi, writable, 0}; }
+    };
+    append(first->startPage, begin, first->hasFlag(VmaNode::Flag::Write));
+    append(begin, end, write);
+    append(end, last->startPage + last->pageCount, last->hasFlag(VmaNode::Flag::Write));
+
+    VmaNode* nodes[96];
+    unsigned inputs = 0, oldResident = 0;
+    const bool head = first->hasFlag(VmaNode::Flag::Head);
+    for (auto* n = first;; n = mm::vma_next(n)) {
+      nodes[inputs++] = n;
+      oldResident += n->resident;
+      if (n == last) { break; }
+    }
+    if (p->anonFragments - inputs + outputs > 96) { return S_LIMIT; }
+    for (unsigned i = inputs; i < outputs; ++i) {
+      nodes[i] = nullptr;
+#ifdef SINO_SHELL_BRIDGE
+      if (!mmtest::fail(p->pd, mmtest::Stage::Fragment))
+#endif
+      { nodes[i] = static_cast<VmaNode*>(kmalloc(sizeof(VmaNode))); }
+      if (!nodes[i]) {
+        while (i > inputs) { kfree(nodes[--i]); }
+        return S_LIMIT;
+      }
+    }
+    unsigned resident = 0;
+    for (unsigned i = 0; i < outputs; ++i) {
+      pieces[i].resident = count_resident(p, pieces[i].begin, pieces[i].end);
+      resident += pieces[i].resident;
+    }
+    if (resident != oldResident) { panic("Fragment residency", resident, oldResident); }
+    for (unsigned i = 0; i < inputs; ++i) {
+      if (!mm::vma_remove(p->vma_root, nodes[i])) { panic("Fragment detach", p->pid, base); }
+    }
+    for (unsigned i = 0; i < outputs; ++i) {
+      auto* n = nodes[i];
+      const auto& piece = pieces[i];
+      *n = VmaNode{piece.begin, piece.end - piece.begin, piece.resident, 0, 0, VmaType::Anonymous};
+      n->allocId = id;
+      n->setFlag(VmaNode::Flag::Read, true);
+      n->setFlag(VmaNode::Flag::Write, piece.write);
+      n->setFlag(VmaNode::Flag::Head, head && i == 0);
+      if (!mm::vma_insert(p->vma_root, n)) { panic("Fragment overlap", p->pid, base); }
+    }
+    for (unsigned i = outputs; i < inputs; ++i) { kfree(nodes[i]); }
+    p->anonFragments = p->anonFragments - inputs + outputs;
+    paging_user_protect(p->pd, base, base + bytes, write);
     return S_OK;
   }
   static int anon_unmap(Process* p, u32 base) {
-    VmaNode* region = anon_region(p, base);
-    if (!region) { return S_INVALID; }
-    if (region->lock_count) { return S_BUSY; }
-    if (!mm::vma_remove(p->vma_root, region)) {
-      panic("Anonymous VMA ownership", p->pid, base);
+    VmaNode* head = anon_region(p, base);
+    if (!head) { return S_INVALID; }
+    const u8 id = head->allocId;
+    for (auto* n = head; n; n = mm::vma_next(n)) {
+      if (belongs(n, id) && n->lock_count) { return S_BUSY; }
     }
-    free_anon_pages(p, *region);
-    p->vma_bytes -= region->pageCount * PAGE_SIZE;
+    for (auto* n = head; n;) {
+      auto* next = mm::vma_next(n);
+      if (belongs(n, id)) {
+        if (!mm::vma_remove(p->vma_root, n)) { panic("Anonymous VMA ownership", p->pid, base); }
+        free_anon_pages(p, *n);
+        p->vma_bytes -= n->pageCount * PAGE_SIZE;
+        --p->anonFragments;
+        kfree(n);
+      }
+      n = next;
+    }
+    p->anonIds &= ~(1u << id);
     --p->anon_count;
-    kfree(region);
     return S_OK;
   }
 
+  static int anon_unmap_range(Process* p, u32 base, u32 bytes) {
+    if (!bytes || !page_aligned(bytes) || !page_aligned(base) ||
+        base < USER_DYNAMIC_BASE || base >= USER_DYNAMIC_END ||
+        bytes > USER_DYNAMIC_END - base) { return S_INVALID; }
+    const u32 begin = base / PAGE_SIZE, end = (base + bytes) / PAGE_SIZE;
+    auto* first = mm::vma_find(p->vma_root, begin);
+    if (!first) { return S_INVALID; }
+    const u8 id = first->allocId;
+    auto* last = first;
+    for (;;) {
+      if (!ordinary(last, id)) { return S_INVALID; }
+      if (last->hasFlag(VmaNode::Flag::Head) && last->startPage >= begin && last->startPage < end) {
+        return S_INVALID;
+      }
+      u32 nodeEnd = last->startPage + last->pageCount;
+      if (nodeEnd >= end) { break; }
+      auto* next = mm::vma_next(last);
+      if (!next || next->startPage != nodeEnd) { return S_INVALID; }
+      last = next;
+    }
+    const bool keepFront = begin > first->startPage;
+    const bool keepBack = end < last->startPage + last->pageCount;
+    const unsigned outputs = (keepFront ? 1u : 0u) + (keepBack ? 1u : 0u);
+    VmaNode* nodes[96];
+    unsigned inputs = 0;
+    for (auto* n = first;; n = mm::vma_next(n)) {
+      nodes[inputs++] = n;
+      if (n == last) { break; }
+    }
+    if (p->anonFragments - inputs + outputs > 96) { return S_LIMIT; }
+    for (unsigned i = inputs; i < outputs; ++i) {
+      nodes[i] = nullptr;
+#ifdef SINO_SHELL_BRIDGE
+      if (!mmtest::fail(p->pd, mmtest::Stage::Fragment))
+#endif
+      { nodes[i] = static_cast<VmaNode*>(kmalloc(sizeof(VmaNode))); }
+      if (!nodes[i]) {
+        while (i > inputs) { kfree(nodes[--i]); }
+        return S_LIMIT;
+      }
+    }
+    const u32 frontStart = first->startPage;
+    const u32 lastEnd = last->startPage + last->pageCount;
+    const u16 frontResident = keepFront ? count_resident(p, frontStart, begin) : 0;
+    const u16 backResident = keepBack ? count_resident(p, end, lastEnd) : 0;
+    unsigned totalResident = 0;
+    for (unsigned i = 0; i < inputs; ++i) { totalResident += nodes[i]->resident; }
+    const u8 frontFlags = first->flags;
+    const u8 backFlags = last->flags;
+    for (unsigned i = 0; i < inputs; ++i) {
+      if (!mm::vma_remove(p->vma_root, nodes[i])) { panic("Unmap range detach", p->pid, base); }
+    }
+    u32 freed = free_user_pages(p, base, base + bytes);
+    if (freed != totalResident - frontResident - backResident || freed > p->pages_used) {
+      panic("Unmap range resident", freed, totalResident);
+    }
+    p->pages_used -= freed;
+    unsigned slot = 0;
+    if (keepFront) {
+      auto* n = nodes[slot];
+      *n = VmaNode{frontStart, begin - frontStart, frontResident, 0, 0, VmaType::Anonymous};
+      n->allocId = id;
+      n->setFlag(VmaNode::Flag::Read, true);
+      n->setFlag(VmaNode::Flag::Write, frontFlags & (u8)VmaNode::Flag::Write);
+      n->setFlag(VmaNode::Flag::Head, frontFlags & (u8)VmaNode::Flag::Head);
+      if (!mm::vma_insert(p->vma_root, n)) { panic("Unmap range front", p->pid, base); }
+      ++slot;
+    }
+    if (keepBack) {
+      auto* n = nodes[slot];
+      *n = VmaNode{end, lastEnd - end, backResident, 0, 0, VmaType::Anonymous};
+      n->allocId = id;
+      n->setFlag(VmaNode::Flag::Read, true);
+      n->setFlag(VmaNode::Flag::Write, backFlags & (u8)VmaNode::Flag::Write);
+      if (!mm::vma_insert(p->vma_root, n)) { panic("Unmap range back", p->pid, base); }
+      ++slot;
+    }
+    for (unsigned i = slot; i < inputs; ++i) { kfree(nodes[i]); }
+    p->anonFragments = p->anonFragments - inputs + outputs;
+    p->vma_bytes -= bytes;
+    return S_OK;
+  }
   static int anon_purgeable(Process* p, u32 base, AnonPurgeableOp operation) {
     VmaNode* region = anon_region(p, base);
     if (!region) { return S_INVALID; }
@@ -302,6 +480,9 @@ namespace task {
         region->setFlag(VmaNode::Flag::Purgeable, false);
         return S_OK;
       case AnonPurgeableOp::Mark:
+        for (auto* n = mm::vma_next(region); n; n = mm::vma_next(n)) {
+          if (belongs(n, region->allocId)) { return S_INVALID; }
+        }
         if (!region->hasFlag(VmaNode::Flag::Write)) { return S_INVALID; }
         if (region->hasFlag(VmaNode::Flag::Purgeable) && region->hasFlag(VmaNode::Flag::Purged)) {
           if (!region->lock_count) { return S_BUSY; }
@@ -687,6 +868,10 @@ namespace task {
       }
       if (copy || repeat || streq(probe_mode, "retry") || streq(probe_mode, "mp-retry-read") || streq(probe_mode, "mp-retry-write")) {
         mmtest::arm(p->pd, mmtest::Stage::ReclaimData, 0, repeat);
+      } else if (streq(probe_mode, "e1-oom")) {
+        mmtest::arm(p->pd, mmtest::Stage::Fragment, 1);
+      } else if (streq(probe_mode, "e2-oom")) {
+        mmtest::arm(p->pd, mmtest::Stage::Fragment, 0);
       } else if (streq(probe_mode, "table-copy") || streq(probe_mode, "table-fault")) {
         mmtest::arm(p->pd, mmtest::Stage::Table, 0);
       }
@@ -1346,7 +1531,7 @@ namespace task {
     case SYS_FILE_STAGE: case SYS_FILE_PUBLISH: case SYS_FILE_COMMIT:
     case SYS_PIPE_CREATE: case SYS_STREAM_READY: case SYS_PIPE_LIMITS:
     case SYS_TERMINAL:
-    case SYS_ANON_MAP: case SYS_ANON_UNMAP: case SYS_MPROTECT:
+    case SYS_ANON_MAP: case SYS_ANON_UNMAP: case SYS_ANON_UNMAP_RANGE: case SYS_MPROTECT:
     case SYS_ANON_PURGEABLE: case SYS_ANON_LOCK: case SYS_ANON_UNLOCK:
       return 1;
     default: return 0;
@@ -1394,6 +1579,8 @@ namespace task {
       return b || c ? S_INVALID : anon_map(current, a);
     case SYS_ANON_UNMAP:
       return b || c ? S_INVALID : anon_unmap(current, a);
+    case SYS_ANON_UNMAP_RANGE:
+      return c ? S_INVALID : anon_unmap_range(current, a, b);
     case SYS_ANON_PURGEABLE:
       return c ? S_INVALID : anon_purgeable(current, a, (AnonPurgeableOp)b);
     case SYS_ANON_LOCK:

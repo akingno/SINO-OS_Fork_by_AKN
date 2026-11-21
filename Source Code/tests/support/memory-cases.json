@@ -1,4 +1,60 @@
 {
+  "e1": [
+  {
+    "id": "memory.e1.range",
+    "name": "Prefix, interior and suffix protection"
+  },
+  {
+    "id": "memory.e1.merge",
+    "name": "Resident contents survive coalescing"
+  },
+  {
+    "id": "memory.e1.legacy",
+    "name": "Original allocation base required"
+  },
+  {
+    "id": "memory.e1.identity",
+    "name": "Independent allocation IDs"
+  },
+  {
+    "id": "memory.e1.budget",
+    "name": "Fragment budget rollback and reuse"
+  },
+  {
+    "id": "memory.e1.oom",
+    "name": "Second boundary allocation rollback"
+  },
+  {
+    "id": "memory.e1.purge",
+    "name": "Purgeable eligibility after coalescing"
+  }
+],
+  "e2": [
+  {
+    "id": "memory.e2.shrink",
+    "name": "Tail shrink and middle hole with content"
+  },
+  {
+    "id": "memory.e2.cross",
+    "name": "Cross-permission success and atomic rejection"
+  },
+  {
+    "id": "memory.e2.reuse",
+    "name": "Hole reuse and independent lifetime"
+  },
+  {
+    "id": "memory.e2.oom",
+    "name": "Hole allocation OOM rollback"
+  },
+  {
+    "id": "memory.e2.wait-hole",
+    "name": "Pending pipe read rejects an unmapped output and preserves input"
+  },
+  {
+    "id": "memory.e2.wait-remap",
+    "name": "Pending pipe read follows replacement mapping permissions"
+  }
+],
   "mprotect": [
   {
     "id": "memory.mprotect.cold",

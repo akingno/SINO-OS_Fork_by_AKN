@@ -89,6 +89,8 @@ struct Process {
   u32 vma_bytes;
   i16 reclaim_priority;
   u16 anon_count;
+  u16 anonFragments;
+  u32 anonIds;
   QueueLink<Process> reapLink;
   TimerNode timer;
   QueueLink<Process>& queueLink() { return reapLink; }

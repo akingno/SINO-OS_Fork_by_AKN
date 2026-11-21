@@ -67,6 +67,8 @@ task 子系统提取按实际接口选测：process 8 项、policy 2 项；Threa
 
 整区匿名保护选 mprotect 7、anonymous 7、process 8、reclaim 5、purgeable 5、policy 2、mm-boundaries 10、普通启动 1，共 45 项。mprotect 使用 test-memory.js 的同名模式和 --list 预览。
 
+匿名范围改权和分配身份选 `test-memory.js e1` 7 项、anonymous 7 项、purgeable 5 项、process 8 项及普通启动 1 项，共 28 项。部分解除映射选 `test-memory.js e2` 6 项、anonymous 7 项、process 8 项、policy 2 项及普通启动 1 项，共 24 项。两者使用同一版本构建时，共用重叠用例，合计 36 项。E2 覆盖等待中的读缓冲区变为空洞、只读替换映射和可写替换映射。用同名模式加 `--list` 预览。
+
 ## VM 配置基线
 
 就绪/对象等待/定时队列共同迁移时，选 `process,completion-waits,pipe-waits,terminal-waits,shell-waits`，共 42 项；普通启动追加 1 项。真实集合算法另运行 `node 'Source Code/tests/host/test-task-queues.js'`（4 项，先 `--list`）：96 节点 FIFO/撤销、定时堆容量/取消、tick 回绕/同期限次序、移除重插。启动自检覆盖对象代数复用、重复通知及到期优先；`probe.snx /schedule` 覆盖通知后条件失效重试和剩余数据交接。宿主统计布局为 60 字节，新增目标队列遍历/有限唤醒/广播/定时到期计数，不是用户 ABI。
