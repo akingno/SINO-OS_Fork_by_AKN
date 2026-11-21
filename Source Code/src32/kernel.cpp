@@ -6,6 +6,7 @@
 #include "mm/kmap.h"
 #include "mm/kmalloc.h"
 #include "mm/slab.h"
+#include "mm/vma.h"
 #include "storage.h"
 #include "disk.h"
 #include "task/task.h"
@@ -329,6 +330,7 @@ void kernel_tests(void) {
   page_allocator_test();
   mm::slab_selftest();
   mm::kmalloc_selftest();
+  mm::vma_selftest();
   kmap_selftest();
   __asm__ volatile("int3");
   u32 v = 2;

@@ -55,6 +55,8 @@ task 子系统提取按实际接口选测：process 8 项、policy 2 项；Threa
 
 内核入口栈大小/生命周期变化选 process 8 项及 images 11 项，普通启动追加 1 项。KernelStack 的 9 页布局、共享内核 PTE 权限、边界读写、重复分配/释放、保护记录耗尽后的失败回滚与重试由启动自检覆盖，并在现有 process / boot 用例中断言标记，不新增 ID。编译器逐函数栈用量见 build32/*-normal.su；需要连同中断帧和实际调用链评估，不能当作整条调用链上界。
 
+仅变更 VMA 区间树（`mm/vma.cpp`）时选普通启动 1 项。启动自检覆盖区间边界、插入和删除后的 AVL 不变量、节点身份及资源归还，现有 `boot.ordinary` 断言自检标记。
+
 物理页 buddy 分配器、slab 缓存或内核通用堆（kmalloc/kfree）核心变化，选 process 8 项、images 11 项、anonymous 7 项及普通启动 1 项，共 27 项，不新增 ID。启动自检覆盖 buddy 位压缩元数据、连续页分配、守护页与空闲链一致性；images 核对 E820 和 8 字节/PFN 元数据预算。普通启动和 process 启动用例核对 slab（大小类、跨页扩容、对象隔离、非法/重复释放、空页归还）及堆自检标记（大小类边界、清零、多页释放、页归属拒绝、页计数恢复）。调用模块从 kpage_alloc 迁移到 kmalloc/kzalloc 后按对应模块选测。
 
 调度/主循环空闲决策变化选 process 8 项、shell-waits 5 项、普通启动 1 项；后台待办查询涉及网络与 RTC 时各加对应 1 项。process 原有启动/抢占用例包含就绪/到期状态自检、实际 idle_halt 的 `sti; hlt; ret` 字节、`probe.snx /schedule` 主动让出/有限睡眠/竞争读重试，以及有界候选和空闲统计检查，不新增固定 ID。`task_schedule_stats` 仅供宿主观察，不是用户 ABI。

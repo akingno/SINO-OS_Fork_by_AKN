@@ -55,6 +55,7 @@ async function boot(executable, directory, buildId) {
                 assert(log.includes('TIMER IRQ0 delivered'), 'Timer interrupt did not arrive');
                 assert(log.includes('SLAB allocator self-check passed'), 'Slab allocator checks did not pass');
                 assert(log.includes('KMALLOC allocator self-check passed'), 'Kernel heap checks did not pass');
+                assert(log.includes('VMA tree self-check passed'), 'VMA tree checks did not pass');
                 assert(log.includes('TASK kernel stack self-check passed (32 KiB usable + 4 KiB guard)'),
                     'Kernel entry stack checks did not pass');
                 assert(!log.includes('SINO SHELL BRIDGE'), 'Expected an ordinary build without ShellBridge');
