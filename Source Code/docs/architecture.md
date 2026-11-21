@@ -16,7 +16,7 @@
 
 - **物理页分配器**（`page.cpp`、`page_internal.h`）：Buddy 双向链表管理低端和高端两个池的 E820 可用物理页，支持对齐拆分/合并及连续页线性兜底（`kpage_alloc_run`），启动自检覆盖位压缩元数据、zone 隔离与空闲链一致性
 - **Slab 缓存**（`slab.cpp`）：8–1024 字节八个 power-of-2 大小类，整页管理，分配位图检测双释放，空页即还 buddy
-- **内核通用堆**（`kmalloc.cpp`）：`kmalloc`/`kzalloc`/`kfree`，≤1024 字节走 slab，更大请求取完整 buddy 块；页归属隔离普通内核页与堆页
+- **内核通用堆**（`kmalloc.cpp`）：`kmalloc`/`kzalloc`/`kfree`，≤1024 字节走 slab。大请求优先取完整 buddy 块，快路径失败时搜索符合请求页数的连续区间。页归属隔离普通内核页与堆页。
 - **分页管理**（`paging.cpp`）：
   - 启动阶段：`paging_bootstrap` 建立初始临时页表，`paging_kernel_init` 切换到正式内核页表（两阶段 CR3 不同）
   - 每进程独立页目录，内核恒等映射共享且仅限 Ring 0
@@ -24,7 +24,7 @@
   - 线程栈之间有未映射守护页
   - `paging_user_map` / `paging_user_find_gap` 支持跨 4 MiB 边界映射和动态地址窗口
 - **用户缓冲区校验**（`uaccess.cpp`）：所有系统调用的用户指针经过页表权限检查，覆盖跨页、无效尾页和嵌套指针场景
-- **匿名内存映射**（`task/process.cpp: anon_map / anon_unmap`）：用户程序可申请私有匿名页，首次访问时按需分配零填充物理页（lazy allocation）。配额耗尽时系统调用返回 `S_NOMEM`，释放后缺页则触发故障退出
+- **用户虚拟区间**（`mm/vma.cpp`、`task/process.cpp`）：进程的 VMA 树登记映像、参数页、线程栈和匿名区。匿名映射按需分配零页，支持同一分配内的范围改权和部分解除映射。预留配额或 VMA 元数据耗尽时返回 `S_LIMIT`。物理页不足时走缺页重试或系统调用的 `S_NOMEM` 路径。
 - **SNX v2 格式**：用户程序内存上限从 192 KiB（v1）提升到 16 MiB，链接基址均为 `0x40000000`
 
 ## 进程与线程
@@ -68,6 +68,9 @@ INT 0x80 提供有界的文件、进程、线程、同步事件、句柄和文�
 | RECLAIM | 131072 | 进程回收优先级 |
 | PROCESS_GROUP | 262144 | 进程组 |
 | PURGEABLE | 524288 | 可丢弃匿名内存 |
+| MPROTECT | 1048576 | 匿名映射读写保护 |
+| MPROTECT_RANGE | 2097152 | 匿名分配内的范围改权 |
+| ANON_UNMAP_RANGE | 4194304 | 匿名分配内的部分解除映射 |
 
 详细契约见 [os-interface.md](os-interface.md)。
 

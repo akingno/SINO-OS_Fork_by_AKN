@@ -54,7 +54,9 @@
 | `test-memory.js anonymous <ShellBridge 目录>` | 7 | 匿名映射、配额、跨页 I/O、定向 OOM/首次触页故障及可写副本注入隔离 |
 | `test-memory.js reclaim <ShellBridge 目录>` | 5 | 水位精确边界、预留准入、按评分和驻留页排序、回收后补页、失败语义、进程组继承与回收 |
 | `test-memory.js purgeable <ShellBridge 目录>` | 5 | 可丢弃 ABI、锁计数、LOW 丢弃和重建、CRITICAL 回收顺序及最后解锁重启丢弃 |
-| `test-memory.js e1 <ShellBridge 目录>` | 7 | 匿名权限拆分与合并、分配身份、旧基址要求、片段上限、VMA 节点分配失败回滚及可丢弃条件 |
+| `test-memory.js vma <ShellBridge 目录>` | 2 | 映像和工作线程栈的 VMA 登记失败回滚及资源复用 |
+| `test-memory.js mprotect <ShellBridge 目录>` | 6 | 整区权限校验和恢复、未驻留与驻留页的写保护故障、跨页 I/O、缺页重试 |
+| `test-memory.js e1 <ShellBridge 目录>` | 6 | 匿名权限拆分与合并、分配身份、旧基址要求、片段上限、VMA 节点分配失败回滚及可丢弃条件 |
 | `test-memory.js e2 <ShellBridge 目录>` | 6 | 尾部与中间解除映射、配额、跨片段及非法范围、空洞复用、VMA 节点分配失败回滚、阻塞读唤醒时按当前映射校验 |
 
 上述入口均支持 `--list`（内存入口为 `test-memory.js images --list`）。内存用例按实际探针/配置契约执行计数，详细断言列在报告 conditions 中。默认配置为 4096 MiB、单核，并用 QMP 核对。定向注入覆盖映像、页表和匿名页的分配失败与回滚。

@@ -1,15 +1,10 @@
-# OS interface: Stages A through F backend
+# OS interface
 
-Stage A adds discovery and an opt-in strict process policy. Stage B adds bounded,
-nonblocking completion objects. Stage C adds finite argv/input/output and a
-supervised host protocol; see [bounded-cli.md](bounded-cli.md). Stage D adds
-directory grants, range I/O and private publication/commit; see
-[file-objects.md](file-objects.md), including its remaining failure-injection
-limits. Stage E adds bounded streaming and user runtime waiting; see
-[stream-pipes.md](stream-pipes.md). The kernel supports thread-level blocking waits.
-Stage F adds the [text session backend](terminal-sessions.md), with frontend
-integration still pending. SYS_TERMINAL=0x14a is allowed by strict policy; its
-control/client authority checks still apply, including denial of strict CREATE.
+The user ABI provides discovery, strict process policy, completion records and
+thread-level blocking waits. See the contracts for [bounded CLI](bounded-cli.md),
+[file objects](file-objects.md), [pipe streams](stream-pipes.md) and
+[text sessions](terminal-sessions.md). The Ring 3 [Shell](user-shell.md)
+uses text sessions through the [console frontend](text-console.md).
 Existing SNX1 headers, startup strings and all 47 old syscall numbers remain
 unchanged. Existing negative errors and whole-file Write's success value 0 are
 unchanged. The policy test pins old syscall numbers with compile-time assertions.
@@ -39,7 +34,7 @@ StartInfo (24 bytes): size, version, policy, caps, features, reserved. This is a
 query of immutable launch policy and current granted capability bits, not an
 input request. It does not change the launch page or expose kernel pointers.
 Arguments()/Executable() still use the original immutable startup strings.
-Stage C provides structured arguments through a separate CliInfo query.
+CliInfo provides structured arguments through a separate query.
 
 Feature bits: SYSTEM_INFO=1, STRICT_POLICY=2, START_INFO=4, COMPLETION=8,
 BOUNDED_RUN=16, FILE_OBJECTS=32, PIPES=64, TERMINALS=128, CALENDAR=256,
@@ -357,33 +352,25 @@ argument strings or writable copies of an executable. The normal SNX loader
 still validates the resolved image; the strict entry has no legacy Ring 0
 executable fallback. A launch response still reports creation, not final exit.
 
-Strict policy allows only EXIT, YIELD, LOG, TICKS, CLOSE, DUP, THREAD,
-THREAD_EXIT, EVENT_CREATE, EVENT_SET, EVENT_WAIT, TIME, UI_LANGUAGE, SYSTEM_INFO
-and START_INFO, plus Stage B PROCESS_RESULT and PROCESS_CANCEL for owned handles.
-Stage C also allows CLI_INFO, STREAM_READ/WRITE, RUN_RESULT/READ/LIMITS; RUN_START
-is still denied to strict callers. Streams and captures require owned handles.
-Stage D also allows START_DIRECTORY, OPEN_AT, FILE_READ_AT/WRITE_AT/STAT,
-DIR_READ, REMOVE_AT, RENAME_AT, FILE_STAGE/PUBLISH/COMMIT. They require explicit
-owned directory/file/staging handles; DIR_GRANT remains denied. RunSpecV2 lets a
-compatibility launcher explicitly attenuate one directory grant to a strict child.
-Stage E adds local PIPE_CREATE, STREAM_READY and PIPE_LIMITS; StreamRead/Write
-accept owned pipe endpoints as well as run-bound finite streams. RunSpecV3 lets
-a compatibility launcher bind explicit pipe endpoints to strict child stdio.
-Strict RUN_START/Spawn remain denied, and other handles are not inherited.
-The strict policy also allows ANON_MAP and ANON_UNMAP for the calling process.
-Existing pointer, object-type, rights and resource checks still
-apply. LOG remains diagnostics, not stdout; time and language are public data.
+The strict syscall allowlist is defined by `strict_call` in
+`src32/task/process.cpp`. It includes public queries, local process and thread
+operations, Event, anonymous memory, and explicitly authorized objects.
+Directory, file, staging, pipe, completion and stream operations require the
+corresponding handle rights. `SYS_TERMINAL` also checks session authority,
+including denial of CREATE for strict callers. RunSpecV2 allows a compatibility
+launcher to pass an attenuated directory grant to a strict child. RunSpecV3
+allows the launcher to bind explicit pipe endpoints to the child's stdio.
+Pointer, object-type and resource checks apply to both policies.
 
 All other known calls return S_DENIED before any operation-specific side effect
 or user-buffer access: path reads/listing/writes, Sync, Spawn, Kill, process
-enumeration, named Lease, networking and OpenPath. Even a strict process cannot use legacy Spawn to start a
-compatibility child, including through aliases or writable copies. Strict policy
-rejects both old Spawn and Stage B SpawnTracked; later delegation must preserve authority.
+enumeration, named Lease, networking and OpenPath. Strict policy denies RunStart,
+Spawn and SpawnTracked, including launches through aliases or writable copies.
 
 The strict policy confines processes launched with `PROCESS_STRICT`.
 Directory access depends on explicitly granted handles.
 
-## Stage B: completion objects
+## Completion objects
 
 New IDs: SYS_SPAWN_TRACKED=0x131, SYS_PROCESS_RESULT=0x132,
 SYS_PROCESS_CANCEL=0x133. All prior IDs and v1 query sizes remain unchanged.
@@ -467,11 +454,11 @@ if no observers remain the record then disappears automatically. A running
 orphan still consumes a slot/record until it terminates. Completed records with
 observers cannot be silently evicted: a full pool rejects new tracked launches.
 Untracked old launches do not consume completion records. Job supervision and
-disconnect cancellation belong to Stage C, not this close behavior.
+disconnect cancellation are part of managed runs.
 
 The API is nonblocking: use S_AGAIN and bounded Yield polling. Kernel C stacks
-and user pointers are not suspended. Old Shell run still reports creation;
-Stage C's separate v2 managed protocol reports the final result and captures.
+and user pointers are not suspended. ShellBridge `run` reports creation.
+The v2 managed protocol reports the final result and captures.
 
 ## Verification
 

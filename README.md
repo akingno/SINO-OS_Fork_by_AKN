@@ -26,16 +26,17 @@ Shell 支持以下命令：
 内核的内存子系统在 `mm/` 和 `task/` 模块，已实现：
 
 - E820 物理页管理、分阶段初始化（启动池 → 内核页表 → 高内存扩展）
+- 低端和高端 buddy 页池、slab 缓存以及内核通用堆 `kmalloc` / `kzalloc` / `kfree`
 - 每进程独立页目录，用户映像从 `0x40000000` 起，代码只读、栈有守护页
 - 用户地址校验与安全复制（`uaccess`）
-- 匿名内存按需分配（每进程 32 区域 / 16 MiB），`malloc/free` 已接入
+- VMA 区间树管理用户映射。匿名内存按需分配，每进程最多 32 份分配、96 个匿名片段和 16 MiB 预留空间，支持范围改权与部分解除映射
 - 1 GiB 以上高页通过 `kmap/kunmap` 临时访问
 - 逐进程物理页计量（`pages_used`），用于回收决策
 - 分级水位线（Normal / Low / Critical），按空闲页占已发布页池的比例划分
 - 内存压力时按回收优先级自动终止进程，每轮最多一个受害者，负分进程受保护
 - 可丢弃匿名内存（purgeable），用户程序可标记缓存区为可回收；内存压力时内核优先丢弃未锁定的缓存页，避免终止进程
 
-计划实现：buddy / slab 分配器、共享页引用计数、COW、小对象堆复用。详见 [内存访问契约](<Source Code/docs/mm-access.md>)。
+详见 [内存访问契约](<Source Code/docs/mm-access.md>)。
 
 ## 进程与线程
 
@@ -51,12 +52,12 @@ Shell 支持以下命令：
 
 权限模型：严格策略（`caps=0`）默认拒绝，仅白名单授权——新程序均在此策略下运行；兼容策略按启动时授予的能力访问兼容接口。
 
-计划实现：内核 mutex / futex / 用户态同步库、优先级调度、SMP、cwd/env 继承。详见 [任务子系统契约](<Source Code/docs/task-subsystem.md>) 与 [编号生命周期](<Source Code/docs/identifier-lifetime.md>)。
+详见 [任务子系统契约](<Source Code/docs/task-subsystem.md>) 与 [编号生命周期](<Source Code/docs/identifier-lifetime.md>)。
 
 ## 当前限制
 
 - 32 位 x86 BIOS/MBR，仅在 QEMU 上验证（标准 VGA + PS/2）
-- 文字控制台仅支持 ASCII 显示与 US 键盘输入，尚无交互式文本编辑器
+- 文字控制台使用 ASCII 显示与 US 键盘输入
 - VFS 全局最多 128 个节点，单文件上限 64 KiB；`/boot` 为只读 FAT12 启动卷
 - 无 SMP、无动态链接、无用户账户、无 UEFI
 - 网络仅回环验证
@@ -90,24 +91,6 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\dev.ps1 -BuildOnly
 
 源码使用 freestanding C++17，关闭异常和 RTTI。构建需要 Node.js、Python、支持 i386 目标的 G++ / GNU Binutils 和仓库内的 NASM，运行需要 QEMU。环境与目录说明见 [源码 README](<Source Code/README.md>)；验证按 [模块选测指南](<Source Code/tests/TESTING.md>) 选择相关专项。
 
-## 参与开发
-
-以下模块尚未实现或仍需完善，欢迎贡献：
-
-- **文件系统**：当前为全局 128 节点的 VFS 和 FAT12，缺少真正的文件权限、日志和大文件支持
-- **网络**：仅有回环栈，宿主桥接、TCP/IP 和实际网络服务尚未实现
-- **内存管理**：按实际需求引入小对象堆、buddy / slab 与 COW
-- **用户态应用**：增加交互式文本编辑器和更多 Ring 3 工具程序
-- **Shell 与控制台**：完善命令行体验、脚本语法和通配符展开
-- **通用进程能力**：无 cwd/env 继承、无通用子进程委托
-
-也欢迎直接参与上游 [SINO-OS](https://github.com/SkysoftStudio-Felix/SINO-OS)，本 fork 的改动不代表上游方向。
-
 ## 许可
 
 项目代码采用 [MIT](LICENSE)，保留上游版权。随源码提供的 NASM 采用 BSD-2-Clause，详见 [Documentation/Licenses](Documentation/Licenses) 和 [Source Code/SOURCES.md](<Source Code/SOURCES.md>)。
-
-## 致谢
-
-- 原项目：[SkysoftStudio-Felix/SINO-OS](https://github.com/SkysoftStudio-Felix/SINO-OS)（SINO OS 0.10 / SysBASIC 0.3.0）
-- 本 fork 的开发借助了 Claude 和 Codex

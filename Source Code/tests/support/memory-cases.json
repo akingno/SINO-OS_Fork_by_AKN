@@ -5,10 +5,6 @@
     "name": "Prefix, interior and suffix protection"
   },
   {
-    "id": "memory.e1.merge",
-    "name": "Resident contents survive coalescing"
-  },
-  {
     "id": "memory.e1.legacy",
     "name": "Original allocation base required"
   },
@@ -26,7 +22,7 @@
   },
   {
     "id": "memory.e1.purge",
-    "name": "Purgeable eligibility after coalescing"
+    "name": "Coalescing preserves resident contents and restores purgeable eligibility"
   }
 ],
   "e2": [
@@ -65,12 +61,8 @@
     "name": "anonymous protection hot"
   },
   {
-    "id": "memory.mprotect.restore",
-    "name": "anonymous protection restore"
-  },
-  {
     "id": "memory.mprotect.abi",
-    "name": "anonymous protection abi"
+    "name": "Anonymous protection ABI and restored write permission"
   },
   {
     "id": "memory.mprotect.io",

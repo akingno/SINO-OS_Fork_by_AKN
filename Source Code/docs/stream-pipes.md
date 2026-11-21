@@ -57,13 +57,13 @@ without sleeping in the existing non-preemptible single-CPU kernel.
 ## Explicit startup binding
 
 RunSpecV3 is 80 bytes: the 64-byte RunSpecV2 context with base size=80/version=3,
-then in, out, err, reserved=0. Directory grant rules from Stage D are unchanged.
+then in, out, err, reserved=0. See the [directory grant contract](file-objects.md).
 StartRunWithStreams uses SYS_RUN_START with ECX=80, EDX=0. Versions 1 (48) and
 2 (64) remain accepted without modification; the base flags/reserved and both
 directory reserved words must remain zero.
 
 Each nonzero in/out/err names an owned **pipe** endpoint, read for stdin and write
-for stdout/stderr. Zero keeps the corresponding Stage C finite-input/capture
+for stdout/stderr. Zero selects the corresponding finite-input/capture
 backend. Binding a pipe stdin with nonempty finite input is invalid, so input is
 not silently discarded. Captures, sockets, files and arbitrary handles are not
 accepted as pipe bindings. Only compatibility launchers may start runs, and the

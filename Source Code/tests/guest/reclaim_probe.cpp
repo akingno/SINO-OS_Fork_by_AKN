@@ -119,13 +119,13 @@ int fragmentTest(const char* mode) {
     } else if (streq(mode, "e1-legacy")) {
       require(AnonQuery(addr(1)) == S_INVALID && AnonUnmap(addr(2)) == S_INVALID &&
               AnonLock(addr(1)) == S_INVALID, "reject interior bases");
-    } else {
+    } else if (streq(mode, "e1-purge")) {
       require(AnonSetPurgeable(addr(0), true) == S_INVALID && protect(1, 1, true) == S_OK &&
               page[PageBytes] == 42 && AnonSetPurgeable(addr(0), true) == S_OK, "merged RW region");
-      if (streq(mode, "e1-purge")) {
-        require(AnonLock(addr(0)) == S_OK && AnonUnmap(addr(0)) == S_BUSY &&
-                AnonUnlock(addr(0)) == S_OK, "merged allocation lock");
-      }
+      require(AnonLock(addr(0)) == S_OK && AnonUnmap(addr(0)) == S_BUSY &&
+              AnonUnlock(addr(0)) == S_OK, "merged allocation lock");
+    } else {
+      require(false, "unknown anonymous fragment probe mode");
     }
   }
   require(AnonUnmap(addr(0)) == S_OK && reserve(4) == page, "whole allocation released");
@@ -308,16 +308,19 @@ int protectionTest(const char* mode) {
     return 0;
   }
   const bool hot = streq(mode, "mp-hot");
+  const bool cold = streq(mode, "mp-cold");
+  const bool retryRead = streq(mode, "mp-retry-read");
+  require(hot || cold || retryRead || streq(mode, "mp-abi"), "unknown protection probe mode");
   if (hot) { *page = 42; }
   require(sino::mprotect(base, PageBytes, Protection::Read) == S_OK &&
           AnonSetPurgeable(base, true) == S_INVALID, "protect ordinary region");
-  if (streq(mode, "mp-cold") || hot) {
+  if (cold || hot) {
     Log("MP EXPECT WRITE FAULT\n");
     *page = 77;
     require(false, "protected write succeeded");
   }
   require(*page == 0, "lazy read-only page is zero");
-  if (streq(mode, "mp-retry-read")) {
+  if (retryRead) {
     Log("MP RETRIED READ\n");
     *page = 77;
     require(false, "retried read granted write");

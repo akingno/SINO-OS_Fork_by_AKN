@@ -580,7 +580,7 @@ async function protectionContracts(source) {
         }
     });
 }
-async function fragmentContracts(source) {
+async function anonymousRangeContracts(source) {
     await boot(source, mode, vm.memoryMiB, async ({channel, check, guestLog, command, baseline, free, until}) => {
         const session = new RunSession(channel);
         await session.hello();
@@ -599,26 +599,7 @@ async function fragmentContracts(source) {
         }
     });
 }
-async function unmapRangeContracts(source) {
-    await boot(source, mode, vm.memoryMiB, async ({channel, check, guestLog, command, baseline, free, until}) => {
-        const session = new RunSession(channel);
-        await session.hello();
-        for (const item of memoryCases[mode]) {
-            await check(item.id, [item.name], async () => {
-                const offset = guestLog().length;
-                const name = item.id.split('.').pop();
-                const result = await session.run('/boot/reclaim.snx', [mode + '-' + name]);
-                const log = guestLog().slice(offset);
-                assert.doesNotMatch(log, /SELFTEST FAIL|KERNEL PANIC/);
-                if (name === 'oom') { assert.match(log, /injected stage=0x00000006/); }
-                assert.equal(result.reason, 1);
-                assert.equal(result.code, 0);
-                await until(async () => free(await command('mem')) === baseline);
-            });
-        }
-    });
-}
-const suites = {e1:fragmentContracts, e2:unmapRangeContracts, mprotect:protectionContracts, images:imageContracts, anonymous:anonymousContracts, reclaim:reclaimContracts, purgeable:purgeableContracts, vma:vmaContracts};
+const suites = {e1:anonymousRangeContracts, e2:anonymousRangeContracts, mprotect:protectionContracts, images:imageContracts, anonymous:anonymousContracts, reclaim:reclaimContracts, purgeable:purgeableContracts, vma:vmaContracts};
 if (!Object.hasOwn(suites, mode) || process.argv.length !== 4) {
     console.error('Usage: node test-memory.js images|anonymous|reclaim|purgeable|vma|mprotect|e1|e2 <ShellBridge build directory>|--list');
     process.exitCode = 2;

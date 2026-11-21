@@ -148,10 +148,9 @@ task 提取契约见 [task-subsystem.md](Source Code/docs/task-subsystem.md)。C
 - LOW 和 CRITICAL 每轮优先丢弃一个未锁定的可丢弃匿名区的驻留页，保留虚拟预留及配额。在 CRITICAL 且没有合格的可丢弃驻留页时才回收进程组。丢弃后按需落零页，`AnonQuery` 保持 `S_CHANGED`，直到持锁重建并重新标记。
 - 新线程主槽保留，3 个 worker 槽含 joinable 退出记录；栈退出即回收，记录由成功 join（含非阻塞 query）或 detach 消费，最后活动线程不会被未领取记录保活。每条 joinable 记录占 1 个私有 THREAD Object，共用 256 对象预算；TID 为全局不回绕 28 位代数加 3 位槽号，耗尽返回 S_LIMIT。join 只允许同进程，一个阻塞消费者占用目标；旧 SYS_THREAD 仍返回原始槽号。
 - PID 是正整数 `(每槽 24 位代数 << 7) | (进程槽 + 1)`，仅完整比较；失败预留不消耗代数，资源回收完成才复用槽。Object 为每槽 32 位不回绕代数；Handle 保持 `(23 位 cookie << 8) | (句柄槽 + 1)`，cookie 按槽号全局计数、均衡选空槽，不按进程重置。达到末代后退役/返回 S_LIMIT，详见 [identifier-lifetime.md](Source Code/docs/identifier-lifetime.md)。PID 专项 `test-pids.js <ShellBridge 目录>` 8 项、宿主 `test-identifiers.js` 6 项（均 --list），本轮选择共 47 项，详见 TESTING.md。
-- 网络仅回环；宿主桥接和服务器通道是规划
+- 网络使用回环接口
 - 严格策略（caps=0）默认拒绝，按白名单授权；兼容策略保留旧应用访问
 - 管道读写、完成记录查询、终端字节读取、交互命令结果和手动复位 Event 支持显式线程级阻塞，超时为 0 表示无限等待，有限等待最多 60000 tick；Event 查询保留非阻塞，SDK 为 sino::event
-- 通用子进程委托、cwd/env 继承尚未实现
 
 独立 VM 配置宿主检查：`node 'Source Code/tests/host/test-vm-config.js'`，4 项，`--list` 预览。内存专项 images 11 项、anonymous 7 项、reclaim 5 项、purgeable 5 项；OOM 为 ShellBridge 只读探针绑定页目录的定向注入，普通镜像不含注入后端。
 

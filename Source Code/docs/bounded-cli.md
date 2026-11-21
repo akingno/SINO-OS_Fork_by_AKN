@@ -1,15 +1,13 @@
-# Stage C: bounded CLI execution
+# Bounded CLI execution
 
 This is a finite-input, finite-capture runtime for real SNX1 Ring 3 programs.
-It preserves old run/Spawn and ABI-1 startup strings. This document describes the
-finite backend; Stage D adds [file authority](file-objects.md), and Stage E adds
-[pipe-backed streams](stream-pipes.md). Interactive terminals, arbitrary handle
-inheritance, cwd/env and blocking syscalls remain outside these deliveries.
+The finite backend preserves legacy run/Spawn and ABI-1 startup strings.
+Separate contracts cover [directory grants](file-objects.md),
+[pipe-backed streams](stream-pipes.md) and [interactive launches](interactive-runs.md).
 
 ## Public ABI
 
-Stage C feature: FEATURE_BOUNDED_RUN=16 (mask 31 at that stage; A-F now use 255).
-Old feature bits and v1 layouts remain unchanged; clients mask known bits.
+`FEATURE_BOUNDED_RUN=16` advertises bounded CLI execution.
 All structures use little-endian u32 fields, four-byte alignment, except the
 signed completion code. User pointers below are 32-bit virtual addresses.
 
@@ -71,7 +69,7 @@ launches use an empty legacy argument string. No kernel pointers are exposed.
 in/out/err are opaque local handles, not the numbers 0/1/2. stdin has READ=1;
 stdout/stderr have WRITE=2. Existing Close/Dup rules apply. Duplicates share the
 input cursor or output capture. Finite stream operations check the current run
-binding; pipes instead check owned endpoint type/rights, as specified in Stage E.
+binding. [Pipe-backed streams](stream-pipes.md) check owned endpoint type and rights.
 Closing a stream then using its stale handle is an error, not EOF.
 
 StreamRead returns up to the requested bytes, and 0 after finite input is
@@ -131,7 +129,7 @@ whose observation handles remain open. Completion records share the
 backing completion; cleanup releases streams, execution pages, then execution
 ownership, while observers retain results/captures until closed.
 
-Public StartRun retains Stage B close semantics: closing an observer, or observer
+Public StartRun uses completion-object close semantics: closing an observer, or observer
 exit/fault, does not cancel a running child. The supervised host layer below
 explicitly cancels its own tasks on release/session expiry. It never grants global
 PID management.
@@ -213,8 +211,8 @@ without giving the single-producer ring a concurrent writer.
 
 ## Validation boundary
 
-Stage D adds a separate 64-byte RunSpecV2 for an explicit directory grant; the
-48-byte v1 and host v2 protocol remain unchanged. See [file-objects.md](file-objects.md).
+Native launchers pass an explicit directory grant through the 64-byte RunSpecV2.
+See [file-objects.md](file-objects.md).
 The core regression covers directory-grant contracts. Host run.ps1 does not supply grants.
 
 regression.ps1 -Suite 'cli,managed-cli' includes real CPL3 CLI tests and a dedicated managed-protocol VM:

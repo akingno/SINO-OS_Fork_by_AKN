@@ -38,9 +38,8 @@ completion record does not retain a finished child's directory grant.
 
 The startup directory is an immutable per-process reference for explicit OpenAt
 operations, not POSIX cwd/chdir. There is no environment block or implicit path
-resolution. Existing kernel Shell cwd is unchanged. Host run.ps1/v2 and old
-Shell launch syntax do not yet request a directory grant; compatibility native
-launchers can use RunSpecV2. No host directory is mounted or authorized here.
+resolution. Compatibility native launchers pass a guest directory handle with
+RunSpecV2. Host run.ps1/v2 uses the separate bounded CLI protocol.
 
 ## Opening and range I/O
 

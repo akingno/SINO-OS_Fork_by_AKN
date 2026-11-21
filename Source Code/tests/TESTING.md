@@ -21,6 +21,8 @@
 | 开机文字控制台、ASCII 键盘和 Shell 前端 | 普通 `dev.ps1 -BuildOnly` 后运行 `node 'Source Code/tests/host/test-console.js' <构建目录>`；9 项，`--list` 预览 | 自动保存变化加同入口 `--persistence`（3 项，支持 `--list --persistence`）及 files / persistence；键盘滚屏或行编辑显示变化加 `test-terminal-model.cpp` / `test-line-model.cpp` 宿主模型；设备授权改动追加 policy；会话等待变化加 shell-waits |
 | 引导、镜像、FAT12 启动卷 | `.\dev.ps1 -BuildOnly`，再 `node 'Source Code/tests/host/test-boot.js' '<本次普通构建目录>'`；1 项 | 涉及用户态启动/隔离时追加相应进程或内存专项 |
 | 匿名映射、懒分配、SDK 堆；`anon_map/unmap` | 下方内存命令的 `anonymous`；7 项 | 映像、高页或线程栈布局变化时追加 `images` |
+| 匿名映射保护与片段身份；`protect_anon` | `mprotect` 6 项覆盖整区权限与缺页重试，`e1` 6 项覆盖范围改权、合并和分配身份 | 分配或释放变化加 `anonymous`，可丢弃条件或回收路径变化加 `purgeable` 或 `reclaim` |
+| 匿名范围解除映射；`anon_unmap_range` | `e2` 6 项，覆盖配额、空洞复用、定向分配失败和阻塞读输出缓冲区重校验 | 影响匿名预留或释放时加 `anonymous`，修改 syscall 准入时加 `policy` |
 | 物理页、页表、高页、SNX、用户栈；`page_* / paging_*` | 下方内存命令的 `images`；11 项 | 涉及匿名映射/OOM 时加 `anonymous`；启动页表/物理池初始化变化时加普通启动检查 |
 | E820 对齐/重叠、地址溢出、uaccess 复制契约 | `node 'Source Code/tests/host/test-mm-boundaries.js'`；10 项，`--list` 预览 | 替代页表与分配边界的宿主检查；系统路径仍按下列 images / anonymous 及追加条件选测 |
 | 用户缓冲区；`uaccess_*` | `anonymous`；7 项，含跨页文件/管道 I/O | 文件或终端系统调用校验路径变化时，加对应 `files` 或 `terminal-waits`；新的非法指针边界另加针对性探针 |
@@ -57,17 +59,11 @@ task 子系统提取按实际接口选测：process 8 项、policy 2 项；Threa
 
 仅变更 VMA 区间树（`mm/vma.cpp`）时选普通启动 1 项。启动自检覆盖区间边界、插入和删除后的 AVL 不变量、节点身份及资源归还，现有 `boot.ordinary` 断言自检标记。
 
-加载器或用户栈 VMA 登记变更选 process 8、images 11、anonymous 7、thread-waits 8、普通启动 1，加 `test-memory.js vma <ShellBridge 构建目录>` 2 项（`vma --list`），共 37 项。vma 专项检查映像元数据失败回滚和工作线程栈失败后的槽位复用。
-
-匿名区迁移到 VMA 及其预留生命周期选 anonymous 7 项、purgeable 5 项、reclaim 5 项、process 8 项和普通启动 1 项，共 26 项。现有 purgeable LOW 用例验证同进程同驻留页数时优先丢弃低地址区域。
+加载器或用户栈 VMA 登记变更选 `test-memory.js vma` 2 项（`vma --list`），检查映像登记失败回滚及工作线程栈登记失败后的槽位复用。映像或栈布局变化时按表选 `images` 或 `thread-waits`。
 
 物理页 buddy 分配器、slab 缓存或内核通用堆（kmalloc/kfree）核心变化，选 process 8 项、images 11 项、anonymous 7 项及普通启动 1 项，共 27 项，不新增 ID。启动自检覆盖 buddy 位压缩元数据、连续页分配、守护页与空闲链一致性；images 核对 E820 和 8 字节/PFN 元数据预算。普通启动和 process 启动用例核对 slab（大小类、跨页扩容、对象隔离、非法/重复释放、空页归还）及堆自检标记（大小类边界、清零、多页释放、页归属拒绝、页计数恢复）。调用模块从 kpage_alloc 迁移到 kmalloc/kzalloc 后按对应模块选测。
 
 调度/主循环空闲决策变化选 process 8 项、shell-waits 5 项、普通启动 1 项；后台待办查询涉及网络与 RTC 时各加对应 1 项。process 原有启动/抢占用例包含就绪/到期状态自检、实际 idle_halt 的 `sti; hlt; ret` 字节、`probe.snx /schedule` 主动让出/有限睡眠/竞争读重试，以及有界候选和空闲统计检查，不新增固定 ID。`task_schedule_stats` 仅供宿主观察，不是用户 ABI。
-
-整区匿名保护选 mprotect 7、anonymous 7、process 8、reclaim 5、purgeable 5、policy 2、mm-boundaries 10、普通启动 1，共 45 项。mprotect 使用 test-memory.js 的同名模式和 --list 预览。
-
-匿名范围改权和分配身份选 `test-memory.js e1` 7 项、anonymous 7 项、purgeable 5 项、process 8 项及普通启动 1 项，共 28 项。部分解除映射选 `test-memory.js e2` 6 项、anonymous 7 项、process 8 项、policy 2 项及普通启动 1 项，共 24 项。两者使用同一版本构建时，共用重叠用例，合计 36 项。E2 覆盖等待中的读缓冲区变为空洞、只读替换映射和可写替换映射。用同名模式加 `--list` 预览。
 
 ## VM 配置基线
 
