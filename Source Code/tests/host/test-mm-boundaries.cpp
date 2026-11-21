@@ -22,14 +22,14 @@ extern "C" u32 paging_user_flags(const u32* pd, u32 address) {
   if (pd != &directory || address < BASE || address >= BASE + 3 * PAGE_SIZE) return 0;
   return flags[(address - BASE) / PAGE_SIZE];
 }
-extern "C" int process_anon_page(u32* pd, u32 address, int populate) {
+extern "C" int process_anon_page(u32* pd, u32 address, int populate, bool write) {
   if (pd != &directory || address < BASE || address >= BASE + 3 * PAGE_SIZE) return S_INVALID;
   u32 i = (address - BASE) / PAGE_SIZE;
-  if (!reserved[i]) return S_INVALID;
+  if (!reserved[i] || (write && reserved[i] == 2)) return S_INVALID;
   if (!populate) return S_OK;
   if (!budget) return S_NOMEM;
   budget--; populated++;
-  flags[i] = PAGE_PRESENT | PAGE_USER | PAGE_WRITE;
+  flags[i] = PAGE_PRESENT | PAGE_USER | (reserved[i] == 1 ? PAGE_WRITE : 0);
   memset(memory + i * PAGE_SIZE, 0, PAGE_SIZE);
   return S_OK;
 }
@@ -93,6 +93,8 @@ int main(void) {
   assert(!populated && !memcmp(out, "old", 4));
   assert(copy_to_user(&directory, BASE + PAGE_SIZE - 2, "abcd", 4) == S_INVALID);
   assert(!populated && memory[PAGE_SIZE - 2] == 0x5a);
+  reserved[1] = 2;
+  assert(copy_to_user(&directory, BASE + PAGE_SIZE - 2, "abcd", 4) == S_INVALID && !populated);
   puts("PASS mm.boundaries.validation-before-allocation");
   reset(); reserved[0] = reserved[1] = reserved[2] = 1; budget = 1;
   assert(copy_to_user(&directory, BASE + PAGE_SIZE - 2, "abcd", 4) == S_NOMEM);

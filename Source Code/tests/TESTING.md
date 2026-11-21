@@ -65,6 +65,8 @@ task 子系统提取按实际接口选测：process 8 项、policy 2 项；Threa
 
 调度/主循环空闲决策变化选 process 8 项、shell-waits 5 项、普通启动 1 项；后台待办查询涉及网络与 RTC 时各加对应 1 项。process 原有启动/抢占用例包含就绪/到期状态自检、实际 idle_halt 的 `sti; hlt; ret` 字节、`probe.snx /schedule` 主动让出/有限睡眠/竞争读重试，以及有界候选和空闲统计检查，不新增固定 ID。`task_schedule_stats` 仅供宿主观察，不是用户 ABI。
 
+整区匿名保护选 mprotect 7、anonymous 7、process 8、reclaim 5、purgeable 5、policy 2、mm-boundaries 10、普通启动 1，共 45 项。mprotect 使用 test-memory.js 的同名模式和 --list 预览。
+
 ## VM 配置基线
 
 就绪/对象等待/定时队列共同迁移时，选 `process,completion-waits,pipe-waits,terminal-waits,shell-waits`，共 42 项；普通启动追加 1 项。真实集合算法另运行 `node 'Source Code/tests/host/test-task-queues.js'`（4 项，先 `--list`）：96 节点 FIFO/撤销、定时堆容量/取消、tick 回绕/同期限次序、移除重插。启动自检覆盖对象代数复用、重复通知及到期优先；`probe.snx /schedule` 覆盖通知后条件失效重试和剩余数据交接。宿主统计布局为 60 字节，新增目标队列遍历/有限唤醒/广播/定时到期计数，不是用户 ABI。

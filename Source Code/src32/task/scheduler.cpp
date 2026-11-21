@@ -61,11 +61,12 @@ namespace task {
       const u32 page = thread.anonFaultPage;
       thread.anonFaultPage = 0;
       u32* pd = current->pd;
-      if (anonPage(pd, page, 0) == UserPageStatus::Ok) {
+      const bool write = (thread.saved.frame.error & 2u) != 0;
+      if (anonPage(pd, page, 0, write) == UserPageStatus::Ok) {
         const u32 mapped = paging_user_flags(pd, page);
-        constexpr u32 writable = PAGE_PRESENT | PAGE_USER | PAGE_WRITE;
-        if ((mapped & writable) == writable) { return true; }
-        const auto status = anonPage(pd, page, 1);
+        const u32 needed = PAGE_PRESENT | PAGE_USER | (write ? PAGE_WRITE : 0);
+        if ((mapped & needed) == needed) { return true; }
+        const auto status = anonPage(pd, page, 1, write);
         if (status == UserPageStatus::Ok) { return true; }
         logAnonOom(status, page);
       }
@@ -134,7 +135,7 @@ namespace task {
       if (f->vector == 14 && (f->error & ~2u) == 4u) {
         u32 address = read_cr2();
         const u32 page = page_floor(address);
-        const auto status = anonPage(current->pd, page, 1);
+        const auto status = anonPage(current->pd, page, 1, (f->error & 2u) != 0);
         if (status == UserPageStatus::Ok) {
           return 1;
         }

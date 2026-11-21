@@ -1,4 +1,34 @@
 {
+  "mprotect": [
+  {
+    "id": "memory.mprotect.cold",
+    "name": "anonymous protection cold"
+  },
+  {
+    "id": "memory.mprotect.hot",
+    "name": "anonymous protection hot"
+  },
+  {
+    "id": "memory.mprotect.restore",
+    "name": "anonymous protection restore"
+  },
+  {
+    "id": "memory.mprotect.abi",
+    "name": "anonymous protection abi"
+  },
+  {
+    "id": "memory.mprotect.io",
+    "name": "anonymous protection io"
+  },
+  {
+    "id": "memory.mprotect.retry-read",
+    "name": "anonymous protection retry-read"
+  },
+  {
+    "id": "memory.mprotect.retry-write",
+    "name": "anonymous protection retry-write"
+  }
+],
   "vma": [
     {"id":"memory.vma.image-rollback","name":"image VMA allocation rollback and relaunch"},
     {"id":"memory.vma.stack-rollback","name":"worker stack VMA allocation rollback and slot reuse"}

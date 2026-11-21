@@ -19,7 +19,7 @@ int uaccess_prepare(u32* pd, u32 address, u32 bytes, UserAccess access) {
     u32 flags = paging_user_flags(pd, page);
     if ((flags & needed) != needed) {
       if (flags & PAGE_PRESENT) return S_INVALID;
-      UACCESS_TRY(process_anon_page(pd, page, 0));
+      UACCESS_TRY(process_anon_page(pd, page, 0, access == UserAccess::WRITE));
       missing = 1;
     }
     if (page == last_page) break;
@@ -30,7 +30,7 @@ int uaccess_prepare(u32* pd, u32 address, u32 bytes, UserAccess access) {
   if (missing) {
     for (u32 page = first;; page += PAGE_SIZE) {
       if (!(paging_user_flags(pd, page) & PAGE_PRESENT))
-        UACCESS_TRY(process_anon_page(pd, page, 1));
+        UACCESS_TRY(process_anon_page(pd, page, 1, access == UserAccess::WRITE));
       if (page == last_page) break;
     }
   }

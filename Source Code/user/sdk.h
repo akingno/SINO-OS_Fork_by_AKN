@@ -285,6 +285,12 @@ void Log(const char *);
 __attribute__((cdecl,noreturn)) void sino_thread_start(int (*entry)(void*), void* argument);
 #ifdef __cplusplus
 }
+namespace sino {
+static inline int mprotect(void* base, u32 bytes, MemoryProtection protection) {
+  return api(SYS_MPROTECT, (u32)base, bytes, (u32)protection);
+}
+}
+
 namespace sino::event {
 inline int create() { return api(SYS_EVENT_CREATE, 0, 0, 0); }
 inline int set(int handle, bool signaled) {

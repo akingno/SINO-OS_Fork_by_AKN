@@ -75,6 +75,79 @@ void waitForDiscard(const void* base) {
   }
 }
 
+using Protection = MemoryProtection;
+volatile u8* faultAddress;
+
+void writeFault() {
+  *faultAddress = 7;
+  require(false, "protected write resumed");
+}
+
+int protectionTest(const char* mode) {
+  volatile u8* page = reserve(1);
+  void* base = (void*)page;
+  if (streq(mode, "mp-retry-write")) {
+    faultAddress = page;
+    require(api(SYS_THREAD, (u32)writeFault, 0, 0) == 1, "start faulting writer");
+    // Stay runnable. The worker's deferred fault queues it behind this thread.
+    for (;;) {
+      const int tmp = AnonMap(1);
+      if (tmp == S_NOMEM) { break; }
+      require(tmp > 0 && AnonUnmap((void*)(u32)tmp) == S_OK, "wait for injected pressure");
+    }
+    require(sino::mprotect(base, PageBytes, Protection::Read) == S_OK, "downgrade before retry");
+    Log("MP DOWNGRADED\n");
+    hold();
+  }
+  if (streq(mode, "mp-abi")) {
+    SystemInfo info;
+    require(QuerySystemInfo(&info) == S_OK && (info.features & FEATURE_MPROTECT) &&
+            sino::mprotect((void*)(page + 1), PageBytes, Protection::Read) == S_INVALID &&
+            sino::mprotect(base, 1, Protection::Read) == S_INVALID &&
+            api(SYS_MPROTECT, (u32)base, PageBytes, 7) == S_INVALID &&
+            sino::mprotect((void*)USER_ARGUMENTS, PageBytes, Protection::ReadWrite) == S_INVALID &&
+            AnonSetPurgeable(base, true) == S_OK &&
+            sino::mprotect(base, PageBytes, Protection::Read) == S_INVALID &&
+            AnonSetPurgeable(base, false) == S_OK, "protection ABI and eligibility");
+  }
+  if (streq(mode, "mp-io")) {
+    volatile u8* tail = reserve(1);
+    PipePair pair;
+    require(tail == page + PageBytes && PipeCreate(16, &pair) == S_OK, "adjacent output fixture");
+    void* cross = (void*)(tail - 1);
+    require(StreamWrite(pair.write, "AB", 2) == 2 &&
+            StreamReadBlocking(pair.read, cross, 2, 100) == 2, "cross-region output");
+    require(AnonUnmap(base) == S_OK && AnonUnmap((void*)tail) == S_OK &&
+            reserve(1) == page && reserve(1) == tail, "fresh lazy prefix and suffix");
+    char data[2];
+    require(sino::mprotect((void*)tail, PageBytes, Protection::Read) == S_OK &&
+            StreamWrite(pair.write, "CD", 2) == 2 &&
+            StreamReadBlocking(pair.read, cross, 2, 100) == S_INVALID &&
+            StreamReadBlocking(pair.read, data, 2, 100) == 2 && data[0] == 'C' && data[1] == 'D',
+            "read-only suffix preserves queued input");
+    return 0;
+  }
+  const bool hot = streq(mode, "mp-hot");
+  if (hot) { *page = 42; }
+  require(sino::mprotect(base, PageBytes, Protection::Read) == S_OK &&
+          AnonSetPurgeable(base, true) == S_INVALID, "protect ordinary region");
+  if (streq(mode, "mp-cold") || hot) {
+    Log("MP EXPECT WRITE FAULT\n");
+    *page = 77;
+    require(false, "protected write succeeded");
+  }
+  require(*page == 0, "lazy read-only page is zero");
+  if (streq(mode, "mp-retry-read")) {
+    Log("MP RETRIED READ\n");
+    *page = 77;
+    require(false, "retried read granted write");
+  }
+  require(sino::mprotect(base, PageBytes, Protection::ReadWrite) == S_OK, "restore write");
+  *page = 37;
+  require(sino::mprotect(base, PageBytes, Protection::Read) == S_OK && *page == 37, "preserve contents");
+  return 0;
+}
+
 int purgeAbi() {
   SystemInfo info;
   require(QuerySystemInfo(&info) == S_OK && (info.features & FEATURE_PURGEABLE), "purgeable feature bit");
@@ -185,6 +258,7 @@ int main() {
   char* argv[2];
   if (!*mode && CliArguments(&cli, argv, 2) == 1) { mode = argv[0]; }
 
+  if (mode[0] == 'm' && mode[1] == 'p' && mode[2] == '-') { return protectionTest(mode); }
   if (streq(mode, "purge-abi")) { return purgeAbi(); }
   if (streq(mode, "purge-cache")) { return purgeCache(); }
   if (streq(mode, "purge-address-order")) { purgeAddressOrder(); }

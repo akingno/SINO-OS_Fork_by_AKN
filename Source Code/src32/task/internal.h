@@ -151,7 +151,7 @@ int alive(u32 a0);
 int kill(u32 a0, i32 a1);
 int interrupt(Frame * a0);
 enum class UserPageStatus : u8 { Ok, Invalid, DataNoMemory, TableNoMemory, ReclaimDataNoMemory };
-UserPageStatus anonPage(u32* pd, u32 page, int populate);
+UserPageStatus anonPage(u32* pd, u32 page, int populate, bool write);
 u32 userLimit(const u32* a0, u32 a1);
 void tests();
 }

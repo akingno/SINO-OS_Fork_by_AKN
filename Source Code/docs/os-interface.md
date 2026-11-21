@@ -50,7 +50,7 @@ THREAD_WAIT=16384.
 `FEATURE_RECLAIM=131072` advertises per-process reclaim priority queries and updates.
 `FEATURE_PROCESS_GROUP=262144` advertises reclaim groups and the self-query.
 `FEATURE_PURGEABLE=524288` advertises discardable anonymous regions and pins.
-The current feature mask is 1048575. Clients detect features by testing individual bits.
+The current feature mask is 2097151. Clients detect features by testing individual bits.
 These indicate implemented mechanisms, not grants to use every mechanism.
 Unknown feature bits must not be interpreted as authority. Unknown syscalls
 return S_INVALID. Add future syscall IDs before `SYS_CALL_END`, currently `0x15b`.
@@ -248,6 +248,18 @@ unmap or exit. If first touch still cannot be satisfied after any eligible
 reclaim retry, the process exits with `PROCESS_FAULTED`, vector 14. Protection violations
 and references outside live regions follow the usual fault path. Program images,
 argument pages and thread stacks still receive backing at creation.
+
+### Anonymous mapping protection
+
+`FEATURE_MPROTECT=1048576` advertises `SYS_MPROTECT=0x15b` for both policies.
+EBX is the exact allocation base, ECX the full page-rounded size and EDX either
+1 (read) or 3 (read/write). The SDK exposes `sino::mprotect` and `MemoryProtection`.
+Success returns S_OK, including an unchanged permission. Invalid arguments,
+non-anonymous mappings, discardable, pinned or unacknowledged purged regions
+return S_INVALID. Marking a read-only region discardable also returns S_INVALID.
+Resident and lazy pages follow the same write permission. Protection preserves
+data and residency. A prohibited user write faults with vector 14. Syscall
+buffer preparation rejects prohibited output before consuming input.
 
 ### Discardable anonymous memory
 

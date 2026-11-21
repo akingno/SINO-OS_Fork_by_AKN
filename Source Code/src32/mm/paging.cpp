@@ -354,6 +354,23 @@ u32 paging_user_flags(const u32* pd, u32 va) {
 }
 
 // 统计一个进程当前有多少个有效的用户虚拟页映射
+void paging_user_protect(u32* pd, u32 base, u32 end, bool write) {
+  if (!pd || base < USER_DYNAMIC_BASE || end > USER_DYNAMIC_END || base >= end ||
+      !page_aligned(base | end)) { panic("Invalid protection range", base, end); }
+  const bool active = paging_is_active(pd);
+  for (u32 va = base; va < end; va += PAGE_SIZE) {
+    u32* table = user_table(pd, va);
+    if (!table) { continue; }
+    u32& entry = table[pte_index(va)];
+    if (!(entry & PAGE_PRESENT)) { continue; }
+    const u32 updated = write ? entry | PAGE_WRITE : entry & ~PAGE_WRITE;
+    if (updated != entry) {
+      entry = updated;
+      if (active) { invlpg(va); }
+    }
+  }
+}
+
 u32 paging_user_count(const u32* pd) {
   u32 count = 0;
   for (u32 pde = USER_FIRST_PDE; pde < USER_END_PDE; pde++) {

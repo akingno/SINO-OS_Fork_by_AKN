@@ -552,9 +552,37 @@ async function vmaContracts(source) {
             probe('run -s /boot/memv2.snx oom-vma-stack', /MM PROBE injected stage=0x00000005[\s\S]*VMA STACK RETRY PASS/i));
     });
 }
-const suites = {images:imageContracts, anonymous:anonymousContracts, reclaim:reclaimContracts, purgeable:purgeableContracts, vma:vmaContracts};
+async function protectionContracts(source) {
+    await boot(source, 'mprotect', vm.memoryMiB, async ({channel, check, guestLog, command, baseline, free, until}) => {
+        const session = new RunSession(channel);
+        await session.hello();
+        for (const item of memoryCases.mprotect) {
+            const modeName = item.id.split('.').pop();
+            await check(item.id, [item.name], async () => {
+                const offset = guestLog().length;
+                const result = await session.run('/boot/reclaim.snx', ['mp-' + modeName]);
+                const log = guestLog().slice(offset);
+                assert.doesNotMatch(log, /SELFTEST FAIL|KERNEL PANIC/);
+                if (['cold', 'hot', 'retry-read', 'retry-write'].includes(modeName)) {
+                    assert.equal(result.reason, 2);
+                    assert.equal(result.vector, 14);
+                    if (modeName === 'retry-write') {
+                        assert.match(log, /injected stage=0x00000004[\s\S]*MP DOWNGRADED[\s\S]*USER fault contained/);
+                    } else if (modeName === 'retry-read') {
+                        assert.match(log, /injected stage=0x00000004[\s\S]*MP RETRIED READ/);
+                    } else { assert.match(log, /MP EXPECT WRITE FAULT/); }
+                } else {
+                    assert.equal(result.reason, 1);
+                    assert.equal(result.code, 0);
+                }
+                await until(async () => free(await command('mem')) === baseline);
+            });
+        }
+    });
+}
+const suites = {mprotect:protectionContracts, images:imageContracts, anonymous:anonymousContracts, reclaim:reclaimContracts, purgeable:purgeableContracts, vma:vmaContracts};
 if (!Object.hasOwn(suites, mode) || process.argv.length !== 4) {
-    console.error('Usage: node test-memory.js images|anonymous|reclaim|purgeable|vma <ShellBridge build directory>|--list');
+    console.error('Usage: node test-memory.js images|anonymous|reclaim|purgeable|vma|mprotect <ShellBridge build directory>|--list');
     process.exitCode = 2;
 } else if (source === '--list') {
     console.log(mode + ': ' + memoryCases[mode].length + ' cases');

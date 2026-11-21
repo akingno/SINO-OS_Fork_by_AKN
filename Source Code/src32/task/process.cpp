@@ -265,6 +265,20 @@ namespace task {
   /* 【简化实现：解除映射】只接受区域起点并释放整区，不能解除中间或部分范围。
   * 替换方向：在统一虚拟区间管理中拆分/缩短区域，再回收实际存在的页；
   * 同时处理等待中的用户缓冲区失效及页表、TLB 的生命周期。 */
+  static int protect_anon(Process* p, u32 base, u32 bytes, u32 protection) {
+    VmaNode* region = anon_region(p, base);
+    const bool writable = protection == (u32)MemoryProtection::ReadWrite;
+    if ((!writable && protection != (u32)MemoryProtection::Read) || !region ||
+        bytes != region->pageCount * PAGE_SIZE || region->lock_count ||
+        region->hasFlag(VmaNode::Flag::Purgeable) || region->hasFlag(VmaNode::Flag::Purged)) {
+      return S_INVALID;
+    }
+    if (region->hasFlag(VmaNode::Flag::Write) != writable) {
+      paging_user_protect(p->pd, base, base + bytes, writable);
+      region->setFlag(VmaNode::Flag::Write, writable);
+    }
+    return S_OK;
+  }
   static int anon_unmap(Process* p, u32 base) {
     VmaNode* region = anon_region(p, base);
     if (!region) { return S_INVALID; }
@@ -288,6 +302,7 @@ namespace task {
         region->setFlag(VmaNode::Flag::Purgeable, false);
         return S_OK;
       case AnonPurgeableOp::Mark:
+        if (!region->hasFlag(VmaNode::Flag::Write)) { return S_INVALID; }
         if (region->hasFlag(VmaNode::Flag::Purgeable) && region->hasFlag(VmaNode::Flag::Purged)) {
           if (!region->lock_count) { return S_BUSY; }
           // A locked owner may acknowledge that it rebuilt the contents.
@@ -316,13 +331,13 @@ namespace task {
     return S_OK;
   }
 
-  UserPageStatus anonPage(u32* pd, u32 page, int populate) {
+  UserPageStatus anonPage(u32* pd, u32 page, int populate, bool write) {
     if (!current || current->pd != pd || !page_aligned(page) ||
       page < USER_DYNAMIC_BASE || page >= USER_DYNAMIC_END) {
       return UserPageStatus::Invalid;
     }
     VmaNode* region = mm::vma_find(current->vma_root, page / PAGE_SIZE);
-    if (!region || region->type != VmaType::Anonymous) {
+    if (!region || region->type != VmaType::Anonymous || (write && !region->hasFlag(VmaNode::Flag::Write))) {
       return UserPageStatus::Invalid;
     }
     if (!populate) {
@@ -336,7 +351,7 @@ namespace task {
       return UserPageStatus::DataNoMemory;
     }
 #endif
-    const auto status = alloc_user_page(current, page, 1, true).status;
+    const auto status = alloc_user_page(current, page, region->hasFlag(VmaNode::Flag::Write), true).status;
     if (status == UserPageStatus::Ok) {
       current->pages_used++;
       region->resident++;
@@ -667,10 +682,10 @@ namespace task {
         n == vfs_lookup("/boot/reclaim.snx")) {
       const bool copy = streq(probe_mode, "copy");
       const bool repeat = streq(probe_mode, "fault");
-      if (copy || streq(probe_mode, "protect")) {
+      if (copy || streq(probe_mode, "protect") || streq(probe_mode, "mp-retry-read")) {
         p->reclaim_priority = (i16)ReclaimClass::Service;
       }
-      if (copy || repeat || streq(probe_mode, "retry")) {
+      if (copy || repeat || streq(probe_mode, "retry") || streq(probe_mode, "mp-retry-read") || streq(probe_mode, "mp-retry-write")) {
         mmtest::arm(p->pd, mmtest::Stage::ReclaimData, 0, repeat);
       } else if (streq(probe_mode, "table-copy") || streq(probe_mode, "table-fault")) {
         mmtest::arm(p->pd, mmtest::Stage::Table, 0);
@@ -1331,7 +1346,7 @@ namespace task {
     case SYS_FILE_STAGE: case SYS_FILE_PUBLISH: case SYS_FILE_COMMIT:
     case SYS_PIPE_CREATE: case SYS_STREAM_READY: case SYS_PIPE_LIMITS:
     case SYS_TERMINAL:
-    case SYS_ANON_MAP: case SYS_ANON_UNMAP:
+    case SYS_ANON_MAP: case SYS_ANON_UNMAP: case SYS_MPROTECT:
     case SYS_ANON_PURGEABLE: case SYS_ANON_LOCK: case SYS_ANON_UNLOCK:
       return 1;
     default: return 0;
@@ -1373,6 +1388,8 @@ namespace task {
         console_present(frame->cells, frame->cursor);
         return S_OK;
       }
+    case SYS_MPROTECT:
+      return protect_anon(current, a, b, c);
     case SYS_ANON_MAP:
       return b || c ? S_INVALID : anon_map(current, a);
     case SYS_ANON_UNMAP:
