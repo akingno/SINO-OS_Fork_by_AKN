@@ -12,6 +12,7 @@ async function run(api) {
     await check('boot and kernel object contracts', async () => {
         assert.match(guestLog(), /PAGE allocator self-check passed/);
         assert.match(guestLog(), /SLAB allocator self-check passed/);
+        assert.match(guestLog(), /KMALLOC allocator self-check passed/);
         assert.match(guestLog(), /SYNC IRQ guard self-check passed/);
         assert.match(guestLog(), /TASK kernel stack self-check passed \(32 KiB usable \+ 4 KiB guard\)/);
         assert.match(guestLog(), /TASK scheduler state self-check passed/);

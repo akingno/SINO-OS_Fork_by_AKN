@@ -87,11 +87,19 @@ bool grow(SlabCache& cache) {
 }
 
 SlabCache* slab_cache_create(u32 objectSize) {
-  if (objectSize < MinSize || objectSize > MaxSize || (objectSize & (objectSize - 1))) {
+  if (objectSize < MinSize || (objectSize & (objectSize - 1))) {
     return nullptr;
   }
-  u32 index = 0;
-  for (u32 size = MinSize; size < objectSize; size <<= 1) {
+  return slab_cache_for_size(objectSize);
+}
+
+SlabCache* slab_cache_for_size(u32 size) {
+  if (!size || size > MaxSize) {
+    return nullptr;
+  }
+  u32 index = 0, objectSize = MinSize;
+  while (objectSize < size) {
+    objectSize <<= 1;
     ++index;
   }
   SlabCache& cache = caches[index];

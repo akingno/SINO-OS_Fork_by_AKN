@@ -27,6 +27,7 @@ extern u32 free_pages, nr_pages;
 
 namespace mm {
 enum class PageState : u8 { Free, Used, Reserved, Kernel, Guarded, Heap };
+inline constexpr u32 MaxPageRun = 128;
 inline constexpr u32 SlabCacheCount = 8;
 
 struct PageFrame {
@@ -50,6 +51,7 @@ struct PageFrame {
     hi = 0;
   }
   void setFreeHead(u32 order) { lo = HeadBit | (order << 23); }
+  void setHeapHead(u32 order) { lo |= HeadBit | (order << 23); }
   void setSlab(u32 cache) {
     lo |= SlabBit;
     hi = (hi & PfnMask) | (cache << 20);
@@ -70,6 +72,10 @@ static_assert(sizeof(PageFrame) == 8 && PageFrame::PfnMask == 0xfffffu,
 void* slab_page_alloc(u32 cache);
 int slab_page_cache(const void* address);  // -1 unless contained in a live slab.
 bool slab_page_free(void* base, u32 cache);
+
+// Heap allocations own an entire buddy block. Only its original base frees it.
+void* heap_page_alloc(u32 pages);
+bool heap_page_free(void* base);
 }
 
 enum class PageWatermark : u8 { Normal, Low, Critical };

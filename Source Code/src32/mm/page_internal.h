@@ -20,6 +20,7 @@ struct BuddyZone {
 
   void addFreeRange(u32 first, u32 last);
   u32 allocate(u32 count, PageState state);
+  u32 allocateHeap(u32 order);
   bool release(u32 first, u32 count, PageState state);
   u32 check() const;
 
@@ -28,6 +29,7 @@ private:
   void unlink(u32 pfn, u32 order);
   void merge(u32 pfn, u32 order);
   void addBlocks(u32 first, u32 last);
+  void markAllocated(u32 first, u32 count, PageState state);
   u32 takeAligned(u32 order);
   u32 findRun(u32 count) const;
   void takeRun(u32 first, u32 last);
