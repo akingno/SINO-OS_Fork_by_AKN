@@ -42,7 +42,7 @@ node 'Source Code/tests/host/test-boot.js' 'Build Output/dev/runs/<本轮构建�
 - **环境变量**：`SINO_TOOLCHAIN`（GCC bin 目录）、`SINO_QEMU_DIR`（QEMU 目录）、`SINO_PYTHON`（Python 路径）
 - **客户机**：32 位 x86，4096 MiB RAM、单核，标准 VGA 文字模式，PS/2，BIOS/MBR，ATA IDE
 
-构建检查内核不超过约 160 KB、BSS 在保留页表之前、用户文件不超过 64 KiB、SNX v1 映像/数据不超过 192 KiB。
+构建检查内核不超过约 160 KB、BSS 在保留页表之前、用户文件不超过 64 KiB、内置 SNX v2 的内存映像不超过 16 MiB。
 
 ## Shell 命令通道测试
 

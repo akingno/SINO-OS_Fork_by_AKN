@@ -10,6 +10,28 @@ async function run(api) {
         await gone(pid);
         assert.equal(await value('process_faults'), faults + 3);
         assert.deepEqual(await resources(), baseline);
+
+        const holders = [];
+        try {
+            for (let i = 0; i < 2; i++) {
+                const holderOffset = guestLog().length;
+                holders.push(await launch('comptest', 'hold-completion-records'));
+                await until(() => guestLog().slice(holderOffset).includes('COMPLETION HOLDER READY'),
+                    'completion record holder');
+            }
+            const limitOffset = guestLog().length;
+            const checker = await launch('comptest', 'completion-pool-limit');
+            await until(() => guestLog().slice(limitOffset).includes('COMPLETION POOL LIMIT PASS'),
+                'global completion pool exhaustion and reuse');
+            await gone(checker);
+        } finally {
+            for (const holder of holders) {
+                await command('kill ' + holder);
+                await gone(holder);
+            }
+        }
+        assert.equal(await value('process_faults'), faults + 3);
+        assert.deepEqual(await resources(), baseline);
     });
     await check('external termination remains distinct from cancellation', async () => {
         const offset = guestLog().length;

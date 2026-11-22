@@ -1,4 +1,5 @@
 #include "stream.h"
+#include "handle_fixture.h"
 typedef struct {u32 op,handle,buffer,bytes,value,extra;} Request;
 static int call(u32 op,u32 h,const void* b,u32 n,u32 v,u32 x){Request r={op,h,(u32)b,n,v,x};return api(0x14a,(u32)&r,24,0);}
 static void check(int ok,const char* why){if(!ok){Log("TERMINAL SELFTEST FAIL: ");Log(why);Log("\n");Exit(1);}}
@@ -79,15 +80,16 @@ static int blocking_read(int term, void* out, u32 length, u32 timeout) {
 }
 static TerminalRequest wait_request;
 static volatile int wait_entered, wait_done, wait_status;
-static void read_worker(void) {
+static int read_worker(void*) {
   wait_entered = 1;
   wait_status = api(SYS_TERMINAL, (u32)&wait_request, sizeof(wait_request), 0);
   wait_done = 1;
-  api(SYS_THREAD_EXIT, 0, 0, 0);
+  return S_OK;
 }
 static void start_read_worker(int term, void* out) {
   wait_request = (TerminalRequest){TERM_READ, (u32)term, (u32)out, 4, TERM_READ_BLOCK, 0};
-  check(api(SYS_THREAD, (u32)read_worker, 0, 0) > 0, "start terminal reader");
+  check(sino::thread::create(read_worker, nullptr, ThreadCreateFlags::Detached) > 0,
+        "start terminal reader");
   u32 start = StreamTicks();
   while (!wait_entered && StreamTicks() - start < 30) Yield(1);
   Yield(4);
@@ -115,8 +117,8 @@ static void blocking_child(int term, const char* mode) {
     } else if (streq(mode, "local-close")) {
       int duplicate = api(SYS_DUP, term, 1, 0);
       check(duplicate > 0 && Close(term) == S_OK, "close exact client handle");
-      int replacement = api(SYS_DUP, duplicate, 1, 0);
-      check(replacement > 0 && (replacement & 255) == (term & 255) &&
+      int replacement = handle_fixture::duplicateIntoClosedSlot(duplicate, 1, (u32)term);
+      check(replacement > 0 && replacement != term &&
             read_worker_result() == S_BADHANDLE && Close(replacement) == S_OK,
             "reused client slot does not redirect waiter");
       term = duplicate;

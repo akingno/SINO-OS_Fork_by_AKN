@@ -1,5 +1,6 @@
 /* Wire-level tests also build before Stage B is implemented. */
 #include "sdk.h"
+#include "handle_fixture.h"
 #define TRACK 0x131u
 #define RESULT 0x132u
 #define CANCEL 0x133u
@@ -7,6 +8,8 @@ typedef struct { u32 size,version,pid,reason; i32 code; u32 vector,r0,r1; } Resu
 static Result output;
 static int held[24];
 static char long_args[257];
+static constexpr u32 LocalHandleLimit = sizeof(held) / sizeof(held[0]);
+static constexpr char ProcessQuotaGate[] = "/home/user/.comptest-process-quota";
 static void require(int ok,const char *why) {
   if(!ok){Log("COMPLETION SELFTEST FAIL: ");Log(why);Log("\n");Exit(1);}
 }
@@ -28,6 +31,78 @@ static void normal(const char *arg,u32 reason,int code,u32 vector) {
   wait_result(h,reason,code,vector); require(Close(h)==0,"close completion");
   require(poll(h,&output)==S_BADHANDLE,"stale completion rejected");
 }
+static void hold_records(u32 count) {
+  for (u32 i = 0; i < count; i++) {
+    held[i] = spawn("exit");
+    require(held[i] > 0, "reserve completion record");
+    wait_result(held[i], PROCESS_EXITED, 42, 0);
+  }
+}
+static int completion_pool_limit() {
+  constexpr u32 remaining = PROCESS_COMPLETIONS - 2 * LocalHandleLimit;
+  static_assert(remaining > 1 && remaining < LocalHandleLimit,
+                "final observer has space beyond the global record limit");
+  hold_records(remaining);
+  require(spawn("exit") == S_LIMIT, "completed record pool exhausted");
+  const int old = held[0];
+  require(Close(old) == S_OK, "release a completed record");
+  held[0] = spawn("negative");
+  require(held[0] > 0 && held[0] != old && poll(old, &output) == S_BADHANDLE,
+          "released record is reusable and stale observer rejected");
+  wait_result(held[0], PROCESS_EXITED, -14, 0);
+  wait_result(held[1], PROCESS_EXITED, 42, 0);
+  for (u32 i = 0; i < remaining; i++) {
+    require(Close(held[i]) == S_OK, "release observer");
+  }
+  Log("COMPLETION POOL LIMIT PASS\n");
+  return 0;
+}
+static void fill_handle_table() {
+  for (int& handle : held) {
+    handle = api(SYS_EVENT_CREATE, 0, 0, 0);
+    require(handle > 0, "fill handle table");
+  }
+}
+static void close_handle_table() {
+  for (int handle : held) {
+    require(Close(handle) == S_OK, "release event handle");
+  }
+}
+static int hold_process_slot() {
+  const u32 begin = (u32)api(SYS_TICKS, 0, 0, 0);
+  char byte;
+  int status;
+  while ((status = Read(ProcessQuotaGate, &byte, 1)) == 1 &&
+         (u32)api(SYS_TICKS, 0, 0, 0) - begin < 1000) {
+    Yield(5);
+  }
+  require(status == S_NOTFOUND, "process quota gate removed");
+  return 0;
+}
+static void check_process_limit() {
+  SystemInfo system;
+  ProcessInfo active[2];
+  require(QuerySystemInfo(&system) == S_OK && system.max_processes > 1 &&
+          api(SYS_PROCESSES, 0, (u32)active, 2) == 1, "process quota baseline");
+  require(Write(ProcessQuotaGate, "x", 1) == S_OK, "create process quota gate");
+  // Untracked children occupy process slots without consuming completion records.
+  u32 activeCount = 1;
+  while (activeCount < system.max_processes &&
+         SpawnArgs("/boot/comptest.snx", "hold-process-slot") > 0) {
+    activeCount++;
+  }
+  const int result = activeCount == system.max_processes ? spawn("exit") : S_INVALID;
+  require(Remove(ProcessQuotaGate, 0) == S_OK, "release process quota gate");
+  const u32 begin = (u32)api(SYS_TICKS, 0, 0, 0);
+  int remaining;
+  while ((remaining = api(SYS_PROCESSES, 0, (u32)active, 2)) > 1 &&
+         (u32)api(SYS_TICKS, 0, 0, 0) - begin < 300) {
+    Yield(1);
+  }
+  require(remaining == 1 && result == S_LIMIT, "process slot rollback");
+  fill_handle_table();
+  close_handle_table();
+}
 #ifdef RESULT_BLOCK_FLAG
 static int blocking_result(u32 call, int handle, void* out, u32 timeout) {
   __asm__ volatile("int $0x80" : "+a"(call)
@@ -42,18 +117,18 @@ typedef struct {
   volatile int entered, done, status;
 } WaitProbe;
 static WaitProbe probes[2];
-static void completion_worker(WaitProbe* probe) {
+static int completion_worker(void* argument) {
+  auto* probe = static_cast<WaitProbe*>(argument);
   probe->entered = 1;
   probe->status = blocking_result(SYS_PROCESS_RESULT, probe->handle, probe->out, 0);
   probe->done = 1;
-  api(SYS_THREAD_EXIT, 0, 0, 0);
+  return S_OK;
 }
-static void first_waiter(void) { completion_worker(&probes[0]); }
-static void second_waiter(void) { completion_worker(&probes[1]); }
 static void begin_wait(int index, int handle, ProcessCompletion* out) {
   WaitProbe* probe = &probes[index];
   *probe = (WaitProbe){.handle=handle, .out=out};
-  require(api(SYS_THREAD, (u32)(index ? second_waiter : first_waiter), 0, 0) > 0, "start completion waiter");
+  require(sino::thread::create(completion_worker, probe, ThreadCreateFlags::Detached) > 0,
+          "start completion waiter");
   u32 start = ticks();
   while (!probe->entered && ticks() - start < 30) Yield(1);
   Yield(4);
@@ -136,8 +211,8 @@ static void blocking_case(const char* mode) {
     require(observer > 0, "retain alternate observer");
     begin_wait(0, handle, &reply.result);
     require(Close(handle) == 0, "close exact waited handle");
-    int replacement = api(SYS_DUP, observer, PROCESS_WAIT, 0);
-    require(replacement > 0 && (replacement & 255) == (handle & 255), "reuse closed handle slot");
+    int replacement = handle_fixture::duplicateIntoClosedSlot(observer, PROCESS_WAIT, (u32)handle);
+    require(replacement > 0 && replacement != handle, "reuse closed handle slot");
     finish_wait(0, S_BADHANDLE);
     require(reply.result.size == 0xccccccccu && Close(replacement) == 0, "closed wait leaves output untouched");
     handle = observer;
@@ -176,6 +251,13 @@ int main(void) {
     return 0;
   }
 #endif
+  if (streq(arg, "hold-completion-records")) {
+    hold_records(LocalHandleLimit);
+    Log("COMPLETION HOLDER READY\n");
+    for (;;) { Yield(100); }
+  }
+  if (streq(arg, "completion-pool-limit")) { return completion_pool_limit(); }
+  if (streq(arg, "hold-process-slot")) { return hold_process_slot(); }
   if(!streq(arg,"suite") && !streq(arg,"orphan") && !streq(arg,"abandon") &&
      !streq(arg,"observer-fault") && !streq(arg,"external")) {
     StartInfo info;
@@ -234,15 +316,9 @@ int main(void) {
   int e=api(SYS_EVENT_CREATE,0,0,0);
   require(poll(e,&output)==S_BADHANDLE && api(CANCEL,e,0,0)==S_BADHANDLE,"wrong object type");
   Close(e);
-  for(int i=0;i<16;i++){held[i]=spawn("exit");require(held[i]>0,"reserve completion record");wait_result(held[i],1,42,0);}
-  require(spawn("exit")==S_LIMIT,"completed record limit");
-  int old=held[0];Close(old);h=spawn("negative");require(h>0 && h!=old,"slot reuse gets new handle");
-  require(poll(old,&output)==S_BADHANDLE,"old cookie cannot observe new task");
-  wait_result(held[1],1,42,0);wait_result(h,1,-14,0);Close(h);
-  for(int i=1;i<16;i++) Close(held[i]);
-  for(int i=0;i<24;i++){held[i]=api(SYS_EVENT_CREATE,0,0,0);require(held[i]>0,"fill handle table");}
+  fill_handle_table();
   require(spawn("exit")==S_LIMIT,"launch handle reservation rollback");
-  for(int i=0;i<24;i++)Close(held[i]);
+  close_handle_table();
   require(Write("/home/user/completion-bad.snx","bad",3)==0,"invalid image fixture");
   for(int i=0;i<40;i++){
     require(api(TRACK,(u32)"/home/user/completion-bad.snx",0,0)==S_INVALID,"bad image rollback");
@@ -252,9 +328,7 @@ int main(void) {
   for(int i=0;i<256;i++)long_args[i]='x';long_args[256]=0;
   require(api(TRACK,(u32)"/boot/comptest.snx",(u32)long_args,0)==S_INVALID &&
           api(TRACK,(u32)"/boot/comptest.snx",0,1)==S_INVALID,"argument and flags validation");
-  for(int i=0;i<7;i++){held[i]=spawn("spin");require(held[i]>0,"fill process slots");}
-  require(spawn("exit")==S_LIMIT,"process slot rollback");
-  for(int i=0;i<7;i++){require(api(CANCEL,held[i],0,0)==0,"cancel full table child");wait_result(held[i],3,0,0);Close(held[i]);}
+  check_process_limit();
   normal("exit",1,42,0);
   h=SpawnTracked("/boot/comptest.snx","negative");require(h>0,"SDK tracked spawn");
   wait_result(h,1,-14,0);ProcessCompletion typed;

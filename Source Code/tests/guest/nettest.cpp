@@ -32,7 +32,7 @@ static int accepted(int fd) {
     Yield(1);
   return r;
 }
-static void http_server(void) {
+static int http_server(void*) {
   int server = socket(NET_TCP);
   check(server > 0 && bind(server, 8080) == 0 && listen(server) == 0,
         "HTTP listener");
@@ -50,11 +50,9 @@ static void http_server(void) {
   Close(peer);
   Close(server);
   http_done = 1;
-  api(SYS_THREAD_EXIT, 0, 0, 0);
-  for (;;) {
-  }
+  return S_OK;
 }
-static void dns_server(void) {
+static int dns_server(void*) {
   int fd = socket(NET_UDP);
   check(fd > 0 && bind(fd, 53) == 0, "DNS listener");
   u8 packet[512];
@@ -75,9 +73,7 @@ static void dns_server(void) {
   check(sendto(fd, packet, (u32)n + 16, &peer) == n + 16, "DNS reply");
   Close(fd);
   dns_done = 1;
-  api(SYS_THREAD_EXIT, 0, 0, 0);
-  for (;;) {
-  }
+  return S_OK;
 }
 int main(void) {
   Log("NETWORK USER TEST BEGIN\n");
@@ -120,7 +116,8 @@ int main(void) {
   Close(b);
   Close(server);
   Log("NETWORK TCP HANDSHAKE/ECHO/FIN PASS\n");
-  check(api(SYS_THREAD, (u32)dns_server, 0, 0) > 0, "DNS thread");
+  check(sino::thread::create(dns_server, nullptr, ThreadCreateFlags::Detached) > 0,
+        "DNS thread");
   Yield(2);
   u32 ip = 0;
   check(DnsResolve("sino.test", &ip) == 0 && ip == NET_LOOPBACK,
@@ -128,7 +125,8 @@ int main(void) {
   while (!dns_done)
     Yield(1);
   Log("NETWORK DNS LOCAL QUERY PASS\n");
-  check(api(SYS_THREAD, (u32)http_server, 0, 0) > 0, "HTTP thread");
+  check(sino::thread::create(http_server, nullptr, ThreadCreateFlags::Detached) > 0,
+        "HTTP thread");
   Yield(2);
   r = HttpGet(8080, "/", response, sizeof(response));
   check(r > 0 && response[0] == 'H' && response[9] == '2', "HTTP GET 200");

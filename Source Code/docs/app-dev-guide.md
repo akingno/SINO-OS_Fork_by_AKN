@@ -11,10 +11,10 @@
 ## 构建流程
 
 1. 在 `user/` 下编写应用源码
-2. 在 `tools/build-user.js` 中添加构建元组
+2. 在 `tools/build-user.js` 中添加 ABI 为 2 的构建元组
 3. `dev.ps1 -BuildOnly` 构建内核和所有用户应用
 
-构建检查：每个必需的链接符号、文件不超过 64 KiB、SNX v1 映像/数据不超过 192 KiB。SNX v2 上限 16 MiB。
+构建检查包括必需的链接符号、64 KiB 文件上限和 16 MiB 的 SNX v2 内存映像上限。
 
 ## SNX 格式
 

@@ -1,5 +1,6 @@
 /* Fixed wire requests build on Stage D too, so missing Stage E must fail. */
 #include "sdk.h"
+#include "handle_fixture.h"
 #ifdef FEATURE_PIPES
 #include "stream.h"
 #endif
@@ -73,19 +74,19 @@ typedef struct {
   volatile u32 elapsed;
 } WaitProbe;
 static WaitProbe probes[2];
-static void pipe_wait_worker(WaitProbe* probe) {
+static int pipe_wait_worker(void* argument) {
+  auto* probe = static_cast<WaitProbe*>(argument);
   u32 start = StreamTicks();
   probe->started = 1;
   probe->result = blocking_transfer(probe->reading, probe->handle, probe->buffer, 1, probe->timeout);
   probe->elapsed = StreamTicks() - start;
   probe->done = 1;
-  api(SYS_THREAD_EXIT, 0, 0, 0);
+  return S_OK;
 }
-static void first_waiter(void) { pipe_wait_worker(&probes[0]); }
-static void second_waiter(void) { pipe_wait_worker(&probes[1]); }
 static void begin_wait(int i, int reading, u32 handle, u8* buffer, u32 timeout) {
   probes[i] = (WaitProbe){.reading=reading, .handle=handle, .timeout=timeout, .buffer=buffer};
-  require(api(SYS_THREAD, (u32)(i ? second_waiter : first_waiter), 0, 0) > 0, "start pipe waiter");
+  require(sino::thread::create(pipe_wait_worker, &probes[i], ThreadCreateFlags::Detached) > 0,
+          "start pipe waiter");
   u32 start = StreamTicks();
   while (!probes[i].started && StreamTicks() - start < 30) Yield(1);
   Yield(4);
@@ -141,8 +142,8 @@ static int blocking_case(const char* mode) {
     begin_wait(0, 1, pair.read, output, 0);
     int duplicate = api(SYS_DUP, pair.read, 1, 0);
     require(duplicate > 0 && Close((int)pair.read) == 0, "close exact waited handle with duplicate alive");
-    int replacement = api(SYS_DUP, (u32)duplicate, 1, 0);
-    require(replacement > 0 && (replacement & 255) == (int)(pair.read & 255) &&
+    int replacement = handle_fixture::duplicateIntoClosedSlot(duplicate, 1, pair.read);
+    require(replacement > 0 && (u32)replacement != pair.read &&
             finish_wait(0) == S_BADHANDLE && Close(replacement) == 0, "slot reuse cannot redirect wait");
     pair.read = (u32)duplicate;
   } else if (streq(mode, "unmap")) {
