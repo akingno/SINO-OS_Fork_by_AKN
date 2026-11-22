@@ -95,9 +95,9 @@ Shell 宿主测试参数：`-ExpectedExitCode 1` 断言预期失败，`-TimeoutS
 | 内核通用堆 | src32/mm/kmalloc.h、src32/mm/kmalloc.cpp、src32/mm/page.cpp:heap_page_alloc / heap_page_free | 普通启动与 process 核对大小类、清零、多页精确兜底、释放及页归属，基线见 TESTING.md |
 | 用户页表、权限和线程栈 | src32/mm/paging.cpp、src32/mm/uaccess.cpp:uaccess_prepare、src32/task/process.cpp:launch_policy / alloc_user_stack | ShellBridge 中 `run -s /boot/poltest.snx paging-a/b` |
 | 多用户页表与动态地址窗口 | src32/mm/paging.cpp:paging_user_map / paging_user_find_gap | ShellBridge 中 `run -s /boot/poltest.snx paging-c` 系列 |
-| 匿名内存与 SDK 堆 | src32/task/process.cpp:anon_map / anon_unmap / protect_anon / anon_unmap_range、user/runtime.cpp | ShellBridge 中 `run -s /boot/fstest.snx anon-*` 系列；范围改权与部分解除映射按 TESTING.md 选 e1 / e2 |
-| 用户态 slab 分配器 | user/heap.h | `node 'Source Code/tests/development/user/heap/test-user-heap.js'`；20 项，先 `--list` 预览 |
-| SDK 堆接入与线程同步 | user/runtime.cpp、user/sdk.h | `node 'Source Code/tests/host/test-memory.js' heap '<ShellBridge 构建目录>'`；7 项，先 `heap --list` 预览；接入选测组合见 TESTING.md |
+| 匿名内存 | src32/task/process.cpp:anon_map / anon_unmap / protect_anon / anon_unmap_range | ShellBridge 中 `run -s /boot/fstest.snx anon-*` 系列；范围改权与部分解除映射按 TESTING.md 选 e1 / e2 |
+| 用户态 slab 分配器 | user/heap.h | `node 'Source Code/tests/host/test-user-heap.js'`；20 项，先 `--list` 预览 |
+| SDK 堆与线程同步 | user/runtime.cpp、user/sdk.h | `node 'Source Code/tests/host/test-memory.js' heap '<ShellBridge 构建目录>'`；7 项，先 `heap --list` 预览；选测组合见 TESTING.md |
 | 内存范围与用户复制边界 | src32/mm/e820.h、addr.h、uaccess.cpp；docs/mm-access.md | `node 'Source Code/tests/host/test-mm-boundaries.js'`；10 项，`--list` 预览；系统验收按 images / anonymous 选测 |
 | 用户缓冲区校验 | src32/mm/uaccess.cpp、src32/task/process.cpp | ShellBridge 中 fstest.snx / termtest.snx 的 uaccess 系列 |
 | 匿名页按需分配 | src32/task/process.cpp:anon_map / anonPage；task/scheduler.cpp:interrupt | ShellBridge 中 anon-lazy / anon-oom / anon-fault |
@@ -139,13 +139,14 @@ task 提取契约见 [task-subsystem.md](Source Code/docs/task-subsystem.md)。C
 
 - 用户栈 16 KiB，SNX v1 映像上限 192 KiB，v2 上限 16 MiB，基址 `0x40000000`
 - 每进程匿名配额为 128 份分配、512 个 VMA 片段（含分配头）及 128 MiB 虚拟预留。配额变更选 anonymous 7 项、e1 6 项、e2 6 项、process 8 项及普通启动 1 项
+- SDK 堆提供 16 字节对齐，1–4080 字节使用 64 KiB slab，更大请求独立映射。每进程最多缓存 4 个 hot 和 12 个 cold 空 slab，预留失败时优先归还 cold 映射。契约见 [mm-access.md](Source Code/docs/mm-access.md#用户态堆)
 - VFS 全局 128 节点，单文件 64 KiB（含磁盘 SNX）
 - 64 进程，每进程 4 线程，24 句柄
 - 每进程内核入口栈 32 KiB 可用 + 4 KiB 未映射保护页，当前分配 9 个连续页；KernelStack 统一管理生命周期。大小/回收变更选 process 8 项 + images 11 项 + 普通启动 1 项；布局/保护失败回滚自检并入原用例，不新增 ID。
 - task::step 按就绪 FIFO 长度快照限制候选，至多派发一个线程；对象等待按索引/代数/原因定位，Yield/等待/有限运行期限使用可撤销堆，退出进入独立回收队列，不在正常调度/唤醒中全扫线程。主循环 IF=0 复查后调用 idle_halt（sti/hlt/ret）。仅空闲策略变更选 process 8 + shell-waits 5 + 普通启动 1，网络/RTC 待办变化各加 1；三类等待共同迁移选 process 8 + 三类 waits 29 + shell-waits 5 + 普通启动 1 + test-task-queues.js 4（--list），合计 47。task_schedule_stats 为 60 字节宿主观察布局，不是用户 ABI。
 - 底层 Write 更新内存、Sync 提交用户目录快照；可写 gsh 的写入/创建/改名/删除命令成功后自动提交，再返回提示符，无需手动 sync；`/boot` 只读
 - 启动镜像 2.88 MB，布局入口 `src32/boot-layout.h`
-- Feature 掩码 8388607（23 个已实现机制，含 SYS_MPROTECT=0x15b、SYS_ANON_UNMAP_RANGE=0x15c、FEATURE_MPROTECT=1048576、FEATURE_MPROTECT_RANGE=2097152、FEATURE_ANON_UNMAP_RANGE=4194304），含 FEATURE_EVENT_WAIT=32768、FEATURE_THREAD_JOIN=65536、FEATURE_RECLAIM=131072、FEATURE_PROCESS_GROUP=262144、FEATURE_PURGEABLE=524288；SYS_EVENT_WAIT_BLOCK=0x151，THREAD_CREATE/JOIN/DETACH/EXIT_CODE=0x152..0x155，SYS_RECLAIM_PRIORITY=0x156，SYS_PROCESS_GROUP=0x157，ANON_PURGEABLE/LOCK/UNLOCK=0x158..0x15a。Event 专项 `node 'Source Code/tests/host/test-event-waits.js' '<ShellBridge 构建目录>'` 为 8 项（--list）。线程专项 `test-thread-waits.js <ShellBridge 构建目录>` 8 项（--list）；含 v1/v2 参数/帧、结果/栈回收、超时/输出失效、单消费者与拒绝外进程 TID、detach/复用及退出清理，本轮加 process 8 + policy 2 + images 11 + Event 8 + completion-waits 8 + 普通启动 1，共 46 项，详见模块指南。
+- Feature 掩码 8388607（23 个已实现机制，含 SYS_MPROTECT=0x15b、SYS_ANON_UNMAP_RANGE=0x15c、FEATURE_MPROTECT=1048576、FEATURE_MPROTECT_RANGE=2097152、FEATURE_ANON_UNMAP_RANGE=4194304），含 FEATURE_EVENT_WAIT=32768、FEATURE_THREAD_JOIN=65536、FEATURE_RECLAIM=131072、FEATURE_PROCESS_GROUP=262144、FEATURE_PURGEABLE=524288；SYS_EVENT_WAIT_BLOCK=0x151，THREAD_CREATE/JOIN/DETACH/EXIT_CODE=0x152..0x155，SYS_RECLAIM_PRIORITY=0x156，SYS_PROCESS_GROUP=0x157，ANON_PURGEABLE/LOCK/UNLOCK=0x158..0x15a。Event 专项 `node 'Source Code/tests/host/test-event-waits.js' '<ShellBridge 构建目录>'` 为 8 项（--list）。线程专项 `test-thread-waits.js <ShellBridge 构建目录>` 8 项（--list）；由 probe.snx 覆盖 v2 参数/帧、结果/栈回收、超时/输出失效、单消费者与拒绝外进程 TID、detach/复用及退出清理，本轮加 process 8 + policy 2 + images 11 + Event 8 + completion-waits 8 + 普通启动 1，共 46 项，详见模块指南。
 - 回收优先级独立于 CPU 调度。可信启动 conhost 为 −800，兼容进程默认 200，独立严格进程默认 400，带交互 CliInfo 的进程按终端前后台在 0 与 200 间切换。兼容且至少有一项能力的进程可查询自身评分，并在 0–400 内调高。
 - 独立启动、宿主 managed run 和新终端会话根进程以自身完整 PID 为组号。`SYS_RUN_START` 继承调用者的组及评分加 100，评分限于 0–400。交互命令继承发起请求的 Shell 的组。`SYS_PROCESS_GROUP` 查询自身组。
 - 物理页空闲比例按已发布页池计算。5%–15% 为 LOW，低于 5% 为 CRITICAL；两者都限制评分 400 的新匿名区。在 CRITICAL 时每轮 `task::step()` 最多选择一个直接回收对象，同组其他合格成员下一轮释放。负分和等待匿名缺页重试的进程受保护。Ring 3 数据页 OOM 延后一次。匿名页表 OOM 回退数据页并单独记录，无效映射返回 `S_INVALID`，两类 OOM 在系统调用边界返回 `S_NOMEM`。
@@ -157,6 +158,15 @@ task 提取契约见 [task-subsystem.md](Source Code/docs/task-subsystem.md)。C
 - 管道读写、完成记录查询、终端字节读取、交互命令结果和手动复位 Event 支持显式线程级阻塞，超时为 0 表示无限等待，有限等待最多 60000 tick；Event 查询保留非阻塞，SDK 为 sino::event
 
 独立 VM 配置宿主检查：`node 'Source Code/tests/host/test-vm-config.js'`，4 项，`--list` 预览。内存专项 images 11 项、anonymous 7 项、reclaim 5 项、purgeable 5 项、pools 4 项；OOM 为 ShellBridge 只读探针绑定页目录的定向注入，普通镜像不含注入后端。
+
+## 设计检查
+
+新增机制或修改接口时，方案先回答下列四项再实现；审计按同样四项检查。
+
+- 前人做法：先查 Linux、xv6、BSD、Windows NT、SerenityOS 等如何解决同类问题，写明参考的具体机制、已知缺陷，以及采纳、改造或不采纳的理由。已有成熟方案的问题不从零设计。
+- 单向门：系统调用语义与返回约定、SNX 头、用户地址布局、PID/TID/句柄编码、ABI 结构和磁盘格式一经依赖难以更改，对照后续 2–3 个阶段检查是否掣肘；内部实现保持最简。
+- 迁移收尾：在新机制所在阶段迁移全部旧调用者并删除旧路径，不新增与旧入口并存的替代入口。兼容回退只为确实独立发布、仍需支持的旧版本保留。
+- 真实调用者：面向应用的新机制写明正式路径上的调用者；暂时没有时写明接入的具体阶段，不以"有需求再接入"收尾。测试注入等专用设施除外；构建后从不运行的探针删除。
 
 ## 新代码约定
 

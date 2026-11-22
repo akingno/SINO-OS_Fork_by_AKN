@@ -7,12 +7,10 @@ static volatile int worker_done;
 static int event_handle;
 static u32 time_buffer[4];
 static u32 check_count;
-static void worker(void) {
+static int worker(void*) {
   worker_done = 123;
   api(SYS_EVENT_SET, (u32)event_handle, 1, 0);
-  api(SYS_THREAD_EXIT, 0, 0, 0);
-  for (;;) {
-  }
+  return S_OK;
 }
 static void check(int ok, const char *s) {
   check_count++;
@@ -182,7 +180,8 @@ int main(void) {
   check(api(SYS_WINDOW, 0xffffffff, 300, 200) == S_INVALID, "string overflow");
   event_handle = api(SYS_EVENT_CREATE, 0, 0, 0);
   check(event_handle > 0, "event create");
-  check(api(SYS_THREAD, (u32)worker, 0, 0) > 0, "thread creation");
+  check(sino::thread::create(worker, nullptr, ThreadCreateFlags::Detached) > 0,
+        "thread creation");
   while (!worker_done)
     Yield(1);
   check(worker_done == 123 && api(SYS_EVENT_WAIT, (u32)event_handle, 0, 0) == 0,

@@ -76,6 +76,20 @@ E820 洞和元数据保留页切断可用区间。元数据位于直接映射内
 
 范围改权和部分解除映射在修改树前验证整个范围、计算最终片段数并准备所需节点。改权保留驻留页，部分解除映射归还对应预留和实际驻留页。系统调用参数、配额及等待重试语义见 [os-interface.md](os-interface.md#anonymous-memory)。
 
+## 用户态堆
+
+`user/runtime.cpp` 为每个进程接入一份 `user/heap.h` 中的分配器，所有线程共享。1–4080 字节的请求按最小可容纳的大小类从 64 KiB slab 取槽。大小类为 16、32、64、128、256、496、1008、2032 和 4080 字节。块头后是活跃槽位图。分配先复用已释放的槽，再推进未使用槽的索引，映射时只初始化块头和位图。更大请求使用独立匿名映射，在 16 字节头部记录请求长度。两条路径都返回 16 字节对齐的地址。
+
+| Slab 状态 | 分配与回收行为 |
+| --- | --- |
+| 活跃 | 同一大小类优先填充有空槽的活跃 slab；仍有存活对象的 slab 保持不可丢弃 |
+| Hot | 空 slab 保留原大小类和空闲链；每类最多 1 个，全堆最多 4 个。同类替换或全局满额时降级到 cold |
+| Cold | 全堆最多 12 个空 slab，超过预算先解除最旧映射。冷块标为可丢弃，内存压力下内核可回收驻留页。分配取最新冷块，先清除可丢弃标记，再按目标大小类重建 |
+
+映射注册表、状态和缓存队列位于 slab 外，cold 丢弃覆盖块头时仍能查到映射。缓存最多保留 16 个匿名区域、合计 1 MiB 虚拟预留。内核丢弃只归还驻留页。大小块申请映射时，若注册表已满或 `AnonMap` 返回 `S_LIMIT`、`S_NOMEM`，先解除最旧的 cold 映射，cold 为空时选 hot。若重试仍失败，清空剩余空缓存后最后尝试一次，单次请求最多调用三次 `AnonMap`。
+
+每进程一把堆锁，竞争时调用 `Yield(0)`。锁内完成注册表与缓存操作以及相关映射调用。`calloc` 清零和 `realloc` 复制在锁外执行，复制完成后再释放旧块。调用者负责同步同一对象的访问与生命周期。底层页按需驻留，进程退出时由内核统一回收活跃分配和空缓存。公开接口见 [os-interface.md](os-interface.md#anonymous-memory)。
+
 ## 内核保护页
 
 `paging_kernel_guard(page, &owner)` / `paging_kernel_unguard(&owner)` 仅在正式页表建立后使用。
@@ -141,7 +155,9 @@ slab 自检覆盖八个大小类的容量、对象隔离和复用、多页增长
 test-memory.js images 验证映像及栈生命周期，anonymous 验证真实跨页 I/O、OOM 不消费管道数据和进程回收。
 文件和终端等待路径按 TESTING.md 的追加条件选测，不默认全量回归。
 
-默认 VM 为 4096 MiB、单核，报告通过 QMP 核对配置。images 11 项、anonymous 7 项、reclaim 5 项、purgeable 5 项、pools 4 项。
+`node 'Source Code/tests/host/test-user-heap.js'` 验证分配器核心（20 项，`--list` 预览）。`test-memory.js heap`（7 项）通过 ShellBridge 验证 SDK 入口、四线程交错、真实水位下 cold 丢弃与重建，以及退出后的页数基线。
+
+默认 VM 为 4096 MiB、单核，报告通过 QMP 核对配置。images 11 项、anonymous 7 项、heap 7 项、reclaim 5 项、purgeable 5 项、pools 4 项。
 images 从客户机读取原始 E820，按保留优先规则独立核对 4 GiB 以下各池发布页数、水位阈值和 1 GiB 直接映射边界。pools 使用 4096 和 1024 MiB VM 分别验证双池调度与纯低端兜底。
 安装 RAM 与实际可管理页数不同，4 GiB 以上的重映射 RAM 在非 PAE 模式下不纳入物理池。
 

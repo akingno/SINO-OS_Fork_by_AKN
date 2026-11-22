@@ -18,16 +18,15 @@ void require(bool ok, const char* label) {
   }
 }
 
-void reader(u32 index) {
+int reader(u32 index) {
   started[index] = 1;
   int result = StreamReadBlocking((int)pipe.read, &received[index], 1, 100);
   require(result == 1, "blocking reader result");
   finished[index] = 1;
-  api(SYS_THREAD_EXIT, 0, 0, 0);
-  for (;;) {}
+  return S_OK;
 }
-void firstReader() { reader(0); }
-void secondReader() { reader(1); }
+int firstReader(void*) { return reader(0); }
+int secondReader(void*) { return reader(1); }
 
 void waitFor(bool starting, u32 count) {
   const u32 begin = now();
@@ -40,8 +39,9 @@ void waitFor(bool starting, u32 count) {
 
 int run() {
   require(PipeCreate(2, &pipe) == S_OK, "pipe create");
-  require(api(SYS_THREAD, (u32)firstReader, 0, 0) > 0 &&
-          api(SYS_THREAD, (u32)secondReader, 0, 0) > 0, "reader threads");
+  require(sino::thread::create(firstReader, nullptr, ThreadCreateFlags::Detached) > 0 &&
+          sino::thread::create(secondReader, nullptr, ThreadCreateFlags::Detached) > 0,
+          "reader threads");
   waitFor(true, 2);
   // 故意让当前线程抢走通知后的数据，覆盖重试 S_AGAIN 和原期限保留。
   require(StreamWrite((int)pipe.write, "x", 1) == 1, "stale notification byte");

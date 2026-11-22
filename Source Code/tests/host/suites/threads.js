@@ -2,13 +2,13 @@ const assert = require('node:assert/strict');
 const cases = require('../../support/thread-cases.json');
 async function run(api) {
     const {check, command, value, resources, guestLog, until, gone} = api;
-    async function probe(mode, app = 'probe', outcome = 'exit') {
+    async function probe(mode, outcome = 'exit') {
         const baseline = await resources();
         const faults = await value('process_faults');
         const offset = guestLog().length;
         // 严格进程尚无通用子进程委托；这两项用兼容父进程创建严格子进程。
         const strict = mode !== 'compete' && mode !== 'last';
-        const output = await command('run ' + (strict ? '-s ' : '') + '/boot/' + app + '.snx /thread-' + mode);
+        const output = await command('run ' + (strict ? '-s ' : '') + '/boot/probe.snx /thread-' + mode);
         const pid = Number(output.match(/^Started user process (\d+)\n$/)?.[1]);
         assert(pid, output);
         if (outcome === 'cancel') {
@@ -25,12 +25,11 @@ async function run(api) {
     for (const item of cases) {
         await check(item.name, async () => {
             if (item.name === 'cancel-fault') {
-                await probe('cancel', 'probe', 'cancel');
-                await probe('fault', 'probe', 'fault');
+                await probe('cancel', 'cancel');
+                await probe('fault', 'fault');
                 await probe('record');
             } else {
                 await probe(item.name);
-                if (item.name === 'return') { await probe(item.name, 'threadv2'); }
             }
         });
     }

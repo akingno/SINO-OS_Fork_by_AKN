@@ -47,7 +47,7 @@
 | `test-console.js <普通 BuildOnly 目录>` | 9 | 开机提示、编辑/历史、工作区、取消、ASCII 输入、退出重启、滚屏与输入固定；QMP 键盘和 VGA 文字内存 |
 | `test-boot.js <普通 BuildOnly 目录>` | 1 | ISO 身份、El Torito、FAT12、计时器、普通启动隔离；ID 为 boot.ordinary |
 | `test-event-waits.js <ShellBridge 目录>` | 8 | 严格策略能力发现、旧查询兼容、预置位/手动复位、广播/阻塞、重试保留原期限、超时/参数边界、关闭/复用、重复句柄权限、取消/故障回收；支持 --list，不自动加入 core |
-| `test-thread-waits.js <ShellBridge 目录>` | 8 | SNX v1/v2 参数/初始栈帧/正常返回、退出记录与栈回收、超时/输出解除映射、detach/TID 复用、单消费者/自身/外进程拒绝、参数/配额回滚、取消/故障、最后活动线程与旧 ABI；支持 --list，不自动加入 core |
+| `test-thread-waits.js <ShellBridge 目录>` | 8 | SNX v2 参数/初始栈帧/正常返回、退出记录与栈回收、超时/输出解除映射、detach/TID 复用、单消费者/自身/外进程拒绝、参数/配额回滚、取消/故障、最后活动线程与未领取记录；支持 --list，不自动加入 core |
 | `test-pids.js <ShellBridge 目录>` | 8 | PID 槽复用/旧 kill 拒绝、容量/畸形标识、历史完成记录取消隔离、映像失败回滚；Shell/文件/管道/Event/线程实际编号消耗；支持 --list，不自动加入 core |
 | `test-identifiers.js` | 6 | 直接使用内核编号算法；缩小代数耗尽、预留撤销、陈旧/畸形 PID、完整正整数边界、cookie 全局槽均衡与退役、Object/TID 不回绕；支持 --list |
 | `test-memory.js images <ShellBridge 目录>` | 11 | 4 GiB 单核/E820 空洞、定向映像/页表 OOM 回滚、SNX v1/v2、高页、线程栈与冷启动 |
@@ -84,6 +84,8 @@ infrastructure 还编译 6 个宿主模型：`test-terminal-model.cpp`、`test-g
 
 `node 'Source Code/verify-system.js'` 仅运行 `test-keyboard.js`（1 个宿主程序）。系统功能验收使用 `regression.ps1`。
 
+`node 'Source Code/tests/host/test-user-heap.js'` 验证用户态堆核心（20 项，`--list` 预览）。常规构建覆盖大小类、对齐、槽位复用、容量、`realloc`、缓存预算、丢弃重建及回退。调试构建验证分配与释放涂抹。Windows 后端通过解除物理提交模拟 cold slab 丢弃，保留虚拟预留。报告位于 `Build Output/dev/runs/user-heap-*/user-heap-report.json`。宿主入口独立于 QEMU 专项和统一注册表。
+
 ## 客户机探针与辅助模块
 
 客户机源码由宿主套件驱动，并非另一套重复运行的测试。当前 tests/guest/ 中有：
@@ -91,6 +93,7 @@ infrastructure 还编译 6 个宿主模型：`test-terminal-model.cpp`、`test-g
 - `cli_tests.c`
 - `completion_tests.c`
 - `file_tests.c`
+- `heap_probe.cpp`（仅随 ShellBridge 镜像打包为 `heaptest.snx`）
 - `interactive_tests.c`
 - `memory_v2_test.c`
 - `nettest.c`

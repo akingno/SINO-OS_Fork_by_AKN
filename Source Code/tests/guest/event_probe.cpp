@@ -21,23 +21,23 @@ struct Waiter {
   volatile u32 entered, done;
   int result;
   u32 elapsed;
-  void run() {
-    entered = 1;
-    const u32 begin = ticks();
-    result = event::wait(handle, timeout);
-    elapsed = ticks() - begin;
-    done = 1;
-    api(SYS_THREAD_EXIT, 0, 0, 0);
-    for (;;) {}
-  }
 };
 Waiter waiters[2];
-void first() { waiters[0].run(); }
-void second() { waiters[1].run(); }
+int waitForEvent(void* argument) {
+  auto& waiter = *static_cast<Waiter*>(argument);
+  waiter.entered = 1;
+  const u32 begin = ticks();
+  waiter.result = event::wait(waiter.handle, waiter.timeout);
+  waiter.elapsed = ticks() - begin;
+  waiter.done = 1;
+  return S_OK;
+}
 void start(u32 index, int handle, u32 timeout) {
-  waiters[index].handle = handle;
-  waiters[index].timeout = timeout;
-  require(api(SYS_THREAD, (u32)(index ? second : first), 0, 0) > 0, "create waiter");
+  auto& waiter = waiters[index];
+  waiter.handle = handle;
+  waiter.timeout = timeout;
+  require(sino::thread::create(waitForEvent, &waiter, ThreadCreateFlags::Detached) > 0,
+          "create waiter");
 }
 void until(u32 count, bool entered) {
   const u32 begin = ticks();

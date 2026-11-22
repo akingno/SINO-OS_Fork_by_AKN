@@ -3,7 +3,6 @@ const root=path.resolve(__dirname,'..'),out=path.join(root,'build32','user'),tc=
 const flags=['-m32','-march=i386','-std=c++17','-Os','-ffreestanding','-fno-builtin','-fno-exceptions','-fno-rtti','-fno-threadsafe-statics','-fno-pic','-fno-pie','-fno-stack-protector','-fno-asynchronous-unwind-tables','-mno-stack-arg-probe','-mno-sse','-mno-mmx','-msoft-float','-mpreferred-stack-boundary=2','-mincoming-stack-boundary=2','-Wall','-Wextra','-Werror','-Wno-unused-function','-Wno-unused-variable','-Wno-misleading-indentation','-Wno-register','-Wno-missing-field-initializers'];
 function command(exe,args){run(exe,args,{cwd:root,stdio:'inherit'});}
 command(path.join(root,'tools/nasm-3.02/nasm.exe'),['-f','win32','user/entry.asm','-o',path.join(out,'entry.o')]);
-command(path.join(tc,'g++.exe'),[...flags,'-c','user/runtime.cpp','-o',path.join(out,'runtime.o')]);
 // Each row names the output, source path, MODE and optional SNX ABI.
 const apps = [
  ['conhost', 'user/console_host.cpp', 0, 2],
@@ -21,35 +20,45 @@ const apps = [
  ['clitest', 'tests/guest/cli_tests.cpp', 0],
  ['comptest', 'tests/guest/completion_tests.cpp', 0],
  ['poltest', 'tests/guest/policy_tests.cpp', 0],
- ['probe', 'tests/guest/probe.cpp', 0],
- ['threadv2', 'tests/guest/thread_probe.cpp', 0, 2],
- ['fault', 'tests/guest/probe.cpp', 1],
- ['iofault', 'tests/guest/probe.cpp', 2],
- ['spin', 'tests/guest/probe.cpp', 3],
- ['udfault', 'tests/guest/probe.cpp', 4],
+ ['probe', 'tests/guest/probe.cpp', 0, 2],
+ ['fault', 'tests/guest/probe.cpp', 1, 2],
+ ['iofault', 'tests/guest/probe.cpp', 2, 2],
+ ['spin', 'tests/guest/probe.cpp', 3, 2],
+ ['udfault', 'tests/guest/probe.cpp', 4, 2],
  ['nettest', 'tests/guest/nettest.cpp', 0],
  ['memv2', 'tests/guest/memory_v2_test.cpp', 0, 2]
 ];
+function compileUser(source, object, abi, defines = []) {
+ command(path.join(tc, 'g++.exe'), [
+  ...flags, '-I', 'user', `-DSINO_SNX_ABI=${abi}`, ...defines, '-c', source, '-o', object
+ ]);
+}
+const runtimeObjects = new Map();
+for (const [, , , abi = 1] of apps) {
+ if (!runtimeObjects.has(abi)) {
+  const object = path.join(out, `runtime-abi${abi}.o`);
+  compileUser('user/runtime.cpp', object, abi);
+  runtimeObjects.set(abi, object);
+ }
+}
 for(const [name,source,mode,abi=1] of apps){
- command(path.join(tc,'g++.exe'),[...flags,'-I','user',`-DMODE=${mode}`,`-DSINO_SNX_ABI=${abi}`,'-c',source,'-o',path.join(out,`${name}.o`)]);
+ const mainObject = path.join(out, `${name}.o`);
+ compileUser(source, mainObject, abi, [`-DMODE=${mode}`]);
  const extra=[];
  if(name==='probe'){
-  const obj=path.join(out,'probe-scheduler.o');
-  command(path.join(tc,'g++.exe'),[...flags,'-I','user','-c','tests/guest/scheduler_probe.cpp','-o',obj]);
-  extra.push(obj);
-  const event=path.join(out,'probe-event.o');
-  command(path.join(tc,'g++.exe'),[...flags,'-I','user','-c','tests/guest/event_probe.cpp','-o',event]);
-  extra.push(event);
-  const thread=path.join(out,'probe-thread.o');
-  command(path.join(tc,'g++.exe'),[...flags,'-I','user','-c','tests/guest/thread_probe.cpp','-o',thread]);
-  extra.push(thread);
-  const pid=path.join(out,'probe-pid.o');
-  command(path.join(tc,'g++.exe'),[...flags,'-I','user','-c','tests/guest/pid_probe.cpp','-o',pid]);
-  extra.push(pid);
+  for (const component of ['scheduler', 'event', 'thread', 'pid']) {
+   const object = path.join(out, `probe-${component}.o`);
+   compileUser(`tests/guest/${component}_probe.cpp`, object, abi);
+   extra.push(object);
+  }
  }
- if(name==='nettest'){const obj=path.join(out,`${name}-netlib.o`);command(path.join(tc,'g++.exe'),[...flags,'-c','user/netlib.cpp','-o',obj]);extra.push(obj);}
+ if (name === 'nettest') {
+  const object = path.join(out, 'nettest-netlib.o');
+  compileUser('user/netlib.cpp', object, abi);
+  extra.push(object);
+ }
  const exe=path.join(out,`${name}.exe`),bin=path.join(out,`${name}.snx`);
- command(path.join(tc,'ld.exe'),['-m','i386pe','--image-base','0x3fff0000','--disable-reloc-section','--disable-dynamicbase','--no-insert-timestamp',`--defsym=snx_abi=${abi}`,'-T','user/linker.ld',path.join(out,'entry.o'),path.join(out,'runtime.o'),path.join(out,`${name}.o`),...extra,'-o',exe]);
+ command(path.join(tc,'ld.exe'),['-m','i386pe','--image-base','0x3fff0000','--disable-reloc-section','--disable-dynamicbase','--no-insert-timestamp',`--defsym=snx_abi=${abi}`,'-T','user/linker.ld',path.join(out,'entry.o'),runtimeObjects.get(abi),mainObject,...extra,'-o',exe]);
  command(path.join(tc,'objcopy.exe'),['-O','binary',exe,bin]);
  const symbols={};for(const line of run(path.join(tc,'nm.exe'),['-n',exe],{encoding:'utf8'}).split('\n')){const m=line.match(/^([0-9a-f]+) [A-Za-z] (\w+)\s*$/);if(m)symbols[m[2]]=parseInt(m[1],16)-0x40000000;}
  for(const key of ['_user_start','___user_data','___user_end'])if(!Number.isInteger(symbols[key])||symbols[key]<0)throw Error('Missing/invalid native link symbol '+key);

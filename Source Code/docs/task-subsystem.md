@@ -148,7 +148,7 @@ IRQ 自检并入原有启动/进程用例，不新增独立固定 ID。不因仅
 入口栈变更选择 process、内存 images 及普通启动。启动自检验证精确页数、保护/可用 PTE 在内核及用户页目录中的权限、首尾读写、重复操作、保护记录耗尽回滚及重试；不以真实触发内核栈溢出来测试恢复。
 队列共同迁移选择 process 8、completion-waits 8、pipe-waits 10、terminal-waits 11、shell-waits 5，加普通启动 1、集合宿主 4，共 47 项。新增 4 个独立宿主用例，不改变统一注册表 ID；原有启动/抢占用例追加重复通知、旧对象代数、到期优先、竞争重试和剩余字节交接断言。
 Event 接入选择独立 test-event-waits.js 8、process 8、policy 2、普通启动 1，共 19 项；Event 专项使用同次 ShellBridge 构建、共享 VM/内存观察工具和私有盘，固定行为 ID 见 tests/support/event-cases.json，不自动加入 core。
-线程参数/join 接入选择独立 test-thread-waits.js 8、process 8、policy 2、images 11、Event 8、completion-waits 8、普通启动 1，共 46 个选定用例。探针读取初始栈帧、验证 v1/v2 返回和负数退出码、立即栈回收、一次领取、超时/解除映射后的再领取、单消费者/自身/外进程拒绝、detach/复用、参数/配额回滚和取消/故障/最后线程清理。需要创建严格子进程的两项使用兼容父进程，不扩大严格委托权限。
+线程参数/join 接入选择独立 test-thread-waits.js 8、process 8、policy 2、images 11、Event 8、completion-waits 8、普通启动 1，共 46 个选定用例。probe.snx（SNX v2）读取初始栈帧、验证正常返回和负数退出码、立即栈回收、一次领取、超时/解除映射后的再领取、单消费者/自身/外进程拒绝、detach/复用、参数/配额回滚和取消/故障/最后线程清理。需要创建严格子进程的两项使用兼容父进程，不扩大严格委托权限。
 
 ## PID 生命周期
 

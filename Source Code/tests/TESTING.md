@@ -20,9 +20,9 @@
 | --- | --- | --- |
 | 开机文字控制台、ASCII 键盘和 Shell 前端 | 普通 `dev.ps1 -BuildOnly` 后运行 `node 'Source Code/tests/host/test-console.js' <构建目录>`；9 项，`--list` 预览 | 自动保存变化加同入口 `--persistence`（3 项，支持 `--list --persistence`）及 files / persistence；键盘滚屏或行编辑显示变化加 `test-terminal-model.cpp` / `test-line-model.cpp` 宿主模型；设备授权改动追加 policy；会话等待变化加 shell-waits |
 | 引导、镜像、FAT12 启动卷 | `.\dev.ps1 -BuildOnly`，再 `node 'Source Code/tests/host/test-boot.js' '<本次普通构建目录>'`；1 项 | 涉及用户态启动/隔离时追加相应进程或内存专项 |
-| 匿名映射、懒分配、SDK 堆；`anon_map/unmap` | 下方内存命令的 `anonymous`；7 项 | 映像、高页或线程栈布局变化时追加 `images` |
-| 用户态 slab 分配器；`user/heap.h` | `node 'Source Code/tests/development/user/heap/test-user-heap.js'`；20 项，先 `--list` 预览 | 宿主专项覆盖大小类、复用、`realloc`、缓存丢弃和预留失败回退；接入 SDK 时再验证真实匿名内存 |
-| SDK 堆入口及堆锁；`user/runtime.cpp / user/sdk.h` | `node 'Source Code/tests/host/test-memory.js' heap '<ShellBridge 构建目录>'`；7 项，先 `heap --list` 预览 | 首次接入选 process 8 项及普通启动 1 项；匿名边界夹具改动选 anonymous 7 项，宽映像堆探针改动选 images 11 项 |
+| 匿名映射与懒分配；`anon_map/unmap` | 下方内存命令的 `anonymous`；7 项 | 映像、高页或线程栈布局变化时追加 `images` |
+| 用户态 slab 分配器；`user/heap.h` | `node 'Source Code/tests/host/test-user-heap.js'`；20 项，先 `--list` 预览 | 影响真实映射、回收或 SDK 可见行为时追加 `heap`，7 项 |
+| SDK 堆入口及堆锁；`user/runtime.cpp / user/sdk.h` | `node 'Source Code/tests/host/test-memory.js' heap '<ShellBridge 构建目录>'`；7 项，先 `heap --list` 预览 | 运行时入口、初始化或共享同步机制变化加 process 8 项及普通启动 1 项；匿名边界夹具改动选 anonymous 7 项，宽映像堆探针改动选 images 11 项 |
 | 匿名映射保护与片段身份；`protect_anon` | `mprotect` 6 项覆盖整区权限与缺页重试，`e1` 6 项覆盖范围改权、合并和分配身份 | 分配或释放变化加 `anonymous`，可丢弃条件或回收路径变化加 `purgeable` 或 `reclaim` |
 | 匿名范围解除映射；`anon_unmap_range` | `e2` 6 项，覆盖配额、空洞复用、定向分配失败和阻塞读输出缓冲区重校验 | 影响匿名预留或释放时加 `anonymous`，修改 syscall 准入时加 `policy` |
 | 匿名分配 ID、字节和片段配额；`ANON_MAX_REGIONS / ANON_MAX_BYTES / ANON_MAX_FRAGMENTS` | `anonymous` 7 项、`e1` 6 项、`e2` 6 项、`process` 8 项及普通启动 1 项，共 28 项 | 现有用例验证跨位图字槽复用、128 MiB 预留，以及 512 片段满额时的回滚和批量回收 |
@@ -37,7 +37,7 @@
 | 进程组继承、查询与回收；`SYS_PROCESS_GROUP / runStartBound / interactiveStart / reclaimLowest` | `.\regression.ps1 -Suite 'process,cli,shell-waits'`；14 项，共用本次镜像执行 `test-memory.js reclaim` 5 项 | 进程生命周期 8 项、managed run 1 项、交互组继承与结果交付 5 项、回收专项 5 项、普通启动 1 项，共 20 项 |
 | 可丢弃匿名内存；`SYS_ANON_PURGEABLE / SYS_ANON_LOCK / SYS_ANON_UNLOCK / purgeOneRegion` | `node 'Source Code/tests/host/test-memory.js' purgeable '<ShellBridge 构建目录>'`；5 项，先用 `purgeable --list` 预览 | 匿名落页、解除映射和失效重建加 `anonymous` 7 项；水位回收及空闲待办变化加 `reclaim` 5 项、`process` 8 项、`shell-waits` 5 项；普通启动 1 项，共 31 项 |
 | 手动复位 Event、阻塞等待、Set/Reset/Close | `node 'Source Code/tests/host/test-event-waits.js' '<ShellBridge 构建目录>'`；8 项，先 `--list` | 调度/等待接入加 process 8；ABI/授权变化加 policy 2；SDK/启动能力位变化加普通启动 1。Event 独立专项不自动加入 core，复用同次构建、共享 VM 工具和私有盘 |
-| 线程传参、返回、join/detach 与 TID | `node 'Source Code/tests/host/test-thread-waits.js' '<ShellBridge 构建目录>'`；8 项，先 `--list` | 创建/退出接入加 process 8；用户栈变化加 images 11；新 ABI/授权加 policy 2；公共等待撤销增加 join 占用清理时加 Event 8、completion-waits 8；普通启动 1。本轮组合 46 项。V2 探针 threadv2.snx 仅打包到 ShellBridge，不自动加入 core |
+| 线程传参、返回、join/detach 与 TID | `node 'Source Code/tests/host/test-thread-waits.js' '<ShellBridge 构建目录>'`；8 项，先 `--list` | 创建/退出接入加 process 8；用户栈变化加 images 11；新 ABI/授权加 policy 2；公共等待撤销增加 join 占用清理时加 Event 8、completion-waits 8；普通启动 1。本轮组合 46 项。线程模式由 probe.snx（SNX v2）运行，独立专项不自动加入 core |
 | PID 槽位/代数、陈旧标识、Object/cookie/TID 寿命 | `node 'Source Code/tests/host/test-pids.js' '<ShellBridge 构建目录>'`；8 项；`node 'Source Code/tests/host/test-identifiers.js'`；6 项；均先 `--list` | 进程资源变化加 process 8、历史完成记录加 completion 5、终端归属查找加 interactive 1、句柄代数/选槽变化加 policy 2、Event 8、线程 8；普通启动 1，共 47 项。独立专项不自动加入 core，不改统一 267 个 ID。真实负载消耗写入 PID 专项 shell-report 的 identifierAudit；耗尽边界用同一分配器的缩小范围及 ShellBridge 启动自检，不能在运行中重置用户编号 |
 | 完成记录、取消、观察者 | `.\regression.ps1 -Suite completion`；5 项 | 阻塞/超时/唤醒变化加 `completion-waits`；8 项 |
 | 文件对象、目录授权、VFS 版本与发布 | `.\regression.ps1 -Suite files`；2 项，含自有冷启动 | 提交、Sync、磁盘快照或恢复变化加 `persistence`；4 项；故障注入路径另选针对性边界 |

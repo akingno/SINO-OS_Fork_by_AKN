@@ -1,5 +1,8 @@
 const assert = require('node:assert/strict');
 const cases = require('../../support/pid-cases.json');
+const processLimit = 64;
+const pidGenerationStep = 1 << 7;
+const pidSlotMask = pidGenerationStep - 1;
 const fields = ['processes', 'abortedProcesses', 'objects', 'handles', 'threads',
     'processLimits', 'objectLimits', 'handleLimits', 'threadLimits'];
 async function run(api) {
@@ -36,7 +39,7 @@ async function run(api) {
                 for (let i = 0; i < 12; i++) {
                     const delta = await measured('untracked-launch-kill', async () => {
                         const pid = await launch('spin');
-                        assert(pid > 0 && pid <= 0x7fffffff && (pid & 15) === 1 && !seen.has(pid));
+                        assert(pid > 0 && pid <= 0x7fffffff && (pid & pidSlotMask) === 1 && !seen.has(pid));
                         if (old) {
                             assert.match(await command('kill ' + old, 1), /no such process/);
                             assert((await processes()).some(p => p.pid === pid), 'stale kill leaves new process');
@@ -50,15 +53,16 @@ async function run(api) {
             } else if (item.name === 'capacity') {
                 const pids = [];
                 try {
-                    for (let i = 0; i < 8; i++) { pids.push(await launch('spin')); }
-                    assert.equal(new Set(pids.map(pid => pid & 15)).size, 8);
+                    for (let i = 0; i < processLimit; i++) { pids.push(await launch('spin')); }
+                    assert.equal(new Set(pids.map(pid => pid & pidSlotMask)).size, processLimit);
                     const before = await stats();
                     await command('run /boot/spin.snx', 1);
                     assert.equal((await stats()).processes, before.processes);
                     for (const bad of [0, 1, 16, 0x7fffffff]) { await command('kill ' + bad, 1); }
-                    assert.equal((await processes()).length, 8);
+                    assert.equal((await processes()).length, processLimit);
                 } finally {
-                    for (const pid of pids) { await command('kill ' + pid); await gone(pid); }
+                    for (const pid of pids) { await command('kill ' + pid); }
+                    for (const pid of pids) { await gone(pid); }
                 }
             } else if (item.name === 'rollback') {
                 const previous = await launch('spin');
@@ -71,7 +75,7 @@ async function run(api) {
                 assert.equal(delta.abortedProcesses, 1);
                 assert.deepEqual(await resources(), baseline);
                 const next = await launch('spin');
-                assert.equal(next, previous + 16, 'failed reservation does not consume generation');
+                assert.equal(next, previous + pidGenerationStep, 'failed reservation does not consume generation');
                 await command('kill ' + next); await gone(next);
             } else {
                 if (item.name === 'shell-file') {

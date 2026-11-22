@@ -1,7 +1,6 @@
 #include "sdk.h"
 #include "thread_probe.h"
 
-static_assert(SYS_THREAD == 0x111 && SYS_THREAD_EXIT == 0x112, "legacy thread ABI");
 static_assert(SYS_THREAD_CREATE == 0x152 && SYS_THREAD_EXIT_CODE == 0x155, "new thread ABI");
 extern "C" {
 u32 thread_probe_esp, thread_probe_return, thread_probe_entry, thread_probe_argument;
@@ -40,7 +39,7 @@ int worker(void* raw) {
 }
 u32 stackTop(int tid) {
   u32 slot = ((u32)tid & 7u) - 1;
-  return ((const NativeHeader*)USER_BASE)->abi == 2 ? USER_V2_STACK(slot) : USER_V1_STACK(slot);
+  return USER_V2_STACK(slot);
 }
 ThreadResult joined(int tid, int code, u32 timeout = 100) {
   struct { u32 before; ThreadResult result; u32 after; } out;
@@ -229,22 +228,12 @@ void parked(bool fault) {
   else { Log("THREAD CANCEL PARKED\n"); event::wait(configs[1].gate); }
   require(false, "park path returned");
 }
-volatile u32 legacyDone;
-void legacyWorker() {
-  legacyDone = 1;
-  api(SYS_THREAD_EXIT, 99, 0, 0);
-  for (;;) {}
-}
 void lastThread() {
   int child = SpawnTracked("/boot/probe.snx", "/thread-last-child");
   ProcessCompletion out;
   require(child > 0 && WaitProcess(child, &out, 100) == S_OK &&
           out.reason == PROCESS_EXITED && out.code == 37 && Close(child) == S_OK,
           "unclaimed record does not keep process alive");
-  int slot = api(SYS_THREAD, (u32)legacyWorker, 0, 0);
-  require(slot > 0 && slot < 4, "legacy raw slot ABI");
-  Yield(2);
-  require(legacyDone, "legacy explicit exit");
 }
 }
 bool matches(const char* mode) { return prefix(mode, "/thread-"); }
@@ -261,8 +250,7 @@ int run(const char* mode) {
   else if (streq(mode, "/thread-last-child")) {
     configs[0].delay = 2; configs[0].code = 37;
     require(thread::create(worker, &configs[0]) > 0, "last child worker");
-    api(SYS_THREAD_EXIT, 0, 0, 0);
-    require(false, "main thread exit returned");
+    thread::exit(0);
   } else if (prefix(mode, "/thread-foreign ")) {
     u32 tid = 0;
     for (const char* p = mode + 16; *p; p++) {
@@ -277,6 +265,3 @@ int run(const char* mode) {
   return 0;
 }
 }
-#if SINO_SNX_ABI == 2
-int main() { return threadprobe::run(Arguments()); }
-#endif

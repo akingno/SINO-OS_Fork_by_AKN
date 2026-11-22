@@ -2,6 +2,8 @@
 #include "pid_probe.h"
 namespace pidprobe {
 namespace {
+constexpr u32 PidSlotMask = (1u << 7) - 1;
+
 void require(bool ok, const char* why) {
   if (!ok) { Log("USER PROBE FAIL: identifiers "); Log(why); Log("\n"); Exit(1); }
 }
@@ -17,7 +19,7 @@ void history() {
   require(GetProcessResult(next, &after) == S_AGAIN, "old completion cannot cancel new life");
   require(CancelProcess(next) == S_OK && WaitProcess(next, &after, 100) == S_OK &&
           after.reason == PROCESS_CANCELED && after.pid != before.pid &&
-          (after.pid & 15) == (before.pid & 15), "same slot, distinct life");
+          (after.pid & PidSlotMask) == (before.pid & PidSlotMask), "same slot, distinct life");
   ProcessCompletion again;
   require(GetProcessResult(old, &again) == S_OK && again.pid == before.pid &&
           again.code == 73 && again.reason == PROCESS_EXITED, "history stays bound");

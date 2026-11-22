@@ -230,17 +230,29 @@ only `FEATURE_ANON_MEMORY` allocate and zero the entire mapping up front.
   fragments including allocation heads, and 128 MiB of reserved pages.
   Quota, address-space or VMA metadata exhaustion returns `S_LIMIT`.
 
-SDK `AnonMap` and `AnonUnmap` preserve the syscall status. The SDK heap provides
-16-byte-aligned allocations, using shared slabs for small objects and independent
-anonymous mappings for large ones. Use the raw anonymous APIs for page-aligned
-reservations or page protection. `malloc` returns null for zero size or reservation
-failure. `calloc` checks the product for overflow and zeroes the requested bytes.
-`realloc(NULL, n)` allocates, and `realloc(p, 0)` releases `p` and returns null.
-A failed growth preserves the original allocation. `malloc_size` returns the
-small allocation's class capacity or the large allocation's recorded payload
-size. `free(NULL)` is a no-op. The heap serializes metadata across threads.
-Callers coordinate access to, and release or resizing of, the same allocation.
-Process teardown reclaims outstanding regions on exit or fault.
+SDK `AnonMap` and `AnonUnmap` preserve the syscall status. Use the raw anonymous
+APIs for page-aligned reservations or page protection. The SDK heap provides
+16-byte-aligned allocations. Small allocations share slabs, and large allocations
+have independent anonymous mappings. Both use the process's anonymous reservation
+quota, which includes retained empty slabs.
+
+- `malloc` returns null for a zero size or a reservation failure. The bytes it
+  returns may contain previous contents.
+- `calloc` returns null for zero size, multiplication overflow or reservation
+  failure. On success it zeroes the requested bytes.
+- `realloc(NULL, n)` allocates. `realloc(p, 0)` releases `p` and returns null.
+  If the requested size fits the existing capacity, the pointer stays in place.
+  Moving growth preserves the existing bytes. Failed reservation preserves the
+  original allocation.
+- `malloc_size` returns the size-class capacity for a live small allocation or
+  the recorded payload size for a live large allocation. A null pointer returns zero.
+- `free(NULL)` is a no-op. Pass live SDK heap allocation addresses to `free` and
+  `realloc`. A freed address may remain mapped while its slab is in the heap cache.
+
+The heap serializes metadata across threads. Callers coordinate concurrent access
+to, resizing of, and release of the same allocation. Pages get backing on first
+touch, so physical exhaustion may fault during zeroing or copying as well as during
+later use. Process teardown reclaims the remaining regions on exit or fault.
 
 Syscall user-buffer preparation checks the
 entire requested range for read or write permission before reading or writing

@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const {execFileSync} = require('node:child_process');
-const {tool} = require('../../../../tools/host-tools');
+const {tool} = require('../../tools/host-tools');
 
 const profiles = [
     {name:'normal', flags:[], cases:[
@@ -21,7 +21,7 @@ if (process.argv.length === 3 && process.argv[2] === '--list') {
     console.log(names.join('\n') + '\n' + names.length + ' cases');
 } else {
     assert.equal(process.argv.length, 2, 'Only --list is accepted');
-    const runs = path.resolve(__dirname, '../../../../../Build Output/dev/runs');
+    const runs = path.resolve(__dirname, '../../../Build Output/dev/runs');
     fs.mkdirSync(runs, {recursive:true});
     const directory = fs.mkdtempSync(path.join(runs, 'user-heap-'));
     const report = {result:'FAIL', cases:[]};

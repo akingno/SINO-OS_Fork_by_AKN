@@ -37,7 +37,7 @@ HeapLock heapLock;
 
 } // namespace
 
-/* GCC's MinGW C entry hook: no host CRT or C++ constructors in native ABI 1. */
+/* Provide GCC's MinGW entry hook in the freestanding SNX runtime. */
 extern "C" void __main(void) {
 }
 extern "C" __attribute__((cdecl,noreturn)) void sino_thread_start(int (*entry)(void*), void* argument) {
