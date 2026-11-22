@@ -1,5 +1,6 @@
 /* Fixed wire contracts deliberately independent of the new SDK wrappers. */
 #include "sdk.h"
+#include "thread_probe.h"
 static_assert(SYS_EXIT == 0x100, "ABI 1 syscall number");
 static_assert(SYS_YIELD == 0x101, "ABI 1 syscall number");
 static_assert(SYS_LOG == 0x102, "ABI 1 syscall number");
@@ -17,8 +18,7 @@ static_assert(SYS_SPAWN == 0x10d, "ABI 1 syscall number");
 static_assert(SYS_KILL == 0x10e, "ABI 1 syscall number");
 static_assert(SYS_PROCESSES == 0x10f, "ABI 1 syscall number");
 static_assert(SYS_SYNC == 0x110, "ABI 1 syscall number");
-static_assert(SYS_THREAD == 0x111, "ABI 1 syscall number");
-static_assert(SYS_THREAD_EXIT == 0x112, "ABI 1 syscall number");
+static_assert(SYS_EVENT_CREATE == 0x113, "event syscall number after reserved slots");
 static_assert(SYS_EVENT_CREATE == 0x113, "ABI 1 syscall number");
 static_assert(SYS_EVENT_SET == 0x114, "ABI 1 syscall number");
 static_assert(SYS_EVENT_WAIT == 0x115, "ABI 1 syscall number");
@@ -54,6 +54,7 @@ static_assert(SYS_RECLAIM_PRIORITY == 0x156 && FEATURE_RECLAIM == 131072u,
 static u32 buffer[16];
 static volatile int done;
 static volatile u32 paging_cookie;
+static threadprobe::StackSample paging_stack;
 static void require(int ok, const char *reason) {
   if (!ok) { Log("POLICY SELFTEST FAIL: "); Log(reason); Log("\n"); Exit(1); }
 }
@@ -62,7 +63,8 @@ static int worker(void*) {
   return S_OK;
 }
 static int paging_worker(void* arg) {
-  volatile u32* bottom = (volatile u32*)(USER_STACK(1) - 16384);
+  auto* sample = static_cast<threadprobe::StackSample*>(arg);
+  volatile u32* bottom = (volatile u32*)(sample->top() - threadprobe::StackBytes);
   require(*bottom == 0, "new thread stack is zeroed");
   *bottom = paging_cookie;
   return worker(arg);
@@ -73,20 +75,21 @@ static int paging_tests(u32 cookie) {
           "paging probe is strict");
   paging_cookie = cookie;
   require(api(SYS_TIME, USER_ARGUMENTS, 12, 0) == S_INVALID &&
-          api(SYS_TIME, USER_STACK(0) - 4, 12, 0) == S_INVALID,
+          api(SYS_TIME, USER_MAIN_STACK_TOP - 4, 12, 0) == S_INVALID &&
+          api(SYS_TIME, USER_MAIN_STACK_TOP - threadprobe::StackBytes - 4, 12, 0) == S_INVALID,
           "read-only argument page and stack gap rejected");
   require(sino::thread::create(reinterpret_cast<sino::thread::Entry>(&paging_cookie), nullptr,
                                ThreadCreateFlags::Detached) == S_INVALID,
           "writable page rejected as a thread entry");
   for (int i = 0; i < 2; i++) {
     done = 0;
-    require(sino::thread::create(paging_worker, nullptr, ThreadCreateFlags::Detached) > 0,
+    require(threadprobe::createCaptured(paging_worker, paging_stack, ThreadCreateFlags::Detached) > 0,
             "thread stack slot allocated or reused");
     u32 start = (u32)api(SYS_TICKS, 0, 0, 0);
     while ((u32)api(SYS_TICKS, 0, 0, 0) - start < 100 &&
-           (!done || api(SYS_TIME, USER_STACK(1) - 12, 12, 0) != S_INVALID))
+           (!done || api(SYS_TIME, paging_stack.top() - 12, 12, 0) != S_INVALID))
       Yield(1);
-    require(done && api(SYS_TIME, USER_STACK(1) - 12, 12, 0) == S_INVALID,
+    require(done && api(SYS_TIME, paging_stack.top() - 12, 12, 0) == S_INVALID,
             "exited thread stack is unmapped");
   }
   u32 start = (u32)api(SYS_TICKS, 0, 0, 0);
@@ -140,7 +143,7 @@ static void query_tests(int strict) {
   require(api(QUERY_SYSTEM,(u32)buffer,64,1)==S_INVALID && buffer[0]==0xccccccccu,
           "unknown query flags");
   require(api(QUERY_SYSTEM,USER_BASE,48,0)==S_INVALID &&
-          api(QUERY_SYSTEM,USER_STACK(0)-4,48,0)==S_INVALID &&
+          api(QUERY_SYSTEM,USER_MAIN_STACK_TOP-4,48,0)==S_INVALID &&
           api(QUERY_START,0xffffffffu,24,0)==S_INVALID,"query output rights");
   require(api(QUERY_SYSTEM,(u32)buffer,64,0)==0,"system query available");
   require(buffer[0]==48 && buffer[1]==1 && (buffer[2]&7)==7 && buffer[3]==100 &&

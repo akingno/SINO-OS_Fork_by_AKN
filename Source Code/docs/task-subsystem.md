@@ -125,12 +125,12 @@ SDK 使用 sino::event::{create,set,query,wait,available}，FEATURE_EVENT_WAIT �
 ### 新线程、退出记录与 join
 
 新 create 接收 worker、argument、SDK trampoline 和 flags，校验并准备完整的 T-12 cdecl 栈帧后才发布 TID/进入就绪队列。SDK trampoline 是独立 C ABI 入口，调用 int worker(void*)，把返回值提交给 THREAD_EXIT_CODE；意外返回时调用进程 Exit 错误路径，不从伪返回地址 ret。
-TID 使用不回绕的全局 28 位代数及 3 位 slot+1，只在当前进程查找；旧线程创建仍返回原始槽号，不能作为新 join token。主槽保留，三个 worker 槽含未领取退出记录，不扩大运行容量。
+TID 使用不回绕的全局 28 位代数及 3 位 slot+1，只在当前进程查找。主槽保留，三个 worker 槽含未领取退出记录。
 
-joinable 线程持有一个私有 THREAD Object，其 value 指向稳定 Thread；用户不能通过新 API 把这个 Object 当成句柄授权给其他进程。joinObject 的执行/记录引用一直保留到成功领取、detach 或进程回收，不会因为等待登记而增加引用。线程退出立即释放四页用户栈，保留 EXITED/exitCode/TID；detached/legacy 退出直接复用槽位。
+主栈和工作栈均登记相邻的 Guard 与 Stack VMA，只映射 16 KiB 栈空间。工作栈在专用窗口内 first-fit，线程保存实际栈顶。退出时立即归还栈页和两个 VMA。joinable 线程使用一个私有 THREAD Object 维持 EXITED/exitCode/TID，引用保留到成功领取、detach 或进程回收。detached 线程退出后槽位即可复用。
 只有一个阻塞 joiner 可以占用目标，目标保存 joiner，调用线程保存 joinTarget。该反向联系在统一 clearWait 中撤销，覆盖超时、无效输出、取消和退出；通知仍只允许在原地址空间重试。结果先校验并写入用户输出，成功后再清除占用、释放 Object 并使槽位可用。非阻塞 query 是 try-join，成功也消费结果。
 detach 在目标被其他 joiner 占用时返回 S_BUSY；活目标 detach 丢弃未来结果义务，已退出目标 detach 释放记录。退出记录不算活线程，最后一个活动线程退出即结束进程；主循环回收先取消全部节点/占用，再释放所有结果 Object 和进程资源。
-旧 ThreadExit 忽略参数并使用零退出码；新 ThreadExitCode 保留 signed int 结果。只检测自身 join，不额外检测用户构造的相互 join 环；超时范围和到期优先契约保持，包括 wait.cpp 的超时语义重审 TODO。
+THREAD_EXIT_CODE 接收 signed int 结果。join 拒绝等待自身；相互 join 由调用者避免。wait.cpp 记录了超时优先级的复审事项。
 
 ## 同步接口
 

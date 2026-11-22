@@ -740,7 +740,7 @@ async function poolContracts(source) {
 
 const [mode, source] = process.argv.slice(2);
 async function vmaContracts(source) {
-    await boot(source, 'vma', vm.memoryMiB, async ({check, channel, command, free, baseline, guestLog, probe}) => {
+    await boot(source, 'vma', vm.memoryMiB, async ({check, channel, command, free, baseline, guestLog, probe, until}) => {
         await check('memory.vma.image-rollback', ['image VMA allocation rollback and relaunch'], async () => {
             const session = new RunSession(channel);
             await session.hello();
@@ -751,8 +751,31 @@ async function vmaContracts(source) {
             assert.doesNotMatch(await command('ps'), /memv2/i);
             await probe('run -s /boot/memv2.snx wide', /Launch VMA coverage passed[\s\S]*SNX V2 PASS/);
         });
-        await check('memory.vma.stack-rollback', ['worker stack VMA allocation rollback and slot reuse'], () =>
-            probe('run -s /boot/memv2.snx oom-vma-stack', /MM PROBE injected stage=0x00000005[\s\S]*VMA STACK RETRY PASS/i));
+        await check('memory.vma.stack-rollback', ['worker stack rollback and address reuse during the same process'], async () => {
+            const snapshot = async () => ({pages:free(await command('mem')), processes:await command('ps')});
+            for (const [attempt, stage] of [['oom-vma-guard', 5], ['oom-vma-stack', 5], ['oom-stack-data', 1], ['oom-stack-object', 7]]) {
+                const offset = guestLog().length;
+                const out = await command('run -s /boot/memv2.snx ' + attempt);
+                const pid = Number(out.match(/^Started user process (\d+)\n$/)?.[1]);
+                assert(pid, out);
+                const log = () => guestLog().slice(offset);
+                await until(() => log().includes('VMA STACK BASELINE'));
+                const before = await snapshot();
+                assert.match(before.processes, new RegExp('^' + pid + '\\s+1\\s+', 'm'));
+                try {
+                    assert.equal(await command(`mmtest-watermark 0 ${baseline + 1}`), '1\n');
+                    await until(() => log().includes('VMA STACK FAILED'));
+                    const stageMarker = 'MM PROBE injected stage=0x' + stage.toString(16).padStart(8, '0');
+                    assert(log().includes(stageMarker), attempt);
+                    assert.deepEqual(await snapshot(), before, attempt + ': rollback while process is live');
+                } finally {
+                    await command('mmtest-watermark reset');
+                }
+                await until(() => log().includes('VMA STACK RETRY PASS'));
+                await until(async () => free(await command('mem')) === baseline);
+                assert.doesNotMatch(await command('ps'), new RegExp('^' + pid + '\\s', 'm'));
+            }
+        });
     });
 }
 async function protectionContracts(source) {

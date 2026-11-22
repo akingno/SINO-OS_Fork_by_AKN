@@ -68,6 +68,8 @@ task 子系统提取按实际接口选测：process 8 项、policy 2 项；Threa
 
 加载器或用户栈 VMA 登记变更选 `test-memory.js vma` 2 项（`vma --list`），检查映像登记失败回滚及工作线程栈登记失败后的槽位复用。映像或栈布局变化时按表选 `images` 或 `thread-waits`。
 
+主栈或工作栈布局、线程创建/退出及系统调用退役共同变更时，选 `thread-waits` 8 项、`process,policy` 10 项、`images` 11 项、`vma` 2 项和普通启动 1 项，共 32 项。工作栈专项从线程入口 ESP 推导栈界限，覆盖 Guard 缺页、未领取记录时的地址复用，以及 Guard/Stack 登记、部分数据页和 join 对象申请失败后在同一进程内的资源对账。
+
 物理页 buddy 分配器、slab 缓存或内核通用堆（kmalloc/kfree）核心变化，选 process 8 项、images 11 项、anonymous 7 项及普通启动 1 项，共 27 项，不新增 ID。启动自检覆盖 buddy 位压缩元数据、连续页分配、守护页与空闲链一致性；images 核对 E820 和 8 字节/PFN 元数据预算。普通启动和 process 启动用例核对 slab（大小类、跨页扩容、对象隔离、非法/重复释放、空页归还）及堆自检标记（大小类边界、清零、多页释放、页归属拒绝、页计数恢复）。调用模块从 kpage_alloc 迁移到 kmalloc/kzalloc 后按对应模块选测。
 
 调度/主循环空闲决策变化选 process 8 项、shell-waits 5 项、普通启动 1 项；后台待办查询涉及网络与 RTC 时各加对应 1 项。process 原有启动/抢占用例包含就绪/到期状态自检、实际 idle_halt 的 `sti; hlt; ret` 字节、`probe.snx /schedule` 主动让出/有限睡眠/竞争读重试，以及有界候选和空闲统计检查，不新增固定 ID。`task_schedule_stats` 仅供宿主观察，不是用户 ABI。

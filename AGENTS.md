@@ -137,7 +137,7 @@ task 提取契约见 [task-subsystem.md](Source Code/docs/task-subsystem.md)。C
 
 加载器和用户栈 VMA 登记专项：`node 'Source Code/tests/host/test-memory.js' vma '<ShellBridge 构建目录>'`，2 项，先用 `vma --list` 预览。对应组合见 TESTING.md。
 
-- 构建与加载只支持 SNX v2，内存映像上限 16 MiB，链接基址 `0x40000000`，用户栈 16 KiB。拒绝 v1 与资源回收由 process 专项覆盖
+- 构建与加载只支持 SNX v2，内存映像上限 16 MiB，链接基址 `0x40000000`。用户栈有 16 KiB 映射和紧邻下方的 16 KiB 无映射 Guard VMA。主栈顶为 `0x80010000`，工作栈及 Guard 在 `[0x80010000, 0x80030000)` first-fit。拒绝 v1 与资源回收由 process 专项覆盖
 - 每进程匿名配额为 128 份分配、512 个 VMA 片段（含分配头）及 128 MiB 虚拟预留。配额变更选 anonymous 7 项、e1 6 项、e2 6 项、process 8 项及普通启动 1 项
 - SDK 堆提供 16 字节对齐，1–4080 字节使用 64 KiB slab，更大请求独立映射。每进程最多缓存 4 个 hot 和 12 个 cold 空 slab，预留失败时优先归还 cold 映射。契约见 [mm-access.md](Source Code/docs/mm-access.md#用户态堆)
 - VFS 全局 128 节点，单文件 64 KiB（含磁盘 SNX）
@@ -151,7 +151,7 @@ task 提取契约见 [task-subsystem.md](Source Code/docs/task-subsystem.md)。C
 - 独立启动、宿主 managed run 和新终端会话根进程以自身完整 PID 为组号。`SYS_RUN_START` 继承调用者的组及评分加 100，评分限于 0–400。交互命令继承发起请求的 Shell 的组。`SYS_PROCESS_GROUP` 查询自身组。
 - 物理页空闲比例按已发布页池计算。5%–15% 为 LOW，低于 5% 为 CRITICAL；两者都限制评分 400 的新匿名区。在 CRITICAL 时每轮 `task::step()` 最多选择一个直接回收对象，同组其他合格成员下一轮释放。负分和等待匿名缺页重试的进程受保护。Ring 3 数据页 OOM 延后一次。匿名页表 OOM 回退数据页并单独记录，无效映射返回 `S_INVALID`，两类 OOM 在系统调用边界返回 `S_NOMEM`。
 - LOW 和 CRITICAL 每轮优先丢弃一个未锁定的可丢弃匿名区的驻留页，保留虚拟预留及配额。在 CRITICAL 且没有合格的可丢弃驻留页时才回收进程组。丢弃后按需落零页，`AnonQuery` 保持 `S_CHANGED`，直到持锁重建并重新标记。
-- 新线程主槽保留，3 个 worker 槽含 joinable 退出记录；栈退出即回收，记录由成功 join（含非阻塞 query）或 detach 消费，最后活动线程不会被未领取记录保活。每条 joinable 记录占 1 个私有 THREAD Object，共用 256 对象预算；TID 为全局不回绕 28 位代数加 3 位槽号，耗尽返回 S_LIMIT。join 只允许同进程，一个阻塞消费者占用目标；旧 SYS_THREAD 仍返回原始槽号。
+- 主线程槽保留，3 个 worker 槽含 joinable 退出记录。线程退出立即归还栈与 Guard，记录由成功 join（含非阻塞 query）或 detach 消费，最后活动线程退出即结束进程。每条 joinable 记录占 1 个私有 THREAD Object，共用 256 对象预算。TID 为全局不回绕 28 位代数加 3 位槽号，耗尽返回 S_LIMIT。join 只允许同进程，一个阻塞消费者占用目标。`0x111`、`0x112` 为无实现空号。
 - PID 是正整数 `(每槽 24 位代数 << 7) | (进程槽 + 1)`，仅完整比较；失败预留不消耗代数，资源回收完成才复用槽。Object 为每槽 32 位不回绕代数；Handle 保持 `(23 位 cookie << 8) | (句柄槽 + 1)`，cookie 按槽号全局计数、均衡选空槽，不按进程重置。达到末代后退役/返回 S_LIMIT，详见 [identifier-lifetime.md](Source Code/docs/identifier-lifetime.md)。PID 专项 `test-pids.js <ShellBridge 目录>` 8 项、宿主 `test-identifiers.js` 6 项（均 --list），本轮选择共 47 项，详见 TESTING.md。
 - 网络使用回环接口
 - 严格策略（caps=0）默认拒绝，按白名单授权；兼容策略保留旧应用访问

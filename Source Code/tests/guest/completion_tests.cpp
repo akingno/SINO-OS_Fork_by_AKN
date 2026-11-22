@@ -303,7 +303,7 @@ int main(void) {
   require(api(RESULT,h,(u32)&output,31)==S_INVALID && output.size==0xccccccccu,
           "short result untouched");
   require(api(RESULT,h,USER_BASE,32)==S_INVALID &&
-          api(RESULT,h,USER_STACK(0)-4,32)==S_INVALID,"result pointer rights");
+          api(RESULT,h,USER_MAIN_STACK_TOP-4,32)==S_INVALID,"result pointer rights");
   char foreign[32];copy(foreign,"foreign:");number((u32)h,foreign+8);
   normal(foreign,1,42,0);
   int ro=api(SYS_DUP,h,1,0), cancel_only=api(SYS_DUP,h,2,0);

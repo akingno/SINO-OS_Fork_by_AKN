@@ -114,7 +114,7 @@ int main(void){
   for(int i=0;i<6;i++){CancelProcess(extra[i]);wait_for(extra[i],3,0);Close(extra[i]);}
   Spec invalid={48,1,1,(u32)"/boot/clitest.snx",0,0,0,0,0,0,0,0};
   for(int i=0;i<40;i++)require(api(RUN_START,(u32)&invalid,48,0)==S_INVALID,"invalid start rollback");
-  require(api(RUN_START,USER_STACK(0)-4,48,0)==S_INVALID &&
+  require(api(RUN_START,USER_MAIN_STACK_TOP-4,48,0)==S_INVALID &&
           api(RUN_START,(u32)&invalid,47,0)==S_INVALID &&
           api(RUN_START,(u32)&invalid,48,1)==S_INVALID,"start control range and flags");
   invalid.flags=0;invalid.argc=1;invalid.argv_bytes=5;invalid.argv=(u32)"echo";

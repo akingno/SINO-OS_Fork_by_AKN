@@ -2,14 +2,6 @@
 #include "thread_probe.h"
 
 static_assert(SYS_THREAD_CREATE == 0x152 && SYS_THREAD_EXIT_CODE == 0x155, "new thread ABI");
-extern "C" {
-u32 thread_probe_esp, thread_probe_return, thread_probe_entry, thread_probe_argument;
-__attribute__((naked)) void thread_probe_capture() {
-  __asm__ volatile("movl %esp,_thread_probe_esp; movl (%esp),%eax; movl %eax,_thread_probe_return;"
-                   "movl 4(%esp),%eax; movl %eax,_thread_probe_entry;"
-                   "movl 8(%esp),%eax; movl %eax,_thread_probe_argument; jmp _sino_thread_start");
-}
-}
 namespace threadprobe {
 namespace {
 namespace thread = sino::thread;
@@ -18,6 +10,7 @@ void require(bool ok, const char* label) {
   if (!ok) { Log("USER PROBE FAIL: thread "); Log(label); Log("\n"); Exit(1); }
 }
 struct Config {
+  StackSample stack;
   int gate, code;
   u32 delay;
   int tid;
@@ -37,10 +30,6 @@ int worker(void* raw) {
   if (c->delay) { Yield(c->delay); }
   return c->code;
 }
-u32 stackTop(int tid) {
-  u32 slot = ((u32)tid & 7u) - 1;
-  return USER_STACK(slot);
-}
 ThreadResult joined(int tid, int code, u32 timeout = 100) {
   struct { u32 before; ThreadResult result; u32 after; } out;
   memset(&out, 0xcc, sizeof(out));
@@ -59,13 +48,13 @@ void started(Config& c) {
 void returning() {
   require(thread::available(), "feature discovery");
   configs[0].code = -47;
-  ThreadCreateSpec spec{sizeof(spec), 1, (u32)worker, (u32)&configs[0], (u32)thread_probe_capture, 0};
-  int tid = api(SYS_THREAD_CREATE, (u32)&spec, sizeof(spec), 0);
+  StackSample& sample = configs[0].stack;
+  int tid = createCaptured(worker, sample);
   require(tid > 4, "safe TID");
   joined(tid, -47);
-  require(thread_probe_esp == stackTop(tid) - 12 && !(thread_probe_esp & 3) &&
-          !thread_probe_return && thread_probe_entry == (u32)worker &&
-          thread_probe_argument == (u32)&configs[0], "initial cdecl stack frame");
+  require(sample.top() > USER_MAIN_STACK_TOP && sample.top() <= WorkerWindowEnd &&
+          !(sample.top() % PageBytes) && !sample.returnAddress && sample.entry == (u32)worker &&
+          sample.argument == (u32)&sample, "initial cdecl stack frame");
   configs[1].code = 123;
   tid = thread::create(worker, &configs[1]);
   require(tid > 0, "SDK trampoline create");
@@ -73,25 +62,33 @@ void returning() {
 }
 void exitedRecord() {
   configs[0].code = -91;
-  int tid = thread::create(worker, &configs[0]);
+  StackSample& sample = configs[0].stack;
+  int tid = createCaptured(worker, sample);
   require(tid > 0, "record create");
   Yield(2);
-  for (u32 page = 1; page <= 4; page++) {
-    require(api(SYS_LOG, stackTop(tid) - page * 4096, 0, 1) == S_INVALID,
+  const u32 top = sample.top();
+  require(sample.esp != 0, "stack captured before worker exit");
+  for (u32 page = PageBytes; page <= StackBytes; page += PageBytes) {
+    require(api(SYS_LOG, top - page, 0, 1) == S_INVALID,
             "exited thread stack unmapped before join");
   }
   require(thread::query(tid, (ThreadResult*)USER_BASE) == S_INVALID &&
           thread::query(tid, (ThreadResult*)0xfffffff8u) == S_INVALID,
           "invalid result does not consume record");
+  const int other = createCaptured(worker, configs[1].stack);
+  require(other > 0 && ((u32)other & 7u) != ((u32)tid & 7u), "unclaimed record holds its TID slot");
+  joined(other, 0);
+  require(configs[1].stack.top() == top, "unclaimed record does not hold the stack address");
   ThreadResult out;
   require(thread::query(tid, &out) == S_OK && out.code == -91 && out.tid == (u32)tid,
           "exit before query");
   require(thread::query(tid, &out) == S_BADHANDLE && thread::detach(tid) == S_BADHANDLE,
           "result consumed once");
-  int next = thread::create(worker, &configs[0]);
+  int next = createCaptured(worker, sample);
   require(next > 0 && next != tid && (((u32)next & 7) == ((u32)tid & 7)) &&
           thread::join(tid, &out, 1) == S_BADHANDLE, "stale TID after reuse");
   joined(next, -91);
+  require(sample.top() == top, "released stack address reused");
 }
 struct UnmapConfig { void* address; int gate; } unmapping;
 int unmapper(void* raw) {
@@ -180,6 +177,13 @@ void competition() {
   require(thread::query(target, &out) == S_BADHANDLE && Close(configs[0].gate) == S_OK,
           "consumer wins exactly once");
 }
+void retiredCalls() {
+  StartInfo launch;
+  require(QueryStartInfo(&launch) == S_OK, "retired syscall policy");
+  const int retired = launch.policy == PROCESS_STRICT ? S_DENIED : S_INVALID;
+  require(api(0x111, (u32)worker, 0, 0) == retired && api(0x112, 0, 0, 0) == retired,
+          "retired calls do not create or exit a thread");
+}
 void wireAndQuota() {
   require(api(SYS_THREAD_EXIT_CODE, 99, 1, 0) == S_INVALID, "exit reserved argument");
   ThreadCreateSpec spec{sizeof(spec), 1, (u32)worker, (u32)&configs[0], (u32)sino_thread_start, 0};
@@ -194,13 +198,30 @@ void wireAndQuota() {
   require(api(SYS_THREAD_CREATE, (u32)&spec, sizeof(spec), 0) == S_INVALID, "writable worker rejected");
   spec.entry = (u32)worker; spec.trampoline = 0x100000;
   require(api(SYS_THREAD_CREATE, (u32)&spec, sizeof(spec), 0) == S_INVALID, "kernel trampoline rejected");
+  spec.trampoline = (u32)sino_thread_start; spec.entry = USER_BASE;
+  require(api(SYS_THREAD_CREATE, (u32)&spec, sizeof(spec), 0) == S_INVALID, "SNX header is not an entry point");
+  spec.entry = (u32)worker; spec.trampoline = USER_ARGUMENTS;
+  require(api(SYS_THREAD_CREATE, (u32)&spec, sizeof(spec), 0) == S_INVALID, "read-only parameters are not code");
+  retiredCalls();
   int ids[3];
+  const int gate = event::create();
+  require(gate > 0, "stack inspection gate");
   for (u32 i = 0; i < 3; i++) {
     configs[i].code = (int)i;
-    ids[i] = thread::create(worker, &configs[i]);
+    configs[i].gate = gate;
+    ids[i] = createCaptured(worker, configs[i].stack);
     require(ids[i] > 0, "fill thread quota");
+    started(configs[i]);
+    const u32 top = configs[i].stack.top();
+    const u32 previous = i ? configs[i - 1].stack.top() : USER_MAIN_STACK_TOP;
+    require(top == previous + StackBytes + GuardBytes && top <= WorkerWindowEnd,
+            "first fit reserves separate stacks and guards");
+    for (u32 offset = StackBytes; offset < StackBytes + GuardBytes; offset += PageBytes) {
+      require(api(SYS_LOG, top - offset - 1, 0, 1) == S_INVALID, "guard page inaccessible");
+    }
   }
   require(thread::create(worker, &configs[0]) == S_LIMIT, "running quota");
+  require(event::set(gate, true) == S_OK, "release inspected workers");
   Yield(2);
   require(thread::create(worker, &configs[0]) == S_LIMIT, "exit records retain bounded slots");
   ThreadResult out;
@@ -209,6 +230,8 @@ void wireAndQuota() {
           api(SYS_THREAD_DETACH, (u32)ids[0], 1, 0) == S_INVALID &&
           thread::query(1, &out) == S_BADHANDLE, "join/detach wire and legacy slot rejection");
   for (u32 i = 0; i < 3; i++) { joined(ids[i], (int)i); }
+  require(Close(gate) == S_OK, "close stack inspection gate");
+  configs[0].gate = 0;
   int next = thread::create(worker, &configs[0]);
   require(next > 0 && ((u32)next >> 3) == ((u32)ids[2] >> 3) + 1,
           "failed creates did not publish or consume TID");
@@ -219,16 +242,22 @@ void parked(bool fault) {
   require(old > 0, "unclaimed record setup");
   Yield(2);
   configs[1].gate = event::create(); configs[1].code = 42;
-  int target = thread::create(worker, &configs[1]);
+  int target = createCaptured(worker, configs[1].stack);
   require(target > 0 && configs[1].gate > 0, "park target");
   joining.target = target;
   require(thread::create(joiner, &joining) > 0, "park joiner");
   while (!joining.entered) { Yield(0); }
-  if (fault) { Log("THREAD EXPECT FAULT\n"); *(volatile u32*)0x100000 = 1; }
+  if (fault) {
+    started(configs[1]);
+    const u32 guard = configs[1].stack.top() - StackBytes - sizeof(u32);
+    Log("THREAD EXPECT FAULT\n");
+    *(volatile u32*)guard = 1;
+  }
   else { Log("THREAD CANCEL PARKED\n"); event::wait(configs[1].gate); }
   require(false, "park path returned");
 }
 void lastThread() {
+  retiredCalls();
   int child = SpawnTracked("/boot/probe.snx", "/thread-last-child");
   ProcessCompletion out;
   require(child > 0 && WaitProcess(child, &out, 100) == S_OK &&

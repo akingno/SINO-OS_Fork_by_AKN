@@ -25,8 +25,8 @@ SNX v2 的 32 字节头记录 magic、版本 2、映像大小、入口点、数�
 - 使用 freestanding C++17 和整数指令，无 FPU/SIMD、宿主 libc、异常或动态链接
 - 64 个进程，每进程最多 4 个线程
 - 每进程 24 个本地句柄
-- 每线程 16 KiB 栈
-- `sino::thread::create` 启动的线程可以返回退出码。通过 `SYS_THREAD` 启动的线程使用 `SYS_THREAD_EXIT`
+- 每线程 16 KiB 可用栈，紧邻下方有 16 KiB 无映射保护区。工作栈由内核选址
+- `sino::thread::create` 启动的线程可以直接返回退出码，或通过 `sino::thread::exit` 提交退出码
 - Read/Write 返回 `src32/api.h` 中定义的统一负数错误码
 - Home 写能力不授权写入 `/boot`、`/etc` 或内核内存
 

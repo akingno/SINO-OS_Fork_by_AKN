@@ -556,7 +556,7 @@ namespace task {
     auto* node = static_cast<VmaNode*>(kmalloc(sizeof(VmaNode)));
     if (!node) { return S_NOMEM; }
     *node = VmaNode{base / PAGE_SIZE, bytes / PAGE_SIZE, 0, 0, 0, type};
-    node->setFlag(VmaNode::Flag::Read, true);
+    node->setFlag(VmaNode::Flag::Read, type != VmaType::Guard);
     node->setFlag(VmaNode::Flag::Write, writable);
     node->setFlag(VmaNode::Flag::Execute, code);
     if (!mm::vma_insert(p->vma_root, node)) {
@@ -565,45 +565,59 @@ namespace task {
     }
     return S_OK;
   }
-  static void release_user_stack(Process* p, int slot) {
-    const u32 top = USER_STACK(slot);
-    const u32 start = top - UserStackBytes;
-    VmaNode* node = mm::vma_find_exact(p->vma_root, start / PAGE_SIZE);
-    if (!node || node->type != VmaType::Stack || !mm::vma_remove(p->vma_root, node)) {
-      panic("User stack VMA ownership", p->pid, start);
+  static void remove_stack_vma(Process* p, u32 base, VmaType type) {
+    VmaNode* node = mm::vma_find_exact(p->vma_root, base / PAGE_SIZE);
+    if (!node || node->type != type || !mm::vma_remove(p->vma_root, node)) {
+      panic("User stack VMA ownership", p->pid, base);
     }
-    free_user_pages(p, start, top);
     kfree(node);
   }
-  static int alloc_user_stack(Process* p, int thread) {
-    const u32 top = USER_STACK(thread), start = top - UserStackBytes;
+  static void release_user_stack(Process* p, u32 top) {
+    const u32 start = top - UserStackBytes;
+    if (free_user_pages(p, start, top) != UserStackBytes / PAGE_SIZE) {
+      panic("User stack backing", p->pid, top);
+    }
+    remove_stack_vma(p, start, VmaType::Stack);
+    remove_stack_vma(p, start - UserStackGuardBytes, VmaType::Guard);
+  }
+  static int alloc_user_stack(Process* p, u32 top) {
+    const u32 start = top - UserStackBytes;
+    const u32 guard = start - UserStackGuardBytes;
+    const int guardStatus = register_mapping(p, guard, UserStackGuardBytes, VmaType::Guard, false);
+    if (guardStatus != S_OK) { return guardStatus; }
+    const int stackStatus = register_mapping(p, start, UserStackBytes, VmaType::Stack, true);
+    if (stackStatus != S_OK) {
+      remove_stack_vma(p, guard, VmaType::Guard);
+      return stackStatus;
+    }
     for (u32 va = start; va < top; va += PAGE_SIZE) {
-      if (!alloc_user_page(p, va, 1).page) {
+      const auto allocation = alloc_user_page(p, va, 1);
+      if (!allocation.page) {
         free_user_pages(p, start, va);
-        return 0;
+        remove_stack_vma(p, start, VmaType::Stack);
+        remove_stack_vma(p, guard, VmaType::Guard);
+        return allocation.status == UserPageStatus::Invalid ? S_INVALID : S_NOMEM;
       }
     }
-    if (register_mapping(p, start, UserStackBytes, VmaType::Stack, true) != S_OK) {
-      free_user_pages(p, start, top);
-      return 0;
-    }
-    return 1;
+    return S_OK;
   }
 #ifdef SINO_SHELL_BRIDGE
-  /* Test-only mappings for the strict paging probe on the read-only boot disk. */
   static void check_launch_mappings(Process* p) {
     u32 count = 0;
     for (auto* node = mm::vma_first(p->vma_root); node; node = mm::vma_next(node)) {
-      const u32 flags = PAGE_PRESENT | PAGE_USER | (node->hasFlag(VmaNode::Flag::Write) ? PAGE_WRITE : 0);
+      const bool guard = node->type == VmaType::Guard;
+      if (guard && node->flags) { panic("Launch Guard VMA permissions", node->startPage, node->flags); }
+      const u32 flags = guard ? 0 : PAGE_PRESENT | PAGE_USER | (node->hasFlag(VmaNode::Flag::Write) ? PAGE_WRITE : 0);
       for (u32 i = 0; i < node->pageCount; ++i) {
         const u32 va = (node->startPage + i) * PAGE_SIZE;
         if (paging_user_flags(p->pd, va) != flags) { panic("Launch VMA permissions", va, flags); }
-        ++count;
       }
+      if (!guard) { count += node->pageCount; }
     }
     if (count != paging_user_count(p->pd)) { panic("Launch VMA coverage", count, p->pid); }
     pr_debug("Launch VMA coverage passed\n");
   }
+  /* Test-only mappings for the strict paging probe on the read-only boot disk. */
   static int paging_probe_setup(Process* p, int exhaust) {
     const u32 boundary = (pde_index(USER_DYNAMIC_BASE) + 1) * TABLE_BYTES;
     const u32 cross = boundary - PAGE_SIZE;
@@ -759,7 +773,6 @@ namespace task {
     Process* p = &processes[reserved];
     if (p->state) { panic("PID slot still owned", reserved, p->pid); }
     memset((void*)p, 0, sizeof(*p));
-    p->code_end = USER_BASE + h->data_offset;
     p->reclaim_priority = (i16)(policy == PROCESS_STRICT ? ReclaimClass::Background
                                                        : ReclaimClass::InteractiveBackground);
     if (console) { p->reclaim_priority = (i16)ReclaimClass::Service; }
@@ -833,9 +846,10 @@ namespace task {
     memcpy(params, arguments, strlen(arguments) + 1);
     memcpy(params + 256, executable, strlen(executable) + 1);
     kunmap(params);
-    if (!alloc_user_stack(p, 0)) {
+    status = alloc_user_stack(p, USER_MAIN_STACK_TOP);
+    if (status != S_OK) {
       release(p);
-      return S_NOMEM;
+      return status;
     }
 #ifdef SINO_SHELL_BRIDGE
     if (policy == PROCESS_STRICT && nodes[n].readonly && nodes[n].boot >= 0 &&
@@ -867,7 +881,11 @@ namespace task {
     }
     if (policy == PROCESS_STRICT && n == vfs_lookup("/boot/memv2.snx")) {
       if (streq(probe_mode, "wide")) { check_launch_mappings(p); }
-      if (streq(probe_mode, "oom-vma-stack")) { mmtest::arm(p->pd, mmtest::Stage::Vma, 0); }
+      // Each worker failure probe first creates and joins one worker to sample its address.
+      if (streq(probe_mode, "oom-vma-guard")) { mmtest::arm(p->pd, mmtest::Stage::Vma, 2); }
+      else if (streq(probe_mode, "oom-vma-stack")) { mmtest::arm(p->pd, mmtest::Stage::Vma, 3); }
+      else if (streq(probe_mode, "oom-stack-data")) { mmtest::arm(p->pd, mmtest::Stage::Image, UserStackBytes / PAGE_SIZE + 2); }
+      else if (streq(probe_mode, "oom-stack-object")) { mmtest::arm(p->pd, mmtest::Stage::ThreadObject, 1); }
     }
 #endif
     if (run) {
@@ -918,7 +936,7 @@ namespace task {
       p->name[j] = nodes[n].name[j];
       j++;
     }
-    p->thread[0].initialize(p, 0, USER_BASE + h->entry, USER_STACK(0));
+    p->thread[0].initialize(p, 0, USER_BASE + h->entry, USER_MAIN_STACK_TOP);
     if (run && run->timed) {
       armTimer(p->timer, run->deadline, TimerKind::Run, p);
     }
@@ -1368,7 +1386,9 @@ namespace task {
   }
   static ids::Counter<0x0fffffffu> threadGeneration;
   static bool threadCode(u32 address) {
-    return address >= USER_BASE + sizeof(NativeHeader) && address < current->code_end &&
+    if (address < USER_BASE + sizeof(NativeHeader)) { return false; }
+    const VmaNode* node = mm::vma_find(current->vma_root, address / PAGE_SIZE);
+    return node && node->type == VmaType::Image && node->hasFlag(VmaNode::Flag::Execute) &&
            paging_user_flags(current->pd, address) == (PAGE_PRESENT | PAGE_USER);
   }
   static Thread* threadTarget(u32 tid) {
@@ -1388,22 +1408,31 @@ namespace task {
     for (u32 slot = 1; slot < MaxThreads; slot++) {
       Thread& t = current->thread[slot];
       if (t.state != ThreadState::UNUSED) { continue; }
-      if (!alloc_user_stack(current, (int)slot)) { return S_NOMEM; }
-      const u32 top = USER_STACK(slot);
+      constexpr u32 stackPages = (UserStackBytes + UserStackGuardBytes) / PAGE_SIZE;
+      u32 guardPage;
+      if (!mm::vma_find_gap(current->vma_root, USER_MAIN_STACK_TOP / PAGE_SIZE,
+                           UserWorkerStackEnd / PAGE_SIZE, stackPages, guardPage)) { return S_LIMIT; }
+      const u32 top = (guardPage + stackPages) * PAGE_SIZE;
+      int result = alloc_user_stack(current, top);
+      if (result != S_OK) { return result; }
       const u32 initial[] = {0, spec.entry, spec.argument};
-      int result = copy_to_user(current->pd, top - sizeof(initial), initial, sizeof(initial));
+      result = copy_to_user(current->pd, top - sizeof(initial), initial, sizeof(initial));
       int object = -1;
       if (result == S_OK && spec.flags == (u32)ThreadCreateFlags::Joinable) {
-        object = object_new(ObjType::THREAD, (int)&t);
+#ifdef SINO_SHELL_BRIDGE
+        if (mmtest::fail(current->pd, mmtest::Stage::ThreadObject)) { object = S_LIMIT; }
+        else
+#endif
+        { object = object_new(ObjType::THREAD, (int)&t); }
         if (object < 0) { result = object; }
       }
       if (result != S_OK) {
-        release_user_stack(current, (int)slot);
+        release_user_stack(current, top);
         return result;
       }
       const u32 tid = (threadGeneration.issue() << 3) | (slot + 1);
       identifier_stats.threads++;
-      t.initialize(current, slot, spec.trampoline, top - sizeof(initial), tid, (u32)(object + 1));
+      t.initialize(current, slot, spec.trampoline, top, sizeof(initial), tid, (u32)(object + 1));
       return (int)tid;
     }
     return S_LIMIT;
@@ -1442,7 +1471,8 @@ namespace task {
   static void exitThread(Frame* f, int code) {
     Thread& t = current->thread[currentThread];
     t.cancel();
-    release_user_stack(current, currentThread);
+    release_user_stack(current, t.stackTop);
+    t.stackTop = 0;
     t.exitCode = code;
     if (t.joinObject) {
       t.state = ThreadState::EXITED;
@@ -1496,7 +1526,7 @@ namespace task {
   static int strict_call(u32 call) {
     switch (call) {
     case SYS_EXIT: case SYS_YIELD: case SYS_LOG: case SYS_TICKS:
-    case SYS_CLOSE: case SYS_DUP: case SYS_THREAD: case SYS_THREAD_EXIT:
+    case SYS_CLOSE: case SYS_DUP:
     case SYS_THREAD_CREATE: case SYS_THREAD_JOIN: case SYS_THREAD_DETACH: case SYS_THREAD_EXIT_CODE:
     case SYS_EVENT_CREATE: case SYS_EVENT_SET: case SYS_EVENT_WAIT: case SYS_EVENT_WAIT_BLOCK:
     case SYS_DIRECTORY_COMMIT: case SYS_TIME: case SYS_CALENDAR: case SYS_UI_LANGUAGE:
@@ -2214,21 +2244,6 @@ namespace task {
       pr_debug(storage_error);
       pr_debug("\n");
       return S_IO;
-    case SYS_THREAD:
-      if (a < USER_BASE + sizeof(NativeHeader) || a >= current->code_end ||
-        paging_user_flags(current->pd, a) != (PAGE_PRESENT | PAGE_USER)) {
-        return S_INVALID;
-      }
-      for (int i = 1; i < MaxThreads; i++) {
-        if (current->thread[i].state == ThreadState::UNUSED) {
-          if (!alloc_user_stack(current, i)) {
-            return S_NOMEM;
-          }
-          current->thread[i].initialize(current, (u32)i, a, USER_STACK(i));
-          return i;
-        }
-      }
-      return S_LIMIT;
     case SYS_THREAD_CREATE:
       return createThread(a, b, c);
     case SYS_THREAD_JOIN: {
@@ -2248,9 +2263,6 @@ namespace task {
     case SYS_THREAD_EXIT_CODE:
       if (b || c) { return S_INVALID; }
       exitThread(f, (int)a);
-      return S_OK;
-    case SYS_THREAD_EXIT:
-      exitThread(f, 0);
       return S_OK;
     case SYS_EVENT_CREATE:
       n = object_new(ObjType::EVENT, 0);

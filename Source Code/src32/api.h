@@ -40,9 +40,8 @@ enum {
   SYS_KILL,
   SYS_PROCESSES,
   SYS_SYNC,
-  SYS_THREAD,
-  SYS_THREAD_EXIT,
-  SYS_EVENT_CREATE,
+  /* 0x111 and 0x112 are unimplemented. */
+  SYS_EVENT_CREATE = 0x113,
   SYS_EVENT_SET,
   SYS_EVENT_WAIT,
   SYS_LEASE,
@@ -284,7 +283,7 @@ typedef struct {
 #define SNX_ABI_VERSION 2u
 #define SNX_V2_IMAGE_BYTES 0x1000000u
 #define USER_ARGUMENTS 0x80000000u
-#define USER_STACK(t) (USER_ARGUMENTS + 0x10000u + (u32)(t) * 0x8000u)
+#define USER_MAIN_STACK_TOP (USER_ARGUMENTS + 0x10000u)
 #define USER_END (USER_ARGUMENTS + 0x30000u)
 #define NATIVE_MAGIC 0x31584e53u /* SNX1; deliberately not PE/Win32 */
 typedef struct {

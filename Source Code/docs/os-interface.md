@@ -144,11 +144,9 @@ See the [pipe](stream-pipes.md#opt-in-blocking-pipe-calls),
 
 ## Argument-bearing threads and join/detach
 
-The old `SYS_THREAD=0x111` still creates a legacy worker and returns raw slot
-1..3. `SYS_THREAD_EXIT=0x112` still explicitly exits with code zero and ignores
-its arguments. These legacy slots, and the initial main thread, are not joinable
-TIDs. New calls are local mechanisms allowed by strict policy; they do not
-grant child-process delegation or cross-process thread access.
+Call numbers `0x111` and `0x112` are reserved and unimplemented. The initial main
+thread has no joinable TID. The thread calls below are available to strict
+processes and operate within the calling process.
 
 | Call | Registers / result |
 | --- | --- |
@@ -159,8 +157,9 @@ grant child-process delegation or cross-process thread access.
 
 ThreadCreateSpec consists of six u32 fields: size=24, version=1, entry,
 argument, trampoline, flags. ThreadCreateFlags is a u32 enum class: Joinable=0,
-Detached=1; unknown flags are rejected. Entry and trampoline must point into
-the caller's readonly code region. Argument is opaque; the kernel does not
+Detached=1; unknown flags are rejected. Entry and trampoline must point past the
+SNX header into a mapped, read-only user page of the caller's executable Image VMA.
+Argument is opaque; the kernel does not
 dereference it. Invalid pointers, sizes, versions or reserved values fail
 before publishing a thread. Stack preparation or record-allocation failure
 rolls back pages and does not consume a TID.
@@ -170,7 +169,8 @@ For exclusive stack top T, the kernel prepares `[T-12]=0`, `[T-8]=entry`,
 current compiler contract requires 4-byte alignment. The SDK's C ABI
 `sino_thread_start` calls `int entry(void*)`, sends its return value to
 THREAD_EXIT_CODE, and terminates the process with an error if that syscall
-unexpectedly returns. User stacks retain 16 KiB mappings and unmapped spacing.
+unexpectedly returns. Each stack has 16 KiB of mapped space and a 16 KiB Guard
+VMA directly below it with zero permissions and no page-table mappings.
 
 ThreadResult consists of size=16, version=1, tid and signed code. Both blocking
 and nonblocking join consume a completed result exactly once, only after the
@@ -188,13 +188,13 @@ Detaching a live joinable target discards its future join obligation; detaching
 an exited target consumes its record. Repeated detach of a live detached target
 is S_INVALID; after reclamation the old TID is stale.
 
-Joinable exit immediately unmaps the worker stack but retains an EXITED record
+Joinable exit immediately releases the stack and guard ranges and retains an EXITED record
 in its thread slot, backed by one private THREAD Object. It retains no extra
 user handle. The record competes for the existing global Object quota and is
-freed by successful join, detach, or process reclamation. Detached/legacy exit
+freed by successful join, detach, or process reclamation. Detached exit
 reclaims the slot directly. Records count against the fixed slot quota but
 not as live execution: the last live thread ends the process even if records
-remain, with its explicit exit code (zero for the legacy exit call). SYS_EXIT
+remain, with its explicit exit code. SYS_EXIT
 still ends the whole process. Exit, kill and fault cleanup revoke all claims,
 queues, timers, records and mappings.
 
@@ -342,8 +342,8 @@ SNX v2 uses the magic `0x31584e53`, a 32-byte header and link base
 `SystemInfo.image_bytes`.
 
 The loader places the read-only argument and executable strings at
-`0x80000000` and the first stack top at `0x80010000`. The remaining stacks are
-spaced 32 KiB apart with 16 KiB mapped per stack. The dynamic allocator skips
+`0x80000000` and the main stack top at `0x80010000`. Worker stacks and their
+adjacent guards use first-fit in `[0x80010000, 0x80030000)`. The dynamic allocator skips
 pages occupied by the actual image. The repository linker script emits
 version 2 for each application and probe.
 
@@ -438,8 +438,9 @@ pid, reason, signed code, vector, reserved[0]=0, reserved[1]=0. Reasons:
 | PROCESS_CANCELED | 3 | 0 | 0 |
 | PROCESS_KILLED | 4 | 0 | 0 |
 
-Thus Exit(-14) and page fault 14 are different. Last-thread THREAD_EXIT records
-normal exit 0. Old ProcessInfo retains its legacy code representation.
+Thus Exit(-14) and page fault 14 are different. The last live thread's
+THREAD_EXIT_CODE records a normal exit with the supplied code. Old ProcessInfo
+retains its legacy code representation.
 
 `CancelProcess(handle)` requires CANCEL rights; EBX=handle, ECX=EDX=0.
 Reserved flags return S_INVALID. Cancellation marks only the bound running

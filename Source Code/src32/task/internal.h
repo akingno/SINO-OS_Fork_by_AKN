@@ -15,6 +15,10 @@ inline constexpr int MaxProcesses = 64;
 inline constexpr int MaxThreads = 4;
 static_assert(MaxThreads < 8, "TID ABI reserves three low bits for slot + 1");
 inline constexpr u32 UserStackBytes = 16384u;
+inline constexpr u32 UserStackGuardBytes = 16384u;
+inline constexpr u32 UserWorkerStackEnd = USER_MAIN_STACK_TOP + 0x20000u;
+static_assert((MaxThreads - 1) * (UserStackBytes + UserStackGuardBytes) <=
+              UserWorkerStackEnd - USER_MAIN_STACK_TOP, "worker stacks must fit their window");
 
 struct UserFrame {
   Frame frame;
@@ -43,6 +47,7 @@ struct Thread {
   TimerNode timer;
   Process* process;
   u32 index;
+  u32 stackTop;
   u32 tid, joinObject;
   int exitCode;
   Thread* joiner;
@@ -50,7 +55,7 @@ struct Thread {
 
   QueueLink<Thread>& queueLink() { return schedLink; }
   WaitKey waitKey() const { return {waitObject, waitGeneration, waitOp}; }
-  void initialize(Process* owner, u32 slot, u32 entry, u32 stack, u32 token = 0, u32 record = 0);
+  void initialize(Process* owner, u32 slot, u32 entry, u32 top, u32 initialBytes = 0, u32 token = 0, u32 record = 0);
   void releaseJoinClaim();
   void dropJoinRecord();
   void block(u32 object, WaitReason op, u32 timeout);
@@ -77,7 +82,6 @@ struct Process {
   u32 group_id;
   int code;
   u32* pd;
-  u32 code_end;
   KernelStack kernelStack;
   Thread thread[MaxThreads];
   Handle handles[HANDLES];

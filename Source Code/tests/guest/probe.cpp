@@ -182,7 +182,7 @@ int main(void) {
   check(api(SYS_TIME, 0x100000, 12, 0) == S_INVALID, "time kernel output");
   check(api(SYS_TIME, USER_BASE, 12, 0) == S_INVALID,
         "time readonly code output");
-  check(api(SYS_TIME, USER_STACK(0) - 8, 12, 0) == S_INVALID,
+  check(api(SYS_TIME, USER_MAIN_STACK_TOP - 8, 12, 0) == S_INVALID,
         "time stack guard crossing");
   check(api(SYS_TIME, (u32)time_buffer, sizeof(time_buffer), 0) == 0 &&
             time_buffer[0] < 24 && time_buffer[1] < 60 && time_buffer[2] < 60 &&

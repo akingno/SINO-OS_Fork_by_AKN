@@ -3,13 +3,14 @@
 #include "../panic.h"
 
 namespace task {
-void Thread::initialize(Process* owner, u32 slot, u32 entry, u32 stack, u32 token, u32 record) {
-  if (schedLink.linked() || timer.slot || waitNotified || joinObject || joinTarget || joiner) {
+void Thread::initialize(Process* owner, u32 slot, u32 entry, u32 top, u32 initialBytes, u32 token, u32 record) {
+  if (schedLink.linked() || timer.slot || waitNotified || joinObject || joinTarget || joiner || stackTop) {
     panic("Reinitialize linked thread", slot, timer.slot);
   }
   memset(this, 0, sizeof(*this));
   process = owner;
   index = slot;
+  stackTop = top;
   tid = token;
   joinObject = record;
   state = ThreadState::READY;
@@ -17,7 +18,7 @@ void Thread::initialize(Process* owner, u32 slot, u32 entry, u32 stack, u32 toke
   saved.frame.eip = entry;
   saved.frame.cs = 0x1b;
   saved.frame.eflags = 0x202;
-  saved.useresp = stack;
+  saved.useresp = top - initialBytes;
   saved.ss = 0x23;
   enqueueReady(*this);
 }
