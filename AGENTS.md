@@ -137,7 +137,7 @@ task 提取契约见 [task-subsystem.md](Source Code/docs/task-subsystem.md)。C
 
 加载器和用户栈 VMA 登记专项：`node 'Source Code/tests/host/test-memory.js' vma '<ShellBridge 构建目录>'`，2 项，先用 `vma --list` 预览。对应组合见 TESTING.md。
 
-- 内置应用和探针使用 SNX v2。用户栈 16 KiB，加载器支持的映像上限为 SNX v1 192 KiB、v2 16 MiB，基址 `0x40000000`
+- 构建与加载只支持 SNX v2，内存映像上限 16 MiB，链接基址 `0x40000000`，用户栈 16 KiB。拒绝 v1 与资源回收由 process 专项覆盖
 - 每进程匿名配额为 128 份分配、512 个 VMA 片段（含分配头）及 128 MiB 虚拟预留。配额变更选 anonymous 7 项、e1 6 项、e2 6 项、process 8 项及普通启动 1 项
 - SDK 堆提供 16 字节对齐，1–4080 字节使用 64 KiB slab，更大请求独立映射。每进程最多缓存 4 个 hot 和 12 个 cold 空 slab，预留失败时优先归还 cold 映射。契约见 [mm-access.md](Source Code/docs/mm-access.md#用户态堆)
 - VFS 全局 128 节点，单文件 64 KiB（含磁盘 SNX）

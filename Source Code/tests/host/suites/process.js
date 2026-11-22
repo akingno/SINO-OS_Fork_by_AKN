@@ -1,7 +1,8 @@
 const assert = require('node:assert/strict');
+const {RunSession} = require('../../../tools/run-channel');
 
 async function run(api) {
-    const {check, guestLog, processes, native, resources, report, value, launch, until, gone, command, memory, symbols} = api;
+    const {check, guestLog, processes, native, resources, report, value, launch, until, gone, command, memory, symbols, channel} = api;
     async function scheduleStats() {
         const bytes = await memory(symbols.task_schedule_stats, 60);
         const fields = ['passes', 'dispatches', 'noDispatch', 'candidates', 'retriesBlocked',
@@ -26,6 +27,25 @@ async function run(api) {
     let baseline;
     await check('headless Ring 3 ABI, permissions, threads, handles and binary VFS', async item => {
         const before = await resources();
+        const fixture = '/home/user/abi-check.snx';
+        await command('cp /boot/clitest.snx ' + fixture);
+        try {
+            const session = new RunSession(channel);
+            await session.hello();
+            const control = await session.run(fixture, ['args']);
+            assert.equal(control.reason, 1);
+            assert.equal(control.code, 0);
+            await gone(control.pid);
+            const withFixture = await resources();
+            await native('probe', '/mark-legacy-snx', 'SNX V1 FIXTURE READY');
+            await assert.rejects(session.start(fixture, ['args']), e => e.guestStatus === -1);
+            assert.match(await command('run ' + fixture, 1), /native launch failed/);
+            assert.equal((await processes()).length, 0, 'version 1 publishes no process');
+            assert.deepEqual(await resources(), withFixture, 'version 1 launch returns pages and object references');
+        } finally {
+            await command('rm ' + fixture);
+        }
+        assert.deepEqual(await resources(), before, 'SNX fixture removed without retaining resources');
         const output = await native('probe', '/contracts', 'CONTRACT PROBE PASS checks=');
         const count = Number(output.match(/CONTRACT PROBE PASS checks=(\d+)/)?.[1]);
         assert(count >= 70, 'incomplete headless assertions');

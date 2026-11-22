@@ -62,7 +62,7 @@ static int worker(void*) {
   return S_OK;
 }
 static int paging_worker(void* arg) {
-  volatile u32* bottom = (volatile u32*)(USER_V2_STACK(1) - 16384);
+  volatile u32* bottom = (volatile u32*)(USER_STACK(1) - 16384);
   require(*bottom == 0, "new thread stack is zeroed");
   *bottom = paging_cookie;
   return worker(arg);
@@ -84,9 +84,9 @@ static int paging_tests(u32 cookie) {
             "thread stack slot allocated or reused");
     u32 start = (u32)api(SYS_TICKS, 0, 0, 0);
     while ((u32)api(SYS_TICKS, 0, 0, 0) - start < 100 &&
-           (!done || api(SYS_TIME, USER_V2_STACK(1) - 12, 12, 0) != S_INVALID))
+           (!done || api(SYS_TIME, USER_STACK(1) - 12, 12, 0) != S_INVALID))
       Yield(1);
-    require(done && api(SYS_TIME, USER_V2_STACK(1) - 12, 12, 0) == S_INVALID,
+    require(done && api(SYS_TIME, USER_STACK(1) - 12, 12, 0) == S_INVALID,
             "exited thread stack is unmapped");
   }
   u32 start = (u32)api(SYS_TICKS, 0, 0, 0);

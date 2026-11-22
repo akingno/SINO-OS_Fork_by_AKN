@@ -11,7 +11,7 @@
 
 #define USER_FLAGS (PAGE_PRESENT | PAGE_USER)
 #define USER_FIRST_PDE (USER_BASE / TABLE_BYTES)
-#define USER_END_PDE ((USER_V2_END + TABLE_BYTES - 1) / TABLE_BYTES)
+#define USER_END_PDE ((USER_END + TABLE_BYTES - 1) / TABLE_BYTES)
 
 static_assert(BOOT_POOL_START % TABLE_BYTES == 0 &&
                    BOOT_IDENTITY_BYTES % TABLE_BYTES == 0 &&
@@ -236,7 +236,7 @@ int paging_is_active(const u32* pd) {
 
 /* Page tables are kernel pages, so the direct mapping always reaches them. */
 static u32* user_table(const u32* pd, u32 va) {
-  if (va < USER_BASE || va >= USER_V2_END) { // 不在范围内，直接返回空指针
+  if (va < USER_BASE || va >= USER_END) { // 不在范围内，直接返回空指针
     return 0;
   }
   u32 pde = pd[pde_index(va)];
@@ -283,7 +283,7 @@ u32* paging_user_create(void) {
     write: 是否允许用户写入
 */
 UserMapResult paging_user_map(u32* pd, u32 va, phys_t page, int write) {
-  if (!pd || !page || va < USER_BASE || va >= USER_V2_END || !page_aligned(va | page)) {
+  if (!pd || !page || va < USER_BASE || va >= USER_END || !page_aligned(va | page)) {
     return UserMapResult::Invalid;
   }
   u32* pt = user_table(pd, va);

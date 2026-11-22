@@ -559,20 +559,10 @@ namespace task {
     if (!current || current->pd != pd || address < USER_BASE) {
       return 0;
     }
-    if (current->abi == 2) {
-      if (address < USER_DYNAMIC_END) {
-        return USER_DYNAMIC_END;
-      }
-      return address < USER_V2_END ? USER_V2_END : 0;
+    if (address < USER_DYNAMIC_END) {
+      return USER_DYNAMIC_END;
     }
-    if (address <= USER_V1_END) {
-      return USER_V1_END;
-    }
-    return address >= USER_DYNAMIC_BASE && address < USER_DYNAMIC_END ? USER_DYNAMIC_END : 0;
-  }
-
-  static u32 user_stack_top(const Process* p, int thread) {
-    return p->abi == 2 ? USER_V2_STACK(thread) : USER_V1_STACK(thread);
+    return address < USER_END ? USER_END : 0;
   }
   static int register_mapping(Process* p, u32 base, u32 bytes, VmaType type, bool writable, bool code = false) {
 #ifdef SINO_SHELL_BRIDGE
@@ -591,7 +581,7 @@ namespace task {
     return S_OK;
   }
   static void release_user_stack(Process* p, int slot) {
-    const u32 top = user_stack_top(p, slot);
+    const u32 top = USER_STACK(slot);
     const u32 start = top - UserStackBytes;
     VmaNode* node = mm::vma_find_exact(p->vma_root, start / PAGE_SIZE);
     if (!node || node->type != VmaType::Stack || !mm::vma_remove(p->vma_root, node)) {
@@ -601,7 +591,7 @@ namespace task {
     kfree(node);
   }
   static int alloc_user_stack(Process* p, int thread) {
-    u32 top = user_stack_top(p, thread), start = top - UserStackBytes;
+    const u32 top = USER_STACK(thread), start = top - UserStackBytes;
     for (u32 va = start; va < top; va += PAGE_SIZE) {
       if (!alloc_user_page(p, va, 1).page) {
         free_user_pages(p, start, va);
@@ -775,7 +765,7 @@ namespace task {
     if (vfs_read(n, bytes, MAX_FILE) < 0) {
       return S_IO;
     }
-    NativeHeader* h = (NativeHeader*)bytes;
+    const NativeHeader* h = (const NativeHeader*)bytes;
     if (!native_header_valid(h, nodes[n].size)) {
       return S_INVALID;
     }
@@ -785,7 +775,6 @@ namespace task {
     Process* p = &processes[reserved];
     if (p->state) { panic("PID slot still owned", reserved, p->pid); }
     memset((void*)p, 0, sizeof(*p));
-    p->abi = h->abi;
     p->code_end = USER_BASE + h->data_offset;
     p->reclaim_priority = (i16)(policy == PROCESS_STRICT ? ReclaimClass::Background
                                                        : ReclaimClass::InteractiveBackground);
@@ -847,15 +836,14 @@ namespace task {
       status = register_mapping(p, USER_BASE + h->data_offset, imageBytes - h->data_offset, VmaType::Image, true);
     }
     if (status != S_OK) { release(p); return status; }
-    const u32 paramsBase = p->abi == 2 ? USER_V2_ARGUMENTS : USER_V1_ARGUMENTS;
-    phys_t params_page = alloc_user_page(p, paramsBase, 0).page;
+    phys_t params_page = alloc_user_page(p, USER_ARGUMENTS, 0).page;
     if (!params_page) {
       release(p);
       return S_NOMEM;
     }
     char executable[128];
     vfs_path(n, executable);
-    status = register_mapping(p, paramsBase, PAGE_SIZE, VmaType::Params, false);
+    status = register_mapping(p, USER_ARGUMENTS, PAGE_SIZE, VmaType::Params, false);
     if (status != S_OK) { release(p); return status; }
     u8* params = (u8*)kmap(params_page);
     memcpy(params, arguments, strlen(arguments) + 1);
@@ -946,7 +934,7 @@ namespace task {
       p->name[j] = nodes[n].name[j];
       j++;
     }
-    p->thread[0].initialize(p, 0, USER_BASE + h->entry, user_stack_top(p, 0));
+    p->thread[0].initialize(p, 0, USER_BASE + h->entry, USER_STACK(0));
     if (run && run->timed) {
       armTimer(p->timer, run->deadline, TimerKind::Run, p);
     }
@@ -1417,7 +1405,7 @@ namespace task {
       Thread& t = current->thread[slot];
       if (t.state != ThreadState::UNUSED) { continue; }
       if (!alloc_user_stack(current, (int)slot)) { return S_NOMEM; }
-      const u32 top = user_stack_top(current, (int)slot);
+      const u32 top = USER_STACK(slot);
       const u32 initial[] = {0, spec.entry, spec.argument};
       int result = copy_to_user(current->pd, top - sizeof(initial), initial, sizeof(initial));
       int object = -1;
@@ -2252,7 +2240,7 @@ namespace task {
           if (!alloc_user_stack(current, i)) {
             return S_NOMEM;
           }
-          current->thread[i].initialize(current, (u32)i, a, user_stack_top(current, i));
+          current->thread[i].initialize(current, (u32)i, a, USER_STACK(i));
           return i;
         }
       }

@@ -49,7 +49,7 @@ extern "C" {
 /* ── Kernel virtual address layout ──
  *
  * 0x00000000 - direct_map_end   Direct mapping (virt == phys)
- * USER_BASE  - USER_V2_END      User space (per-process, defined in api.h)
+ * USER_BASE  - USER_END      User space (per-process, defined in api.h)
  * KMAP_BASE  - KMAP_BASE+4MiB   KMAP window (PDE 1022, shared page table) */
 #define PHYS_LIMIT_PAGES    0x100000u   /* 4 GiB in page frames */
 #define KMAP_PDE_INDEX      1022u // KAMP占页目录第1022项

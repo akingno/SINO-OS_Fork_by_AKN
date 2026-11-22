@@ -77,7 +77,7 @@ struct Process {
   u32 group_id;
   int code;
   u32* pd;
-  u32 abi, code_end;
+  u32 code_end;
   KernelStack kernelStack;
   Thread thread[MaxThreads];
   Handle handles[HANDLES];

@@ -15,7 +15,7 @@ static void require(int condition, const char* why) {
 static int worker(void*) {
   StartInfo info;
   const u32 stackAddress = (u32)&info;
-  require(stackAddress >= USER_V2_STACK(1) - 16384 && stackAddress < USER_V2_STACK(1),
+  require(stackAddress >= USER_STACK(1) - 16384 && stackAddress < USER_STACK(1),
           "worker local uses the first v2 stack");
   worker_done = QueryStartInfo(&info) == S_OK && info.policy == PROCESS_STRICT;
   return S_OK;
@@ -25,7 +25,7 @@ int main(void) {
   if (streq(Arguments(), "oom-vma-stack")) {
     require(sino::thread::create(worker, nullptr, ThreadCreateFlags::Detached) == S_NOMEM,
             "stack VMA failure reported");
-    require(QueryStartInfo((StartInfo*)(USER_V2_STACK(1) - sizeof(StartInfo))) == S_INVALID,
+    require(QueryStartInfo((StartInfo*)(USER_STACK(1) - sizeof(StartInfo))) == S_INVALID,
             "failed stack unmapped");
     require(sino::thread::create(worker, nullptr, ThreadCreateFlags::Detached) > 0,
             "failed slot reused");
@@ -38,10 +38,10 @@ int main(void) {
   SystemInfo info;
   require(QuerySystemInfo(&info) == S_OK && (info.features & FEATURE_SNX_V2) &&
           info.image_bytes == SNX_V2_IMAGE_BYTES, "reported v2 image limit");
-  require((u32)Arguments() == USER_V2_ARGUMENTS && streq(Arguments(), "wide") &&
+  require((u32)Arguments() == USER_ARGUMENTS && streq(Arguments(), "wide") &&
           streq(Executable(), "/boot/memv2.snx"), "v2 startup strings");
-  require(QueryStartInfo((StartInfo*)USER_V2_ARGUMENTS) == S_INVALID &&
-          QueryStartInfo((StartInfo*)(USER_V2_STACK(0) - 4)) == S_INVALID,
+  require(QueryStartInfo((StartInfo*)USER_ARGUMENTS) == S_INVALID &&
+          QueryStartInfo((StartInfo*)(USER_STACK(0) - 4)) == S_INVALID,
           "argument page read-only and high stack guard unmapped");
 
   u32 end = (u32)(image + sizeof(image));

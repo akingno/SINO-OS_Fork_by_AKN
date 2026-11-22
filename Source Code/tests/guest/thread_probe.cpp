@@ -39,7 +39,7 @@ int worker(void* raw) {
 }
 u32 stackTop(int tid) {
   u32 slot = ((u32)tid & 7u) - 1;
-  return USER_V2_STACK(slot);
+  return USER_STACK(slot);
 }
 ThreadResult joined(int tid, int code, u32 timeout = 100) {
   struct { u32 before; ThreadResult result; u32 after; } out;

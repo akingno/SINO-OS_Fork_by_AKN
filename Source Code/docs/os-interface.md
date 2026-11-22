@@ -5,9 +5,9 @@ thread-level blocking waits. See the contracts for [bounded CLI](bounded-cli.md)
 [file objects](file-objects.md), [pipe streams](stream-pipes.md) and
 [text sessions](terminal-sessions.md). The Ring 3 [Shell](user-shell.md)
 uses text sessions through the [console frontend](text-console.md).
-Existing SNX1 headers, startup strings and all 47 old syscall numbers remain
-unchanged. Existing negative errors and whole-file Write's success value 0 are
-unchanged. The policy test pins old syscall numbers with compile-time assertions.
+The SNX loader accepts version 2. The policy test pins the original 47 syscall
+numbers independently of the executable format. Negative errors and the
+whole-file Write success value of zero follow the syscall ABI.
 
 ## Versioned read-only queries
 
@@ -335,18 +335,17 @@ hold the lock through any syscall that uses the cache buffer.
 
 ## SNX image layout and physical pool
 
-SNX v1 and v2 use the same magic, 32-byte header and link base `0x40000000`.
-The `abi` field selects the layout. v1 images retain the 192 KiB limit and
-their original argument page and stack slots. v2 `memory_bytes` may reach
-16 MiB, including BSS. Both versions retain the 64 KiB on-disk file limit.
-`SystemInfo.image_bytes` reports the largest supported in-memory image.
+SNX v2 uses the magic `0x31584e53`, a 32-byte header and link base
+`0x40000000`. The header's `abi` field must be 2. Other versions return
+`S_INVALID` before reserving a process slot. The on-disk file limit is 64 KiB.
+`memory_bytes` may reach 16 MiB, including BSS, as reported by
+`SystemInfo.image_bytes`.
 
-v2 places its read-only argument and executable strings at `0x80000000` and
-its first stack top at `0x80010000`. The remaining stacks are spaced 32 KiB
-apart with 16 KiB mapped per stack. The dynamic allocator skips pages occupied
-by the actual image. New v2 programs build with `SINO_SNX_ABI=2` and link with
-`--defsym=snx_abi=2`. The repository build selects this through the app's ABI
-entry. All bundled applications and probes are now built as SNX v2.
+The loader places the read-only argument and executable strings at
+`0x80000000` and the first stack top at `0x80010000`. The remaining stacks are
+spaced 32 KiB apart with 16 KiB mapped per stack. The dynamic allocator skips
+pages occupied by the actual image. The repository linker script emits
+version 2 for each application and probe.
 
 The kernel publishes E820 RAM above 64 MiB after switching to its formal
 supervisor page tables. The identity window ends at 1 GiB, where SNX user

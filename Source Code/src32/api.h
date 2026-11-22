@@ -1,6 +1,6 @@
 #ifndef SINO_API_H
 #define SINO_API_H
-/* Native ABI 1. Values are shared with separately linked ring-3 programs. */
+/* Values are shared with separately linked Ring 3 programs. */
 #include "types.h"
 #ifdef __cplusplus
 extern "C" {
@@ -281,34 +281,22 @@ typedef struct {
 #define ANON_MAX_REGIONS 128u
 #define ANON_MAX_BYTES 0x8000000u
 #define ANON_MAX_FRAGMENTS 512u
-#define SNX_V1_IMAGE_BYTES 0x30000u
+#define SNX_ABI_VERSION 2u
 #define SNX_V2_IMAGE_BYTES 0x1000000u
-#define USER_V1_ARGUMENTS (USER_BASE + SNX_V1_IMAGE_BYTES)
-#define USER_V1_STACK(t) (USER_BASE + 0x40000u + (u32)(t) * 0x8000u)
-#define USER_V1_END (USER_BASE + 0x60000u)
-#define USER_V2_ARGUMENTS USER_DYNAMIC_END
-#define USER_V2_STACK(t) (USER_V2_ARGUMENTS + 0x10000u + (u32)(t) * 0x8000u)
-#define USER_V2_END (USER_V2_ARGUMENTS + 0x30000u)
-#if defined(SINO_SNX_ABI) && SINO_SNX_ABI == 2
-#define USER_BYTES SNX_V2_IMAGE_BYTES
-#define USER_ARGUMENTS USER_V2_ARGUMENTS
-#define USER_STACK(t) USER_V2_STACK(t)
-#else
-#define USER_BYTES SNX_V1_IMAGE_BYTES
-#define USER_ARGUMENTS USER_V1_ARGUMENTS
-#define USER_STACK(t) USER_V1_STACK(t)
-#endif
+#define USER_ARGUMENTS 0x80000000u
+#define USER_STACK(t) (USER_ARGUMENTS + 0x10000u + (u32)(t) * 0x8000u)
+#define USER_END (USER_ARGUMENTS + 0x30000u)
 #define NATIVE_MAGIC 0x31584e53u /* SNX1; deliberately not PE/Win32 */
 typedef struct {
   u32 magic, abi, image_bytes, entry, data_offset, memory_bytes, reserved[2];
 } NativeHeader;
 
 static inline int native_header_valid(const NativeHeader* h, u32 file_bytes) {
-  return h->magic == NATIVE_MAGIC && (h->abi == 1 || h->abi == 2) &&
+  return h->magic == NATIVE_MAGIC && h->abi == SNX_ABI_VERSION &&
          h->image_bytes == file_bytes && h->entry >= sizeof(NativeHeader) &&
          h->entry < h->data_offset && h->data_offset <= h->image_bytes &&
          !(h->data_offset & 4095) && h->memory_bytes >= h->image_bytes &&
-         h->memory_bytes <= (h->abi == 2 ? SNX_V2_IMAGE_BYTES : SNX_V1_IMAGE_BYTES) &&
+         h->memory_bytes <= SNX_V2_IMAGE_BYTES &&
          !h->reserved[0] && !h->reserved[1];
 }
 #ifdef __cplusplus

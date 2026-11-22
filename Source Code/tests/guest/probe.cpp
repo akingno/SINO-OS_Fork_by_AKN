@@ -24,6 +24,20 @@ static void check(int ok, const char *s) {
 #if MODE == 0
 /* Text-only core contracts. */
 static u8 contracts_data[MAX_FILE];
+static int mark_legacy_snx(void) {
+  const char* path = "/home/user/abi-check.snx";
+  const int size = Read(path, contracts_data, sizeof(contracts_data));
+  check(size >= (int)sizeof(NativeHeader), "SNX fixture read");
+  NativeHeader header;
+  memcpy(&header, contracts_data, sizeof(header));
+  check(native_header_valid(&header, (u32)size) && header.memory_bytes <= 192u * 1024,
+        "SNX fixture header fits the old image size limit");
+  header.abi = 1;
+  memcpy(contracts_data, &header, sizeof(header));
+  check(Write(path, contracts_data, (u32)size) == S_OK, "SNX fixture version changed");
+  Log("SNX V1 FIXTURE READY\n");
+  return 0;
+}
 static void contracts_files(int verify_only) {
   const char *saved = "/home/user/contracts-persist.bin";
   if (!verify_only) {
@@ -132,6 +146,9 @@ int main(void) {
   }
   if (streq(arg, "/schedule")) {
     return schedulerprobe::run();
+  }
+  if (streq(arg, "/mark-legacy-snx")) {
+    return mark_legacy_snx();
   }
   if (streq(arg, "/boot-extent")) {
     int directory = GrantDirectory("/boot", FS_READ | FS_LOOKUP);

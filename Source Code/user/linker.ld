@@ -1,9 +1,8 @@
 OUTPUT_FORMAT(pei-i386)
 ENTRY(_user_start)
-PROVIDE(snx_abi = 1);
 SECTIONS {
  . = 0x40000000;
- .text : { LONG(0x31584e53); LONG(snx_abi); LONG(0); LONG(0); LONG(0); LONG(0); LONG(0); LONG(0); *(.start) *(.text*) *(.rdata*) *(.rodata*) }
+ .text : { LONG(0x31584e53); LONG(2); LONG(0); LONG(0); LONG(0); LONG(0); LONG(0); LONG(0); *(.start) *(.text*) *(.rdata*) *(.rodata*) }
  . = ALIGN(4096);
  ___user_data = .;
  .data : { LONG(0); *(.data*) }
