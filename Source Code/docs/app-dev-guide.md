@@ -16,6 +16,8 @@
 
 构建检查包括必需的链接符号、64 KiB 文件上限和 16 MiB 的 SNX v2 内存映像上限。
 
+内置 Ring 3 C++ 程序及 SDK 运行时共用 `tools/build-user.js`，启用 GCC `-fstack-clash-protection` 为较大的固定大小栈帧和动态栈分配生成 4 KiB 逐页探测，让越界访问在 Guard 内触发缺页。独立构建的 SNX 和手写汇编需自行保证逐页访问。更换编译器或目标时应复核两种栈分配的指令和 freestanding 链接。
+
 ## SNX 格式
 
 SNX v2 的 32 字节头记录 magic、版本 2、映像大小、入口点、数据偏移和内存大小。链接基址为 `0x40000000`。宿主链接以 PE/COFF 为中间格式，客户机加载转换后的 SNX 文件。旧版 SNX v1 程序需要重新构建。
