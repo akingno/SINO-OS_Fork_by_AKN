@@ -98,8 +98,9 @@ static int paging_tests(u32 cookie) {
   return 0;
 }
 static int paging_window_tests(int fault) {
-  u32 boundary = USER_DYNAMIC_BASE + 0x400000u;
-  u32 high = USER_DYNAMIC_END - 4096;
+  constexpr u32 TableBytes = 4u * 1024 * 1024;
+  const u32 boundary = (USER_DYNAMIC_BASE / TableBytes + 1) * TableBytes;
+  const u32 high = USER_DYNAMIC_END - 4096;
   StartInfo* across = (StartInfo*)(boundary - 8);
   require(QueryStartInfo(across) == 0 && across->policy == PROCESS_STRICT,
           "writable buffer crosses a page directory boundary");

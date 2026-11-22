@@ -225,8 +225,6 @@ namespace task {
     }
     return ANON_MAX_REGIONS;
   }
-  /* VMA records anonymous reservations. The page table also covers mappings
-   * made by the loader, so the first-fit search checks both. */
   static int anon_map(Process* p, u32 bytes) {
     if (!bytes || !page_ceil_checked(bytes, &bytes)) {
       return S_INVALID;
@@ -237,42 +235,29 @@ namespace task {
     const u32 id = find_anon_id(p);
     if (id == ANON_MAX_REGIONS) { return S_LIMIT; }
     const u32 pages = bytes / PAGE_SIZE;
-    u32 start = USER_DYNAMIC_BASE;
-    for (;;) {
-      const u32 base = paging_user_find_gap(p->pd, start, USER_DYNAMIC_END, bytes);
-      if (!base) {
-        return S_LIMIT;
-      }
-      const u32 basePage = base / PAGE_SIZE;
-      const VmaNode* overlap = mm::vma_find(p->vma_root, basePage);
-      if (!overlap) {
-        const VmaNode* next = mm::vma_lower_bound(p->vma_root, basePage);
-        if (next && next->startPage < basePage + pages) { overlap = next; }
-      }
-      if (overlap) {
-        start = (overlap->startPage + overlap->pageCount) * PAGE_SIZE;
-        continue;
-      }
-      if (p->reclaim_priority >= (i16)ReclaimClass::Background &&
-          page_watermark() != PageWatermark::Normal) {
-        return S_NOMEM;
-      }
-      auto* region = static_cast<VmaNode*>(kmalloc(sizeof(VmaNode)));
-      if (!region) { return S_LIMIT; }
-      *region = VmaNode{basePage, pages, 0, 0, 0, VmaType::Anonymous};
-      region->allocId = (u8)id;
-      region->setFlag(VmaNode::Flag::Head, true);
-      region->setFlag(VmaNode::Flag::Read, true);
-      region->setFlag(VmaNode::Flag::Write, true);
-      if (!mm::vma_insert(p->vma_root, region)) {
-        kfree(region);
-        return S_LIMIT;
-      }
-      p->vma_bytes += bytes;
-      p->anonIds[id / AnonIdWordBits] |= 1u << (id % AnonIdWordBits);
-      ++p->anonFragments;
-      return (int)base;
+    u32 basePage;
+    if (!mm::vma_find_gap(p->vma_root, USER_DYNAMIC_BASE / PAGE_SIZE, USER_DYNAMIC_END / PAGE_SIZE, pages, basePage)) {
+      return S_LIMIT;
     }
+    if (p->reclaim_priority >= (i16)ReclaimClass::Background &&
+        page_watermark() != PageWatermark::Normal) {
+      return S_NOMEM;
+    }
+    auto* region = static_cast<VmaNode*>(kmalloc(sizeof(VmaNode)));
+    if (!region) { return S_LIMIT; }
+    *region = VmaNode{basePage, pages, 0, 0, 0, VmaType::Anonymous};
+    region->allocId = (u8)id;
+    region->setFlag(VmaNode::Flag::Head, true);
+    region->setFlag(VmaNode::Flag::Read, true);
+    region->setFlag(VmaNode::Flag::Write, true);
+    if (!mm::vma_insert(p->vma_root, region)) {
+      kfree(region);
+      return S_LIMIT;
+    }
+    p->vma_bytes += bytes;
+    p->anonIds[id / AnonIdWordBits] |= 1u << (id % AnonIdWordBits);
+    ++p->anonFragments;
+    return (int)(basePage * PAGE_SIZE);
   }
   static bool belongs(const VmaNode* n, u8 id) {
     return n && n->type == VmaType::Anonymous && n->allocId == id;
@@ -620,12 +605,11 @@ namespace task {
     pr_debug("Launch VMA coverage passed\n");
   }
   static int paging_probe_setup(Process* p, int exhaust) {
-    u32 cross = USER_DYNAMIC_BASE + TABLE_BYTES - PAGE_SIZE;
-    u32 high = USER_DYNAMIC_END - PAGE_SIZE;
-    if (paging_user_find_gap(p->pd, cross, cross + 2 * PAGE_SIZE, 2 * PAGE_SIZE) != cross ||
-      !alloc_user_page(p, cross, 1).page || !alloc_user_page(p, cross + PAGE_SIZE, 1).page ||
-      paging_user_find_gap(p->pd, cross, cross + 3 * PAGE_SIZE, PAGE_SIZE) != cross + 2 * PAGE_SIZE) {
-      return S_INVALID;
+    const u32 boundary = (pde_index(USER_DYNAMIC_BASE) + 1) * TABLE_BYTES;
+    const u32 cross = boundary - PAGE_SIZE;
+    const u32 high = USER_DYNAMIC_END - PAGE_SIZE;
+    if (!alloc_user_page(p, cross, 1).page || !alloc_user_page(p, boundary, 1).page) {
+      return S_NOMEM;
     }
 
     u32 before = free_pages;

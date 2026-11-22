@@ -387,30 +387,6 @@ u32 paging_user_count(const u32* pd) {
   return count;
 }
 
-// 寻找一段尚未映射的连续虚拟地址范围
-u32 paging_user_find_gap(const u32* pd, u32 start, u32 end, u32 bytes) {
-  if (start < USER_DYNAMIC_BASE || end > USER_DYNAMIC_END || start >= end ||
-      !bytes || bytes > end - start || !page_aligned(start | end | bytes)) {
-    return 0;
-  }
-  u32 gap = start;
-  for (u32 va = start; va < end;) {
-    const u32* pt = user_table(pd, va);
-    if (pt) {
-      if (pt[pte_index(va)] & PAGE_PRESENT)
-        gap = va + PAGE_SIZE;
-      va += PAGE_SIZE;
-    } else {
-      u32 next = (pde_index(va) + 1) * TABLE_BYTES;
-      va = next < end ? next : end;
-    }
-    if (va - gap >= bytes) {
-      return gap;
-    }
-  }
-  return 0;
-}
-
 // 彻底销毁一个用户进程的分页结构，同时释放仍由这些映射拥有的数据物理页。
 // paging_user_unmap 只解除一个页面的映射，这个会释放整个进程的用户页表
 // TODO: 如果引入COW,这里逻辑就要改

@@ -43,6 +43,8 @@ VmaNode* vma_lower_bound(VmaNode* root, u32 page);
 // Walk in ascending address order while the tree is unchanged.
 VmaNode* vma_first(VmaNode* root);
 VmaNode* vma_next(VmaNode* node);
+// Find the lowest free range of pageCount pages within [beginPage, endPage).
+bool vma_find_gap(VmaNode* root, u32 beginPage, u32 endPage, u32 pageCount, u32& startPage);
 
 // Every linked node must have been allocated by kmalloc. Clears root.
 u32 vma_destroy(VmaNode*& root);

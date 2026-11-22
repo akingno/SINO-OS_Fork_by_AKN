@@ -64,6 +64,8 @@ task 子系统提取按实际接口选测：process 8 项、policy 2 项；Threa
 
 仅变更 VMA 区间树（`mm/vma.cpp`）时选普通启动 1 项。启动自检覆盖区间边界、插入和删除后的 AVL 不变量、节点身份及资源归还，现有 `boot.ordinary` 断言自检标记。
 
+匿名 first-fit 选址变更选 `anonymous` 7 项及 `e2` 6 项，验证未驻留预留及部分解除映射后的空洞复用。宽映像避让与跨 PDE 探针变更加 `images` 11 项，调整选址与水位检查顺序时加 `reclaim` 5 项。选址算法的窗口边界由普通启动自检覆盖。
+
 加载器或用户栈 VMA 登记变更选 `test-memory.js vma` 2 项（`vma --list`），检查映像登记失败回滚及工作线程栈登记失败后的槽位复用。映像或栈布局变化时按表选 `images` 或 `thread-waits`。
 
 物理页 buddy 分配器、slab 缓存或内核通用堆（kmalloc/kfree）核心变化，选 process 8 项、images 11 项、anonymous 7 项及普通启动 1 项，共 27 项，不新增 ID。启动自检覆盖 buddy 位压缩元数据、连续页分配、守护页与空闲链一致性；images 核对 E820 和 8 字节/PFN 元数据预算。普通启动和 process 启动用例核对 slab（大小类、跨页扩容、对象隔离、非法/重复释放、空页归还）及堆自检标记（大小类边界、清零、多页释放、页归属拒绝、页计数恢复）。调用模块从 kpage_alloc 迁移到 kmalloc/kzalloc 后按对应模块选测。

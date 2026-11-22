@@ -94,7 +94,7 @@ Shell 宿主测试参数：`-ExpectedExitCode 1` 断言预期失败，`-TimeoutS
 | 内核 slab 缓存 | src32/mm/slab.h、src32/mm/slab.cpp、src32/mm/page.h:PageFrame | 普通启动与 process 核对启动自检；页归属变更加 images、anonymous，详见 TESTING.md |
 | 内核通用堆 | src32/mm/kmalloc.h、src32/mm/kmalloc.cpp、src32/mm/page.cpp:heap_page_alloc / heap_page_free | 普通启动与 process 核对大小类、清零、多页精确兜底、释放及页归属，基线见 TESTING.md |
 | 用户页表、权限和线程栈 | src32/mm/paging.cpp、src32/mm/uaccess.cpp:uaccess_prepare、src32/task/process.cpp:launch_policy / alloc_user_stack | ShellBridge 中 `run -s /boot/poltest.snx paging-a/b` |
-| 多用户页表与动态地址窗口 | src32/mm/paging.cpp:paging_user_map / paging_user_find_gap | ShellBridge 中 `run -s /boot/poltest.snx paging-c` 系列 |
+| 多用户页表与动态地址窗口 | src32/mm/paging.cpp:paging_user_map、src32/mm/vma.cpp:vma_find_gap | ShellBridge 中 `run -s /boot/poltest.snx paging-c` 系列；VMA 选址按 TESTING.md 验证 |
 | 匿名内存 | src32/task/process.cpp:anon_map / anon_unmap / protect_anon / anon_unmap_range | ShellBridge 中 `run -s /boot/fstest.snx anon-*` 系列；范围改权与部分解除映射按 TESTING.md 选 e1 / e2 |
 | 用户态 slab 分配器 | user/heap.h | `node 'Source Code/tests/host/test-user-heap.js'`；20 项，先 `--list` 预览 |
 | SDK 堆与线程同步 | user/runtime.cpp、user/sdk.h | `node 'Source Code/tests/host/test-memory.js' heap '<ShellBridge 构建目录>'`；7 项，先 `heap --list` 预览；选测组合见 TESTING.md |

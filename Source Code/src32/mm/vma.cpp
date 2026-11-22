@@ -124,6 +124,18 @@ void check_intervals() {
       vma_lower_bound(root, 111) != &top || vma_lower_bound(root, PageLimit)) {
     panic("VMA boundary lookup", 0, 0);
   }
+  u32 startPage;
+  if (!vma_find_gap(nullptr, 0, 1, 1, startPage) || startPage != 0 ||
+      !vma_find_gap(root, 98, 122, 2, startPage) || startPage != 98 ||
+      !vma_find_gap(root, 98, 123, 3, startPage) || startPage != 120 ||
+      !vma_find_gap(root, 105, 122, 2, startPage) || startPage != 120 ||
+      vma_find_gap(root, 105, 121, 2, startPage) ||
+      vma_find_gap(root, PageLimit - 1, PageLimit, 1, startPage) ||
+      vma_find_gap(root, 121, 122, 0, startPage) ||
+      vma_find_gap(root, 122, 121, 1, startPage) ||
+      vma_find_gap(root, PageLimit, PageLimit + 1, 1, startPage)) {
+    panic("VMA first-fit boundaries", 0, 0);
+  }
   // The root has two children and its successor is its immediate right child.
   if (root != &second || !vma_remove(root, &second) || root != &top || !vma_check(root) ||
       vma_find_exact(root, 100) != &first || vma_find_exact(root, 110) ||
@@ -297,6 +309,32 @@ VmaNode* vma_first(VmaNode* root) {
 
 VmaNode* vma_next(VmaNode* node) {
   return node ? next_node(node) : nullptr;
+}
+
+bool vma_find_gap(VmaNode* root, u32 beginPage, u32 endPage, u32 pageCount, u32& startPage) {
+  if (beginPage >= endPage || endPage > PageLimit || !pageCount || pageCount > endPage - beginPage) {
+    return false;
+  }
+  VmaNode* node = vma_find(root, beginPage);
+  if (!node) {
+    node = vma_lower_bound(root, beginPage);
+  }
+  u32 candidate = beginPage;
+  for (; node && node->startPage < endPage; node = vma_next(node)) {
+    if (node->startPage > candidate && pageCount <= node->startPage - candidate) {
+      startPage = candidate;
+      return true;
+    }
+    candidate = node->startPage + node->pageCount;
+    if (candidate >= endPage) {
+      return false;
+    }
+  }
+  if (pageCount > endPage - candidate) {
+    return false;
+  }
+  startPage = candidate;
+  return true;
 }
 
 u32 vma_destroy(VmaNode*& root) {

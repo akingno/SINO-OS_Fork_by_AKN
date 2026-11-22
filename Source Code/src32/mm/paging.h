@@ -53,8 +53,6 @@ phys_t paging_user_unmap(u32* pd, u32 va);
 u32 paging_user_flags(const u32* pd, u32 va);
 void paging_user_protect(u32* pd, u32 base, u32 end, bool write);
 u32 paging_user_count(const u32* pd);
-/* Search a page-aligned subrange of the dynamic window for unmapped pages. */
-u32 paging_user_find_gap(const u32* pd, u32 start, u32 end, u32 bytes);
 void paging_activate(const u32* pd);
 
 /* Kernel guards require a live kpage allocation. Initialize the token to zero
