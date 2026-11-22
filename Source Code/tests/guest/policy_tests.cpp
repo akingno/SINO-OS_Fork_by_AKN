@@ -57,16 +57,15 @@ static volatile u32 paging_cookie;
 static void require(int ok, const char *reason) {
   if (!ok) { Log("POLICY SELFTEST FAIL: "); Log(reason); Log("\n"); Exit(1); }
 }
-static void worker(void) {
+static int worker(void*) {
   done = 1;
-  api(SYS_THREAD_EXIT, 0, 0, 0);
-  for (;;) {}
+  return S_OK;
 }
-static void paging_worker(void) {
-  volatile u32* bottom = (volatile u32*)(USER_STACK(1) - 16384);
+static int paging_worker(void* arg) {
+  volatile u32* bottom = (volatile u32*)(USER_V2_STACK(1) - 16384);
   require(*bottom == 0, "new thread stack is zeroed");
   *bottom = paging_cookie;
-  worker();
+  return worker(arg);
 }
 static int paging_tests(u32 cookie) {
   StartInfo info;
@@ -76,17 +75,18 @@ static int paging_tests(u32 cookie) {
   require(api(SYS_TIME, USER_ARGUMENTS, 12, 0) == S_INVALID &&
           api(SYS_TIME, USER_STACK(0) - 4, 12, 0) == S_INVALID,
           "read-only argument page and stack gap rejected");
-  require(api(SYS_THREAD, (u32)&paging_cookie, 0, 0) == S_INVALID,
+  require(sino::thread::create(reinterpret_cast<sino::thread::Entry>(&paging_cookie), nullptr,
+                               ThreadCreateFlags::Detached) == S_INVALID,
           "writable page rejected as a thread entry");
   for (int i = 0; i < 2; i++) {
     done = 0;
-    require(api(SYS_THREAD, (u32)paging_worker, 0, 0) == 1,
+    require(sino::thread::create(paging_worker, nullptr, ThreadCreateFlags::Detached) > 0,
             "thread stack slot allocated or reused");
     u32 start = (u32)api(SYS_TICKS, 0, 0, 0);
     while ((u32)api(SYS_TICKS, 0, 0, 0) - start < 100 &&
-           (!done || api(SYS_TIME, USER_STACK(1) - 12, 12, 0) != S_INVALID))
+           (!done || api(SYS_TIME, USER_V2_STACK(1) - 12, 12, 0) != S_INVALID))
       Yield(1);
-    require(done && api(SYS_TIME, USER_STACK(1) - 12, 12, 0) == S_INVALID,
+    require(done && api(SYS_TIME, USER_V2_STACK(1) - 12, 12, 0) == S_INVALID,
             "exited thread stack is unmapped");
   }
   u32 start = (u32)api(SYS_TICKS, 0, 0, 0);
@@ -221,7 +221,8 @@ int main(void) {
   require(duplicate>0 && api(SYS_EVENT_SET,duplicate,1,0)==S_BADHANDLE &&
           api(SYS_EVENT_SET,event,1,0)==0 && Close(event)==0 &&
           api(SYS_EVENT_WAIT,duplicate,0,0)==0 && Close(duplicate)==0,"local handle rights");
-  require(api(SYS_THREAD,(u32)worker,0,0)>0,"local thread allowed");
+  require(sino::thread::create(worker, nullptr, ThreadCreateFlags::Detached) > 0,
+          "local thread allowed");
   u32 start=(u32)api(SYS_TICKS,0,0,0);
   while(!done && (u32)api(SYS_TICKS,0,0,0)-start<100) Yield(1);
   require(done,"local thread scheduled");

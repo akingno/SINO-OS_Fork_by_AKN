@@ -147,7 +147,7 @@ node 'Source Code/tests/host/test-src32-refactor.js'
 
 | 入口（位于 tests/host/） | 范围 | 用例数 |
 | --- | --- | --- |
-| `test-memory.js images <构建目录>` | 4 GiB/E820、高页、当前 SNX v1/v2、定向 OOM、冷启动 | 11 |
+| `test-memory.js images <构建目录>` | 4 GiB/E820、高页、SNX v2 启动与参数、定向 OOM、冷启动 | 11 |
 | `test-memory.js anonymous <构建目录>` | 匿名映射、配额、I/O、定向 OOM/故障与注入隔离 | 7 |
 | `test-pipe-waits.js <构建目录>` | 管道阻塞与回收 | 10 |
 | `test-completion-waits.js <构建目录>` | 完成记录阻塞等待 | 8 |

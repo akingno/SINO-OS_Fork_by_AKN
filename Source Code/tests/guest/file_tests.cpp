@@ -301,7 +301,7 @@ int main(void) {
     int base = AnonMap(ANON_MAX_BYTES);
     require(base > 0 && AnonMap(1) == S_LIMIT, "exact total quota and one-byte excess");
     require(AnonUnmap((void*)((u32)base + 1)) == S_INVALID &&
-            AnonUnmap((void*)USER_V1_ARGUMENTS) == S_INVALID &&
+            AnonUnmap((void*)USER_ARGUMENTS) == S_INVALID &&
             AnonUnmap((void*)USER_DYNAMIC_END) == S_INVALID, "unaligned and external unmap rejected");
     volatile u8* tail = (volatile u8*)((u32)base + ANON_MAX_BYTES - 1);
     require(*tail == 0, "last byte of exact extent is accessible");

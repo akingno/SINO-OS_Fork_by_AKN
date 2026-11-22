@@ -1,5 +1,6 @@
 #include "stream.h"
 
+static constexpr u32 WideImageSampleOffset = 192 * 1024;
 static volatile u8 image[SNX_V2_IMAGE_BYTES - 32768];
 static volatile u32 worker_done;
 
@@ -11,18 +12,23 @@ static void require(int condition, const char* why) {
   Exit(1);
 }
 
-static void worker(void) {
+static int worker(void*) {
   StartInfo info;
+  const u32 stackAddress = (u32)&info;
+  require(stackAddress >= USER_V2_STACK(1) - 16384 && stackAddress < USER_V2_STACK(1),
+          "worker local uses the first v2 stack");
   worker_done = QueryStartInfo(&info) == S_OK && info.policy == PROCESS_STRICT;
-  api(SYS_THREAD_EXIT, 0, 0, 0);
+  return S_OK;
 }
 
 int main(void) {
   if (streq(Arguments(), "oom-vma-stack")) {
-    require(api(SYS_THREAD, (u32)worker, 0, 0) == S_NOMEM, "stack VMA failure reported");
+    require(sino::thread::create(worker, nullptr, ThreadCreateFlags::Detached) == S_NOMEM,
+            "stack VMA failure reported");
     require(QueryStartInfo((StartInfo*)(USER_V2_STACK(1) - sizeof(StartInfo))) == S_INVALID,
             "failed stack unmapped");
-    require(api(SYS_THREAD, (u32)worker, 0, 0) == 1, "failed slot reused");
+    require(sino::thread::create(worker, nullptr, ThreadCreateFlags::Detached) > 0,
+            "failed slot reused");
     const u32 begin = StreamTicks();
     while (!worker_done && StreamTicks() - begin < 100) { Yield(1); }
     require(worker_done, "replacement worker ran");
@@ -40,12 +46,14 @@ int main(void) {
 
   u32 end = (u32)(image + sizeof(image));
   require((u32)image < USER_DYNAMIC_BASE && end > USER_DYNAMIC_BASE &&
-          !image[SNX_V1_IMAGE_BYTES] && !image[sizeof(image) - 1], "wide BSS is zero-filled");
+          !image[WideImageSampleOffset] && !image[sizeof(image) - 1], "wide BSS is zero-filled");
   image[sizeof(image) - 1] = 0x5a;
   require(QueryStartInfo((StartInfo*)(USER_DYNAMIC_BASE - 8)) == S_OK,
           "copy crosses the dynamic base inside the image");
-  require(api(SYS_THREAD, (u32)image, 0, 0) == S_INVALID &&
-          api(SYS_THREAD, (u32)worker, 0, 0) == 1, "thread entry remains code-only");
+  require(sino::thread::create(reinterpret_cast<sino::thread::Entry>(image), nullptr,
+                               ThreadCreateFlags::Detached) == S_INVALID &&
+          sino::thread::create(worker, nullptr, ThreadCreateFlags::Detached) > 0,
+          "thread entry remains code-only");
   u32 begin = StreamTicks();
   while (!worker_done && StreamTicks() - begin < 100) Yield(1);
   require(worker_done, "v2 worker uses relocated stack");

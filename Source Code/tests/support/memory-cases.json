@@ -122,17 +122,17 @@
       ]
     },
     {
-      "id": "memory.images.current-v1-binary-preserves-argv-and-typed-completion",
-      "name": "current v1 binary preserves argv and typed completion",
+      "id": "memory.images.v2-clitest-preserves-argv-and-typed-completion",
+      "name": "v2 clitest preserves argv and typed completion",
       "conditions": [
-        "current v1 binary preserves argv and typed completion"
+        "v2 clitest preserves argv and typed completion"
       ]
     },
     {
-      "id": "memory.images.v1-startup-guards-and-thread-stack-reuse-remain-valid",
-      "name": "v1 startup guards and thread stack reuse remain valid",
+      "id": "memory.images.v2-poltest-startup-guards-and-thread-stack-reuse",
+      "name": "v2 poltest startup guards and thread stack reuse",
       "conditions": [
-        "v1 startup guards and thread stack reuse remain valid"
+        "v2 poltest startup guards and thread stack reuse"
       ]
     },
     {

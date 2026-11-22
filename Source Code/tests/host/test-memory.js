@@ -166,9 +166,9 @@ async function imageContracts(source) {
         });
         await check('memory.images.multi-pde-mappings-recover-after-injected-failure', ['multi-PDE mapping succeeds after the failed launch is reclaimed'], () =>
             probe('run -s /boot/poltest.snx paging-c', /PAGING C WINDOW PASS/));
-        await check('memory.images.current-v1-binary-preserves-argv-and-typed-completion', ['current v1 binary preserves argv and typed completion'], async () => {
+        await check('memory.images.v2-clitest-preserves-argv-and-typed-completion', ['v2 clitest preserves argv and typed completion'], async () => {
             const current = bootFile(source, 'CLITEST.SNX');
-            assert.equal(current.readUInt32LE(4), 1);
+            assert.equal(current.readUInt32LE(4), 2);
             const session = new RunSession(channel);
             await session.hello();
             const result = await session.run('/boot/clitest.snx', ['args', '', 'old']);
@@ -177,8 +177,10 @@ async function imageContracts(source) {
             assert.deepEqual(result.stdout, Buffer.from([3,0,0,0,4,0,0,0,97,114,103,115,0,0,0,0,3,0,0,0,111,108,100]));
             assert.equal(free(await command('mem')), baseline);
         });
-        await check('memory.images.v1-startup-guards-and-thread-stack-reuse-remain-valid', ['v1 startup guards and thread stack reuse remain valid'], () =>
-            probe('run -s /boot/poltest.snx paging-a', /PAGING STRICT A PASS/));
+        await check('memory.images.v2-poltest-startup-guards-and-thread-stack-reuse', ['v2 poltest startup guards and thread stack reuse'], async () => {
+            assert.equal(bootFile(source, 'POLTEST.SNX').readUInt32LE(4), 2);
+            await probe('run -s /boot/poltest.snx paging-a', /PAGING STRICT A PASS/);
+        });
         await check('memory.images.v2-startup-strings-and-high-argument-stack-protection', ['v2 startup strings and high argument/stack protection',
             'wide zeroed BSS crosses the old image and dynamic boundaries',
             'v2 thread entry policy and relocated worker stack',

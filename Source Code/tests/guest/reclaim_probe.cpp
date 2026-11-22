@@ -102,11 +102,10 @@ void waitForDiscard(const void* base) {
 using Protection = MemoryProtection;
 constexpr unsigned FragmentQuotaPages = ANON_MAX_FRAGMENTS + 4;
 constexpr unsigned FragmentQuotaSplitPage = ANON_MAX_FRAGMENTS + 1;
-volatile u8* faultAddress;
-
-void writeFault() {
-  *faultAddress = 7;
+int writeFault(void* address) {
+  *static_cast<volatile u8*>(address) = 7;
   require(false, "protected write resumed");
+  return S_INVALID;
 }
 
 void fillFragmentQuota(volatile u8* base) {
@@ -316,8 +315,8 @@ int protectionTest(const char* mode) {
   volatile u8* page = reserve(1);
   void* base = (void*)page;
   if (streq(mode, "mp-retry-write")) {
-    faultAddress = page;
-    require(api(SYS_THREAD, (u32)writeFault, 0, 0) == 1, "start faulting writer");
+    require(sino::thread::create(writeFault, base, ThreadCreateFlags::Detached) > 0,
+            "start faulting writer");
     // Stay runnable. The worker's deferred fault queues it behind this thread.
     for (;;) {
       const int tmp = AnonMap(1);
