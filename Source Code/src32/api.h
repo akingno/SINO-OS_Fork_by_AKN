@@ -169,8 +169,7 @@ enum { TERM_TEXT=1, TERM_KEY, TERM_EOF, TERM_HANGUP, TERM_CANCEL, TERM_RESIZE };
 enum { TERM_LINE=1, TERM_ECHO=2 };
 enum { TERM_EDIT=17, TERM_EDIT_VIEW, TERM_EDIT_STATUS, TERM_EDIT_ACK };
 enum { TERM_DESKTOP_RUN=21 };
-enum { DESKTOP_RUN_APP=1, DESKTOP_RUN_STRICT, DESKTOP_NETTEST=4,
-       DESKTOP_KILL };
+enum { DESKTOP_RUN_APP=1, DESKTOP_RUN_STRICT, DESKTOP_KILL=5 };
 typedef struct { char path[128], argument[256]; } DesktopRun;
 typedef struct { u32 bytes,cursor,action,serial; char text[400]; } TerminalEdit;
 typedef struct { u32 op, handle, buffer, bytes, value, extra; } TerminalRequest;

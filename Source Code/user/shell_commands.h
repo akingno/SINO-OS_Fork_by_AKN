@@ -15,8 +15,6 @@ static const ShellCommand shell_commands[] = {
      "Start a program asynchronously; this command does not wait for its exit.\n  -s: strict mode, with no ambient file or spawn authority.\n  program.snx: /boot path or a path in your workspace.\n  argument: one optional string; quote it when it contains spaces."},
     {"kill", 6, "kill pid (applications started by this Shell)",
      "Cancel an application started by this Shell.\n  pid: positive process ID printed by run."},
-    {"nettest", 6, "nettest",
-     "Start the loopback network test (127.0.0.1).\n  No arguments; requires a writable session."},
     {"whoami", 0, "whoami",
      "Print the current user name. No arguments."},
     {"hostname", 0, "hostname [name]",

@@ -196,10 +196,6 @@ static void desktop_run(const char *command) {
       goto invalid;
     operation = DESKTOP_KILL;
     memcpy(request.path, &kill_pid, sizeof(kill_pid));
-  } else if (streq(command, "nettest")) {
-    if (usage(1, 1))
-      return;
-    operation = DESKTOP_NETTEST;
   } else {
     int strict = words.argc > 1 && streq(argument(1), "-s");
     u32 path_index = strict ? 2 : 1;

@@ -713,9 +713,6 @@ namespace task {
       request->argument[sizeof(request->argument) - 1]) {
       return S_INVALID;
     }
-    if (operation == DESKTOP_NETTEST) {
-      return launch("/boot/nettest.snx", CAP_HOME | CAP_NETWORK);
-    }
     if (operation != DESKTOP_RUN_APP && operation != DESKTOP_RUN_STRICT) {
       return S_INVALID;
     }

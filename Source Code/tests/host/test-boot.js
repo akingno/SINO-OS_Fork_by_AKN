@@ -89,7 +89,10 @@ async function main(args) {
     assert.equal(hash(iso), build.isoSha256, 'ISO does not match the build record');
     assert.equal(hash(bootPayload(iso)), build.bootImageSha256, 'ISO boot payload does not match the build record');
     const manifest = JSON.parse(fs.readFileSync(path.join(directory, 'boot-manifest.json'), 'utf8'));
-    assert(!manifest.files.some(file => file.name === 'RECLAIM.SNX'), 'reclaim probe belongs to ShellBridge');
+    const probeNames = ['TERMTEST','PIPETEST','FSTEST','CLITEST','COMPTEST','POLTEST','PROBE','FAULT','IOFAULT','SPIN','UDFAULT','NETTEST','BROKERQA','HEAPTEST','MEMV2','RECLAIM'].map(n => n + '.SNX');
+    for (const probe of probeNames) {
+        assert(!manifest.files.some(file => file.name === probe), `${probe} belongs to ShellBridge, not the normal image`);
+    }
     console.log(`PASS ISO9660 / El Torito boot payload for ${build.buildId}`);
 
     const executable = qemuPath();
