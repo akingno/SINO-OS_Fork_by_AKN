@@ -1,6 +1,7 @@
 #include "internal.h"
 #include "../sync/irq.h"
 #include "../pipe.h"
+#include "../terminal.h"
 #include "../panic.h"
 #include "../lib/kstring.h"
 
@@ -125,8 +126,8 @@ void handoff(WaitKey key) {
   if (!o.refs || o.generation != key.generation) { return; }
   if (key.reason == WaitReason::PIPE_READ || key.reason == WaitReason::PIPE_WRITE) {
     pipeWake(&o);
-  } else if (key.reason == WaitReason::TERM_READ) {
-    terminalWake(key.object);
+  } else if (key.reason == WaitReason::TERM_READ || key.reason == WaitReason::TERM_INPUT) {
+    terminal::wakeInput(key.object, key.reason);
   }
 }
 

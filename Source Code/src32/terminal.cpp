@@ -31,17 +31,28 @@ typedef struct {
 } Client;
 static_assert(sizeof(Terminal) <= 4096, "terminal metadata fits page");
 static u32 count;
-u32 terminal::readState(u32 object) {
+static bool input_ready(const Terminal& t, bool events) {
+  return t.input_size || (!t.closed && t.eof) || (events && t.events);
+}
+void terminal::wakeInput(u32 object, task::WaitReason reason) {
   if (!object || object > OBJECTS || !objects[object - 1].refs ||
-      objects[object - 1].type != ObjType::TERM_CLIENT) { return STREAM_HANGUP; }
+      objects[object - 1].type != ObjType::TERM_CLIENT) {
+    return;
+  }
   const Client* c = (const Client*)objects[object - 1].value;
   const Terminal* t = c->terminal;
-  if (t->closed || t->foreground_object != object) { return STREAM_HANGUP; }
-  return (t->input_size ? STREAM_READABLE : 0) | (t->eof ? STREAM_EOF : 0);
+  if (t->closed || t->eof || t->foreground_object != object) {
+    task::notify(object, reason, true);
+  } else if (input_ready(*t, reason == task::WaitReason::TERM_INPUT)) {
+    task::notify(object, reason);
+  }
 }
 static void wake_readers(Terminal* t) {
-  if (t->foreground_object)
-    process_terminal_wake(t->foreground_object);
+  terminal::wakeInput(t->foreground_object, task::WaitReason::TERM_READ);
+  terminal::wakeInput(t->foreground_object, task::WaitReason::TERM_INPUT);
+}
+static void wake_events(Terminal* t) {
+  terminal::wakeInput(t->foreground_object, task::WaitReason::TERM_INPUT);
 }
 static void wake_shell(Terminal* t) {
   const ClientIdentity identity = t->shell_client;
@@ -69,6 +80,7 @@ static void reset(Terminal* t) {
   if (t->foreground_object) {
     task::terminalForeground(t->foreground, false);
     task::notify(t->foreground_object, task::WaitReason::TERM_READ, true);
+    task::notify(t->foreground_object, task::WaitReason::TERM_INPUT, true);
   }
   t->edit_pending=t->editing=0;
   t->mode = TERM_LINE | TERM_ECHO;
@@ -216,6 +228,7 @@ static int feed(Terminal* t, const TerminalRequest* r) {
       int status = event(t, TERM_INTERRUPT, 0, 0, 0);
       if (!status) {
         t->input_size = t->line_size = t->eof = 0;
+        wake_events(t);
       }
       return status;
     }
@@ -237,6 +250,7 @@ static int feed(Terminal* t, const TerminalRequest* r) {
     if (!status) {
       t->width = w;
       t->height = h;
+      wake_events(t);
     }
     return status;
   }
@@ -245,7 +259,11 @@ static int feed(Terminal* t, const TerminalRequest* r) {
   if (r->value == TERM_KEY) {
     if (t->mode & TERM_LINE)
       return S_INVALID;
-    return event(t, TERM_KEY, r->extra, 0, 0);
+    int status = event(t, TERM_KEY, r->extra, 0, 0);
+    if (status == S_OK) {
+      wake_events(t);
+    }
+    return status;
   }
   if (r->value == TERM_EOF) {
     if (t->eof)
@@ -256,8 +274,9 @@ static int feed(Terminal* t, const TerminalRequest* r) {
     t->input_size += t->line_size;
     t->line_size = 0;
     t->eof = 1;
+    int status = event(t, TERM_EOF, 0, 0, 0);
     wake_readers(t);
-    return event(t, TERM_EOF, 0, 0, 0);
+    return status;
   }
   if (r->value != TERM_TEXT || r->extra)
     return S_INVALID;
@@ -265,7 +284,14 @@ static int feed(Terminal* t, const TerminalRequest* r) {
     return S_CLOSED;
   if(t->editing && t->foreground==t->shell && !t->mode){
     if(r->bytes>8-t->events)return S_AGAIN;
-    const u8* text=(const u8*)r->buffer;for(u32 i=0;i<r->bytes;i++)event(t,TERM_TEXT,text[i],0,0);return 0;
+    const u8* text = (const u8*)r->buffer;
+    for (u32 i = 0; i < r->bytes; i++) {
+      event(t, TERM_TEXT, text[i], 0, 0);
+    }
+    if (r->bytes) {
+      wake_events(t);
+    }
+    return S_OK;
   }
   u8 line[256], committed[512], echo[256];
   u32 echo_size = 0;
@@ -508,7 +534,7 @@ static int interactive_call(Terminal* t, Client* c, Object* control,
 
 int terminal_call(Handle* owner, u32 pid, u32 policy, const TerminalRequest* r,
                   u32* user_pd) {
-  if (r->op < TERM_CREATE || r->op > TERM_DESKTOP_RUN)
+  if (r->op < TERM_CREATE || r->op > TERM_WAIT_INPUT)
     return S_INVALID;
   if (r->op == TERM_CREATE) {
     if (policy == PROCESS_STRICT)
@@ -567,7 +593,7 @@ int terminal_call(Handle* owner, u32 pid, u32 policy, const TerminalRequest* r,
     if(e->cursor<e->bytes&&((u8)e->text[e->cursor]&0xc0)==0x80)return S_INVALID;
     u32 serial=t->edit.serial+1;if(!serial)serial=1;memcpy(&t->edit,e,sizeof(t->edit));t->edit.serial=serial;t->edit_pending=t->editing=1;return 0;
   }
-  if (r->op >= IX_START)
+  if (r->op >= IX_START && r->op <= IX_FINISH)
     return interactive_call(t, c, control, owner, pid, policy, r, user_pd);
   if (r->op == TERM_FOREGROUND) {
     if (t->shell)
@@ -622,6 +648,12 @@ int terminal_call(Handle* owner, u32 pid, u32 policy, const TerminalRequest* r,
   }
   if (r->value || r->extra)
     return S_INVALID;
+  if (r->op == TERM_WAIT_INPUT) {
+    if (r->buffer || r->bytes) {
+      return S_INVALID;
+    }
+    return input_ready(*t, true) ? S_OK : t->closed ? S_CLOSED : S_AGAIN;
+  }
   int role = handle_get(owner, r->handle, ObjType::TERM_CLIENT, 8) != 0;
   if (role && ((r->op == TERM_READ &&
                 !handle_get(owner, r->handle, ObjType::TERM_CLIENT, 2)) ||

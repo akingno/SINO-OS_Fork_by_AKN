@@ -783,7 +783,13 @@ int main(void) {
     if (position == available) {
       int n = StreamRead(cli.in, input, sizeof(input));
       if (n == S_AGAIN) {
-        Yield(1);
+        int ready = TerminalWaitInput(terminal, 0);
+        if (ready == S_CLOSED) {
+          return last_code;
+        }
+        if (ready < 0) {
+          return 1;
+        }
         continue;
       }
       if (n == 0) {

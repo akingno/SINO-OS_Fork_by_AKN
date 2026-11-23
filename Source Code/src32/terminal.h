@@ -2,6 +2,7 @@
 #define SINO_TERMINAL_H
 #include "filesys.h"
 #include "interactive.h"
+#include "task/wait.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -11,7 +12,7 @@ int terminal_call(Handle*, u32, u32, const TerminalRequest*, u32* user_pd);
 }
 #endif
 namespace terminal {
-u32 readState(u32 object);
+void wakeInput(u32 object, task::WaitReason reason);
 void release(const Object& object);
 }
 #endif

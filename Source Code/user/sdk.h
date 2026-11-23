@@ -129,6 +129,9 @@ static inline int TerminalRead(int t,void* b,u32 n){return TerminalCall(TERM_REA
 static inline int TerminalReadBlocking(int t, void* out, u32 bytes, u32 timeout) {
   return TerminalCall(TERM_READ, t, out, bytes, TERM_READ_BLOCK, timeout);
 }
+static inline int TerminalWaitInput(int t, u32 timeout) {
+  return TerminalCall(TERM_WAIT_INPUT, t, 0, 0, 0, timeout);
+}
 static inline int TerminalWrite(int t,const void* b,u32 n){return TerminalCall(TERM_WRITE,t,(void*)b,n,0,0);}
 static inline int TerminalDrain(int t,void* b,u32 n){return TerminalCall(TERM_DRAIN,t,b,n,0,0);}
 static inline int TerminalNextEvent(int t,TerminalEvent* e){return TerminalCall(TERM_EVENT,t,e,sizeof(*e),0,0);}

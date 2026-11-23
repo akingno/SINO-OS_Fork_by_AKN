@@ -100,6 +100,7 @@ handle in the child's table, which is not usable in the controller's table.
 | 9 | DRAIN | control | data / capacity <=1024 | 0 / 0 |
 | 10 | EVENT | client | TerminalEvent* / capacity >=16 | 0 / 0 |
 | 11 | READY | client | 0 / 0 | 0 / 0; returns stream readiness mask |
+| 22 | WAIT_INPUT | primary foreground client | 0 / 0 | 0 / timeout ticks |
 
 Event types: TEXT=1, KEY=2, EOF=3, HANGUP=4, CANCEL=5, RESIZE=6. KEY uses extra
 as its opaque key value; RESIZE uses (width<<16)|height. Others require extra=0.
@@ -131,6 +132,22 @@ client handle from a sibling thread completes the read with S_BADHANDLE.
 Expiry returns S_TIMEOUT without writing to the destination. EOF, buffered
 data and S_CLOSED follow the same ordering as a nonblocking read. Existing
 interactive-shell cancellation on controller loss still applies.
+
+### Waiting for events or bytes
+
+`TerminalWaitInput` waits on a primary client handle for a queued terminal
+event, readable bytes or EOF. It returns S_OK without consuming input. The
+caller retries its existing EVENT and READ operations in that order. A
+queued event or buffered bytes remain available after hangup. Once neither
+is pending, hangup returns S_CLOSED. Foreground loss and local handle close
+return S_DENIED and S_BADHANDLE respectively. The timeout is 0..60000 guest
+ticks, with zero selecting an indefinite wait.
+
+Event-only changes wake input waiters. Byte commits, EOF, hangup and
+foreground loss also notify byte readers according to their own readiness.
+The kernel checks readiness and registers the wait under the same interrupt
+boundary. If another thread consumes the condition first, retry keeps the
+original deadline.
 
 ## Verification
 

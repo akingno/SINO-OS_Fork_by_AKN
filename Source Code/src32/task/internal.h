@@ -139,7 +139,6 @@ int desktopRun(u32 a0, u32 a1, const DesktopRun* a2);
 void completionRelease(int a0);
 void streamRelease(int a0);
 void pipeWake(const Object* a0);
-void terminalWake(u32 a0);
 void interactiveWake(u32 a0);
 int runStart(Handle * a0, const RunSpec * a1);
 int runStartDirectory(Handle * a0, const RunSpec * a1, u32 a2, u32 a3);

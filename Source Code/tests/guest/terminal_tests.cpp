@@ -86,14 +86,17 @@ static int read_worker(void*) {
   wait_done = 1;
   return S_OK;
 }
-static void start_read_worker(int term, void* out) {
-  wait_request = (TerminalRequest){TERM_READ, (u32)term, (u32)out, 4, TERM_READ_BLOCK, 0};
+static void start_wait_worker(TerminalRequest request) {
+  wait_request = request;
   check(sino::thread::create(read_worker, nullptr, ThreadCreateFlags::Detached) > 0,
-        "start terminal reader");
+        "start terminal waiter");
   u32 start = StreamTicks();
   while (!wait_entered && StreamTicks() - start < 30) Yield(1);
   Yield(4);
-  check(wait_entered && !wait_done, "reader stays blocked");
+  check(wait_entered && !wait_done, "terminal waiter stays blocked");
+}
+static void start_read_worker(int term, void* out) {
+  start_wait_worker({TERM_READ, (u32)term, (u32)out, 4, TERM_READ_BLOCK, 0});
 }
 static int read_worker_result(void) {
   u32 start = StreamTicks();
@@ -135,10 +138,26 @@ static void blocking_child(int term, const char* mode) {
   if (streq(mode, "canonical") || streq(mode, "eof"))
     check(TerminalMode(term, TERM_LINE) == S_OK, "canonical mode without echo");
   check(TerminalRead(term, bytes, 1) == S_AGAIN, "legacy read returns immediately when empty");
+  if (streq(mode, "raw")) {
+    start_read_worker(term, bytes);
+  } else if (streq(mode, "eof") || streq(mode, "hangup") ||
+             streq(mode, "controller") || streq(mode, "foreground")) {
+    start_wait_worker({TERM_WAIT_INPUT, (u32)term, 0, 0, 0, 0});
+  }
   check(TerminalWrite(term, "wait", 4) == 4, "reader checkpoint");
   if (streq(mode, "raw") || streq(mode, "sdk-read")) {
-    int status = streq(mode, "sdk-read") ? StreamReadFor(term, bytes, 4, 200)
-                                        : blocking_read(term, bytes, 4, 0);
+    int status;
+    if (streq(mode, "raw")) {
+      TerminalEvent event;
+      check(TerminalWaitInput(term, 100) == S_OK &&
+            TerminalNextEvent(term, &event) == S_OK && event.type == TERM_RESIZE &&
+            !wait_done && TerminalRead(term, bytes, 1) == S_AGAIN,
+            "pure event wakes input waiter while byte read remains pending");
+      check(TerminalWrite(term, "size", 4) == 4, "event checkpoint");
+      status = read_worker_result();
+    } else {
+      status = StreamReadFor(term, bytes, 4, 200);
+    }
     check(status == 3 && bytes[0] == 'a' &&
           bytes[1] == 0 && bytes[2] == 'b', "feed wakes reader with raw binary input");
   } else if (streq(mode, "canonical")) {
@@ -147,15 +166,28 @@ static void blocking_child(int term, const char* mode) {
   } else if (streq(mode, "eof")) {
     check(blocking_read(term, bytes, 4, 0) == 4 && streq((const char*)bytes, "tail") &&
           blocking_read(term, bytes, 4, 0) == 0, "EOF commits pending input and then reads zero");
+    check(read_worker_result() == S_OK, "EOF also wakes combined input wait");
   } else if (streq(mode, "hangup") || streq(mode, "controller")) {
     check(blocking_read(term, bytes, 1, 0) == S_CLOSED, "session closure wakes blocked reader");
+    if (streq(mode, "hangup")) {
+      TerminalEvent event;
+      check(read_worker_result() == S_OK && TerminalNextEvent(term, &event) == S_OK &&
+            event.type == TERM_HANGUP && TerminalWaitInput(term, 1) == S_CLOSED,
+            "hangup wakes input wait and preserves the queued event");
+    } else {
+      check(read_worker_result() == S_CLOSED, "controller close wakes input wait");
+    }
   } else if (streq(mode, "foreground")) {
     check(blocking_read(term, bytes, 1, 0) == S_DENIED, "foreground switch revokes blocked read");
+    check(read_worker_result() == S_DENIED, "foreground switch also revokes input wait");
   } else if (streq(mode, "timeout")) {
     bytes[0] = 0xa7;
     u32 start = StreamTicks();
     check(blocking_read(term, bytes, 1, 10) == S_TIMEOUT && StreamTicks() - start >= 10 &&
           bytes[0] == 0xa7 && TerminalRead(term, bytes, 1) == S_AGAIN, "timeout preserves output and session");
+    start = StreamTicks();
+    check(TerminalWaitInput(term, 10) == S_TIMEOUT && StreamTicks() - start >= 10,
+          "empty input wait respects its deadline");
   } else if (streq(mode, "wire")) {
     check(blocking_read(term, 0, 0, 0) == 0 &&
           blocking_read(term, bytes, 1025, 1) == S_INVALID &&
@@ -165,6 +197,11 @@ static void blocking_child(int term, const char* mode) {
           call(TERM_READ, term, bytes, 1, 2, 0) == S_INVALID &&
           call(TERM_WRITE, term, bytes, 1, TERM_READ_BLOCK, 0) == S_INVALID,
           "only flagged reads accept timeout with valid handle and buffer");
+    check(TerminalWaitInput(term, STREAM_WAIT_MAX + 1) == S_INVALID &&
+          call(TERM_WAIT_INPUT, term, bytes, 0, 0, 1) == S_INVALID &&
+          call(TERM_WAIT_INPUT, term, 0, 1, 0, 1) == S_INVALID &&
+          call(TERM_WAIT_INPUT, term, 0, 0, 1, 1) == S_INVALID,
+          "input wait accepts a timeout and no reserved fields");
   } else {
     check(0, "unknown terminal blocking case");
   }
@@ -181,6 +218,14 @@ static int blocking_parent(const char* args) {
 
   int next = 0;
   if (streq(mode, "raw") || streq(mode, "sdk-read")) {
+    if (streq(mode, "raw")) {
+      check(TerminalFeed(control, TERM_RESIZE, 0, 0, (100u << 16) | 30) == S_OK,
+            "publish event without readable bytes");
+      begin = StreamTicks();
+      while ((result = TerminalDrain(control, bytes, 4)) == S_AGAIN &&
+             StreamTicks() - begin < 100) Yield(1);
+      check(result == 4 && streq((const char*)bytes, "size"), "combined wait woke on resize");
+    }
     check(TerminalFeed(control, TERM_TEXT, "a\0b", 3, 0) == S_OK, "feed raw bytes");
   } else if (streq(mode, "canonical") || streq(mode, "eof")) {
     int eof = streq(mode, "eof");
@@ -207,6 +252,7 @@ static int blocking_parent(const char* args) {
     check(TerminalFeed(control, TERM_TEXT, "data", 4, 0) == S_OK, "feed pending worker read");
   } else if (streq(mode, "wire")) {
     check(blocking_read(control, bytes, 1, 1) == S_BADHANDLE, "controller cannot read as a client");
+    check(TerminalWaitInput(control, 1) == S_BADHANDLE, "controller cannot wait as a client");
   }
   done(child, PROCESS_EXITED);
   if (next) {

@@ -687,14 +687,6 @@ namespace task {
       }
     }
   }
-  void terminalWake(u32 object) {
-    u32 flags = terminal::readState(object);
-    if (flags & (STREAM_HANGUP | STREAM_EOF)) {
-      notify(object, WaitReason::TERM_READ, true);
-    } else if (flags & STREAM_READABLE) {
-      notify(object, WaitReason::TERM_READ);
-    }
-  }
   void interactiveWake(u32 object) {
     notify(object, WaitReason::IX_RESULT, true);
   }
@@ -1490,6 +1482,10 @@ namespace task {
     if (!live) { current->retire(PROCESS_EXITED, code); }
     leave(f);
   }
+  static bool isTerminalWait(WaitReason reason) {
+    return reason == WaitReason::TERM_READ || reason == WaitReason::TERM_INPUT ||
+           reason == WaitReason::IX_RESULT;
+  }
   int retryWait(Thread* t) {
     u32 now = ticks;
     int result = S_TIMEOUT;
@@ -1505,7 +1501,7 @@ namespace task {
         Object* event = handle_get(current->handles, f->ebx, ObjType::EVENT, 1);
         result = !event ? S_BADHANDLE : event->value ? S_OK : S_AGAIN;
       } else {
-        if (t->waitOp == WaitReason::TERM_READ || t->waitOp == WaitReason::IX_RESULT) {
+        if (isTerminalWait(t->waitOp)) {
           result = terminal_call(current->handles, current->pid, current->policy,
             &t->waitTerminal, current->pd);
         } else {
@@ -1636,11 +1632,11 @@ namespace task {
         if (request.op == TERM_READ && request.value == TERM_READ_BLOCK) {
           waitOp = WaitReason::TERM_READ;
           request.value = 0;
-        } else {
-          if (request.op == IX_RESULT && (request.extra & IX_RESULT_BLOCK)) {
-            waitOp = WaitReason::IX_RESULT;
-            timeout &= ~IX_RESULT_BLOCK;
-          }
+        } else if (request.op == TERM_WAIT_INPUT) {
+          waitOp = WaitReason::TERM_INPUT;
+        } else if (request.op == IX_RESULT && (request.extra & IX_RESULT_BLOCK)) {
+          waitOp = WaitReason::IX_RESULT;
+          timeout &= ~IX_RESULT_BLOCK;
         }
         if (waitOp != WaitReason::NONE) {
           if (timeout > STREAM_WAIT_MAX) {
@@ -2123,7 +2119,7 @@ namespace task {
       if (r == S_OK) {
         for (int i = 0; i < MaxThreads; i++) {
           Thread* t = &current->thread[i];
-          u32 handle = (t->waitOp == WaitReason::TERM_READ || t->waitOp == WaitReason::IX_RESULT)
+          u32 handle = isTerminalWait(t->waitOp)
           ? t->waitTerminal.handle : t->saved.frame.ebx;
           if (t->waitOp != WaitReason::NONE && handle == a) {
             t->finishWait(S_BADHANDLE, ticks);

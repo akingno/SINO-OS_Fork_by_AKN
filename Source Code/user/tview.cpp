@@ -113,7 +113,10 @@ static int pause_page(void) {
     if (n == 0)
       return 1;
     if (n == S_AGAIN) {
-      Yield(1);
+      int ready = TerminalWaitInput(terminal, 0);
+      if (ready < 0) {
+        return ready;
+      }
       continue;
     }
     if (n < 0)

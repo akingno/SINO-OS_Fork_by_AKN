@@ -55,7 +55,7 @@ async function main(arg) {
     async function screen(){const file=path.join(directory,'vga.bin');await q.hmp(`pmemsave 0xb8000 4000 "${file.replaceAll('\\','/')}"`);
         const b=fs.readFileSync(file);assert(Array.from({length:2000},(_,i)=>b[i*2+1]).every(a=>a===7),'monochrome VGA');return Array.from({length:25},(_,y)=>Array.from({length:80},(_,x)=>String.fromCharCode(b[(y*80+x)*2])).join('').trimEnd()).join('\n').trimEnd();}
     async function key(...codes){await q.call('send-key',{keys:codes.map(data=>({type:'qcode',data})),'hold-time':15});await sleep(65);}
-    async function type(text){const codes={' ':'spc','\n':'ret','.':'dot','/':'slash','-':'minus',';':'semicolon'};
+    async function type(text){const codes={' ':'spc','\n':'ret','.':'dot','/':'slash','-':'minus',';':'semicolon',"'":'apostrophe','\\':'backslash'};
         for(const c of text){if(c==='>')await key('shift','dot');else await key(codes[c]||c);}}
     async function command(text,expected){await type(text+'\n');await until(async()=>{const s=await screen();return s.includes(expected)&&s.endsWith('gsh:/ $');},text);}
     async function check(id,fn){const item={id,result:'FAIL'};report.cases.push(item);await fn();item.result='PASS';console.log('PASS '+id);}
@@ -101,7 +101,13 @@ async function main(arg) {
             await until(async()=>/\nhello\n/.test(await screen()),'cursor edit');await key('up');await key('ret');
             await until(async()=>((await screen()).match(/\nhello\n/g)||[]).length===2,'history');});
         await check(cases[2],async()=>{await command('echo saved > console.txt','');
-            await command('cat console.txt','\nsaved\n');await command('sync','');});
+            await command('cat console.txt','\nsaved\n');await command('sync','');
+            await command("echo -e '" + 'row\\n'.repeat(24) + "last' > page.txt",'');
+            await type('view page.txt\n');
+            await until(async()=>(await screen()).includes('-- more: Space / q --'),'pager waits for input');
+            await key('spc');
+            await until(async()=>{const s=await screen();return s.includes('\nlast\n')&&s.endsWith('gsh:/ $');},
+                'pager resumes and returns to the Shell');});
         await check(cases[3],async()=>{await type('sleep 30\n');await sleep(300);await key('ctrl','c');
             await until(async()=>(await screen()).endsWith('gsh:/ $'),'cancel');await command('echo resumed','\nresumed\n');});
         await check(cases[4],async()=>{await key('ctrl','spc');await command('echo nihao','\nnihao\n');});

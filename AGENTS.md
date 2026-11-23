@@ -116,7 +116,7 @@ Shell 宿主测试参数：`-ExpectedExitCode 1` 断言预期失败，`-TimeoutS
 | 管道与标准流 | src32/pipe.cpp/.h、object.cpp、task/process.cpp:RunSpecV3；tests/guest/pipe_tests.cpp | `regression.ps1 -Suite pipes`；契约 docs/stream-pipes.md |
 | 管道阻塞读写 | src32/task/process.cpp:transfer_pipe / retry_wait、src32/pipe.cpp:pipe_release | `tests/host/test-pipe-waits.js `（10 项）；契约 docs/stream-pipes.md |
 | 文本会话后端 | src32/terminal.cpp/.h、task/process.cpp:SYS_TERMINAL；tests/guest/terminal_tests.cpp | `regression.ps1 -Suite terminal`；契约 docs/terminal-sessions.md |
-| 终端阻塞读取 | src32/terminal.cpp:wake_readers、task/process.cpp:SYS_TERMINAL / retry_wait；tests/guest/terminal_tests.cpp | `tests/host/test-terminal-waits.js `（11 项）；契约 docs/terminal-sessions.md |
+| 终端阻塞读取与组合输入等待 | src32/terminal.cpp:wakeInput、task/process.cpp:SYS_TERMINAL / retryWait；user/sdk.h:TerminalWaitInput | `tests/host/test-terminal-waits.js `（11 项）；Shell 与分页器迁移加 shell-waits 5 项及普通控制台 9 项；契约 docs/terminal-sessions.md |
 | 阻塞等待 SDK 与 Shell | user/stream.h、user/sdk.h、user/interactive.h、user/gsh.cpp:external | `tests/host/test-shell-waits.js `（5 项，目录须含同次构建的 kernel-normal.exe）；契约 docs/os-interface.md |
 | 交互启动代理 | src32/interactive.h、task/process.cpp、terminal.cpp；tests/guest/interactive_tests.cpp | `regression.ps1 -Suite interactive`；契约 docs/interactive-runs.md |
 | Shell | user/gsh.cpp、gsh_parse.h、gcmd.cpp | `regression.ps1 -Suite shell-waits`；契约 docs/user-shell.md |
