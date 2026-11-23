@@ -112,11 +112,11 @@ void timeoutAndUnmap() {
   configs[1].gate = event::create(); configs[1].code = 77;
   require(configs[1].gate > 0, "unmap gate");
   tid = thread::create(worker, &configs[1]);
-  int base = AnonMap(4096);
-  require(tid > 0 && base > 0, "unmap setup");
-  unmapping = {(void*)(u32)base, configs[1].gate};
+  const u32 base = AnonMap(4096);
+  require(tid > 0 && AnonMapStatus(base) == S_OK, "unmap setup");
+  unmapping = {(void*)base, configs[1].gate};
   int helper = thread::create(unmapper, &unmapping);
-  require(helper > 0 && thread::join(tid, (ThreadResult*)(u32)base, 100) == S_INVALID,
+  require(helper > 0 && thread::join(tid, (ThreadResult*)base, 100) == S_INVALID,
           "retry validates unmapped output");
   joined(tid, 77); // 失败不消费退出结果，也不残留 join 占用。
   joined(helper, 0);

@@ -170,14 +170,14 @@ namespace task {
       if (current->caps & CAP_NETWORK) {
         net_poll();
       }
-      int r = dispatchSyscall(f);
+      const u32 result = dispatchSyscall(f);
       if (current->state == 2 && !user_switch_out) { leave(f); }
-      f->eax = (u32)r;
+      f->eax = result;
       if (user_switch_out) {
         Thread* t = &current->thread[currentThread];
         /* A parked syscall keeps its number for the retry. */
         if (t->state != ThreadState::BLOCKED) {
-          t->saved.frame.eax = (u32)r;
+          t->saved.frame.eax = result;
         }
       }
       return 1;

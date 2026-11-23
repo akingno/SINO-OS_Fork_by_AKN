@@ -140,9 +140,9 @@
       "name": "v2 startup strings and high argument/stack protection",
       "conditions": [
         "v2 startup strings and high argument/stack protection",
-        "wide zeroed BSS crosses the old image and dynamic boundaries",
+        "wide zeroed BSS crosses an image PDE boundary",
         "v2 thread entry policy and relocated worker stack",
-        "13 MiB anonymous heap skips the image and verifies every byte",
+        "13 MiB anonymous heap uses the high window and verifies every byte",
         "large workload allocates real high pages and returns to baseline"
       ]
     },
@@ -228,12 +228,12 @@
     },
     {
       "id": "memory.anonymous.exact-byte-quota-and-one-byte-excess",
-      "name": "exact 128 MiB quota and one-byte excess",
+      "name": "exact high-window capacity and one-byte excess",
       "conditions": [
-        "exact 128 MiB quota and one-byte excess",
+        "exact high-window capacity and one-byte excess",
         "unaligned and external unmap rejected",
-        "last byte of the exact region is accessible",
-        "full unmap returns quota and space"
+        "four resident pages including the last user byte",
+        "full unmap returns space and first-fit reuses it"
       ]
     },
     {

@@ -12,9 +12,9 @@ static void require(int ok, const char* why) {
   if (!ok) { Log("FILESYS SELFTEST FAIL: "); Log(why); Log("\n"); Exit(1); }
 }
 static u8* map_test_pages(u32 bytes) {
-  const int base = AnonMap(bytes);
-  require(base > 0, "reserve anonymous test pages");
-  return (u8*)(u32)base;
+  const u32 base = AnonMap(bytes);
+  require(AnonMapStatus(base) == S_OK, "reserve anonymous test pages");
+  return (u8*)base;
 }
 static int same(const u8* a, const u8* b, u32 size) {
   for (u32 i = 0; i < size; i++) if (a[i] != b[i]) return 0;
@@ -94,23 +94,23 @@ static int anon_mapping_test(void) {
           (system.features & FEATURE_ANON_MEMORY) &&
           QueryStartInfo(&start) == S_OK && start.policy == PROCESS_STRICT,
           "anonymous memory advertised to strict processes");
-  require(AnonMap(0) == S_INVALID && AnonMap(0xffffffffu) == S_INVALID &&
-          AnonMap(ANON_MAX_BYTES + 1) == S_LIMIT &&
-          api(SYS_ANON_MAP, 1, 1, 0) == S_INVALID,
+  require(AnonMapStatus(AnonMap(0)) == S_INVALID && AnonMapStatus(AnonMap(0xffffffffu)) == S_INVALID &&
+          AnonMapStatus(AnonMap(ANON_MAX_BYTES + 1)) == S_LIMIT &&
+          AnonMapStatus(api_raw(SYS_ANON_MAP, 1, 1, 0)) == S_INVALID,
           "invalid sizes, overflow, quota and reserved map arguments");
 
   u8* first = map_test_pages(8193);
-  int second_base = AnonMap(1);
+  const u32 second_base = AnonMap(1);
   require(first && !((u32)first & 4095) && (u32)first >= USER_DYNAMIC_BASE &&
-          second_base > 0 && (u32)second_base >= (u32)first + 12288,
+          AnonMapStatus(second_base) == S_OK && second_base >= (u32)first + 12288,
           "independent aligned regions and rounded extent");
-  volatile u8* second = (volatile u8*)(u32)second_base;
+  volatile u8* second = (volatile u8*)second_base;
   require(!first[0] && !first[4095] && !first[4096] && !first[8192] && !*second,
           "all three pages and second region start zeroed");
   first[4095] = 0x56;
   first[4096] = 0x78;
   *second = 0x91;
-  require(AnonMap(ANON_MAX_BYTES - 4096) == S_LIMIT &&
+  require(AnonMapStatus(AnonMap(ANON_MAX_BYTES - 4096)) == S_LIMIT &&
           AnonUnmap(first + 4096) == S_INVALID &&
           api(SYS_ANON_UNMAP, (u32)first, 1, 0) == S_INVALID &&
           first[4095] == 0x56 && first[4096] == 0x78 && *second == 0x91,
@@ -128,19 +128,19 @@ static int anon_mapping_test(void) {
 
   u32 regions[ANON_MAX_REGIONS];
   for (u32 i = 0; i < ANON_MAX_REGIONS; ++i) {
-    const int base = AnonMap(1);
-    require(base > 0, "reserve every anonymous region slot");
-    regions[i] = (u32)base;
+    const u32 base = AnonMap(1);
+    require(AnonMapStatus(base) == S_OK, "reserve every anonymous region slot");
+    regions[i] = base;
   }
-  require(AnonMap(1) == S_LIMIT, "exact region quota");
+  require(AnonMapStatus(AnonMap(1)) == S_LIMIT, "exact region quota");
   constexpr u32 boundarySlots[] = {0, 31, 32, 63, 64, 95, 96, ANON_MAX_REGIONS - 1};
   for (const u32 slot : boundarySlots) {
     *(volatile u8*)regions[slot] = (u8)(slot + 1);
   }
   for (const u32 slot : boundarySlots) {
     auto* address = (volatile u8*)regions[slot];
-    require(AnonUnmap((void*)address) == S_OK && AnonMap(1) == (int)regions[slot] &&
-            AnonMap(1) == S_LIMIT && *address == 0, "reuse region slot with zero backing");
+    require(AnonUnmap((void*)address) == S_OK && AnonMap(1) == regions[slot] &&
+            AnonMapStatus(AnonMap(1)) == S_LIMIT && *address == 0, "reuse region slot with zero backing");
     *address = (u8)(slot + 1);
     for (const u32 other : boundarySlots) {
       require(*(volatile u8*)regions[other] == (u8)(other + 1), "independent IDs across bitmap words");
@@ -148,6 +148,41 @@ static int anon_mapping_test(void) {
   }
   /* Exit with the regions still mapped to exercise process-wide reclamation. */
   Log("ANON MAPPING PASS\n");
+  return 0;
+}
+
+static int anon_window_test() {
+  const u32 base = AnonMap(ANON_MAX_BYTES);
+  require(base == USER_DYNAMIC_BASE && AnonMapStatus(AnonMap(1)) == S_LIMIT &&
+          AnonMapStatus(AnonMap(ANON_MAX_BYTES + 1)) == S_LIMIT, "full window and one-byte excess");
+  require(AnonUnmap((void*)(base + 1)) == S_INVALID &&
+          AnonUnmap((void*)USER_ARGUMENTS) == S_INVALID &&
+          AnonUnmap((void*)USER_DYNAMIC_END) == S_INVALID, "unaligned and external unmap rejected");
+
+  constexpr u32 tableBytes = 4 * 1024 * 1024;
+  const u32 boundary = (base / tableBytes + 1) * tableBytes;
+  auto* first = (volatile u8*)base;
+  auto* tail = (volatile u8*)(USER_DYNAMIC_END - 1);
+  require(*first == 0 && *tail == 0, "first and last pages start zeroed");
+  *first = 0x37;
+  *tail = 0x83;
+  auto* across = (StartInfo*)(boundary - 8);
+  require(QueryStartInfo(across) == S_OK && across->policy == PROCESS_STRICT &&
+          *first == 0x37 && *tail == 0x83, "sparse high pages and cross-PDE syscall buffer");
+  require(api(SYS_LOG, USER_DYNAMIC_END - 1, 0, 2) == S_INVALID &&
+          api(SYS_LOG, USER_DYNAMIC_END, 0, 1) == S_INVALID, "reject buffers reaching KMAP");
+
+  Log("ANON WINDOW RESIDENT\n");
+  Yield(50);
+  const u32 start = (u32)api(SYS_TICKS, 0, 0, 0);
+  const int releaseStatus = AnonUnmap((void*)base);
+  const u32 ticks = (u32)api(SYS_TICKS, 0, 0, 0) - start;
+  require(releaseStatus == S_OK && AnonMap(1) == base, "full release returns virtual space");
+  require(*first == 0 && AnonUnmap((void*)base) == S_OK, "first-fit reuse returns a zeroed page");
+  char timing[16];
+  number(ticks, timing);
+  Log("ANON WINDOW UNMAP TICKS "); Log(timing); Log("\n");
+  Log("ANON D QUOTA PASS\n");
   return 0;
 }
 static int anon_io_test(void) {
@@ -297,30 +332,17 @@ int main(void) {
     }
     return 0;
   }
-  if (streq(Arguments(), "anon-d-quota")) {
-    int base = AnonMap(ANON_MAX_BYTES);
-    require(base > 0 && AnonMap(1) == S_LIMIT, "exact total quota and one-byte excess");
-    require(AnonUnmap((void*)((u32)base + 1)) == S_INVALID &&
-            AnonUnmap((void*)USER_ARGUMENTS) == S_INVALID &&
-            AnonUnmap((void*)USER_DYNAMIC_END) == S_INVALID, "unaligned and external unmap rejected");
-    volatile u8* tail = (volatile u8*)((u32)base + ANON_MAX_BYTES - 1);
-    require(*tail == 0, "last byte of exact extent is accessible");
-    *tail = 0x83;
-    require(AnonUnmap((void*)(u32)base) == S_OK && AnonMap(1) == base,
-            "full release returns quota and virtual space");
-    Log("ANON D QUOTA PASS\n");
-    return 0;
-  }
+  if (streq(Arguments(), "anon-d-quota")) { return anon_window_test(); }
   if (streq(Arguments(), "anon-map")) return anon_mapping_test();
   if (streq(Arguments(), "anon-lazy")) return anon_lazy_test();
   if (streq(Arguments(), "anon-oom")) return anon_oom_test(0);
   if (streq(Arguments(), "anon-fault-oom")) return anon_oom_test(1);
   if (streq(Arguments(), "anon-fault")) {
-    int base = AnonMap(4096);
-    require(base > 0, "reserve region to release before fault");
+    const u32 base = AnonMap(4096);
+    require(AnonMapStatus(base) == S_OK, "reserve region to release before fault");
     map_test_pages(8192);
-    *(volatile u8*)(u32)base = 0x5a;
-    require(AnonUnmap((void*)(u32)base) == S_OK,
+    *(volatile u8*)base = 0x5a;
+    require(AnonUnmap((void*)base) == S_OK,
             "release one region while keeping another live");
     Log("ANON EXPECT RELEASED PAGE FAULT\n");
     *(volatile u8*)(u32)base = 1;

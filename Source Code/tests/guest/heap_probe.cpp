@@ -1,8 +1,20 @@
 #include "stream.h"
+#include "heap.h"
+#include "../../src32/mm/layout.h"
 
 namespace {
 
 constexpr u32 PageBytes = 4096;
+static_assert(AnonMapStatus(USER_DYNAMIC_BASE) == S_OK &&
+              AnonMapStatus(0x80000000u) == S_OK &&
+              AnonMapStatus(KMAP_BASE - PageBytes) == S_OK &&
+              AnonMapStatus(0xffffffdfu) == S_OK &&
+              AnonMapStatus(0xffffffe0u) == -32 &&
+              AnonMapStatus(0xffffffe1u) == -31 &&
+              AnonMapStatus(0xffffffffu) == S_INVALID &&
+              AnonMapStatus((u32)S_TIMEOUT) == S_TIMEOUT &&
+              AnonMapStatus((u32)S_NOMEM) == S_NOMEM &&
+              AnonMapStatus((u32)S_LIMIT) == S_LIMIT, "anonymous map return ABI");
 constexpr u32 LargeChunk = 4080;
 constexpr u32 SlabSlots = 16;
 using SlabBatch = u8*[SlabSlots];
@@ -127,6 +139,19 @@ void multipleThreads() {
 }
 
 void directMapping() {
+  const u32 maxPayload = ANON_MAX_BYTES - sizeof(sino::heap::detail::BigBlock);
+  require(!malloc(maxPayload + 1), "heap header fits within the anonymous window");
+  auto* whole = static_cast<volatile u8*>(malloc(maxPayload));
+  require(whole && (u32)pageBase((const void*)whole) == USER_DYNAMIC_BASE &&
+          malloc_size((const void*)whole) == maxPayload, "heap reserves the full high window");
+  require(whole[0] == 0 && (u32)&whole[maxPayload - 1] == USER_DYNAMIC_END - 1 &&
+          whole[maxPayload - 1] == 0, "sparse heap endpoints are backed on access");
+  whole[0] = 0x3a;
+  whole[maxPayload - 1] = 0x7b;
+  require(whole[0] == 0x3a && whole[maxPayload - 1] == 0x7b &&
+          AnonMapStatus(AnonMap(1)) == S_LIMIT, "full-window heap uses distinct endpoints");
+  free((void*)whole);
+
   auto* small = allocate(32);
   auto* large = allocate(4097);
   void* direct = pageBase(large);
@@ -151,33 +176,34 @@ void resize() {
   require(large && large != small && malloc_size(large) == 8193, "moving realloc reports capacity");
   verifyBytes(large, 20, 0x7A);
 
-  const int reservation = AnonMap(ANON_MAX_BYTES - 160 * 1024);
-  require(reservation > 0 && !realloc(large, 256 * 1024), "new mapping fails under byte quota");
+  const u32 reservation = AnonMap(ANON_MAX_BYTES - 160 * 1024);
+  require(AnonMapStatus(reservation) == S_OK && !realloc(large, 256 * 1024), "new mapping fails without a large enough gap");
   verifyBytes(large, 20, 0x7A);
-  require(malloc_size(large) == 8193 && AnonUnmap((void*)(u32)reservation) == S_OK,
+  require(malloc_size(large) == 8193 && AnonUnmap((void*)reservation) == S_OK,
           "failed realloc leaves the old allocation live");
   void* base = pageBase(large);
   require(!realloc(large, 0) && AnonQuery(base) == S_INVALID, "zero resize frees direct mapping");
 }
 
 void exhaustReservations() {
+  require(AnonMapStatus(AnonMap(0)) == S_INVALID, "zero-length map returns S_INVALID");
   auto* cached = allocate(32);
   void* hotBase = pageBase(cached);
   free(cached);
-  int other[ANON_MAX_REGIONS - 1];
+  u32 other[ANON_MAX_REGIONS - 1];
   for (auto& base : other) {
     base = AnonMap(1);
-    require(base > 0, "fill all slots outside the heap cache");
+    require(AnonMapStatus(base) == S_OK, "fill all slots outside the heap cache");
   }
-  require(AnonMap(1) == S_LIMIT && AnonQuery(hotBase) == S_OK, "anonymous quota includes the hot slab");
+  require(AnonMapStatus(AnonMap(1)) == S_LIMIT && AnonQuery(hotBase) == S_OK, "anonymous quota includes the hot slab");
   auto* direct = allocate(8192);
   require(pageBase(direct) == hotBase && !malloc_size(cached) && !malloc(8192),
           "direct allocation reuses the space and slot of the evicted hot slab");
-  require(AnonUnmap((void*)(u32)other[0]) == S_OK, "return an independent region slot");
+  require(AnonUnmap((void*)other[0]) == S_OK, "return an independent region slot");
   free(allocate(8192));
   free(direct);
   for (u32 i = 1; i < ANON_MAX_REGIONS - 1; ++i) {
-    require(AnonUnmap((void*)(u32)other[i]) == S_OK, "release independent fixture");
+    require(AnonUnmap((void*)other[i]) == S_OK, "release independent fixture");
   }
 }
 
@@ -219,12 +245,13 @@ void purgeAndRebuild() {
   }
   Log("HEAP PURGE DROPPED\n");
   for (;;) {
-    const int temporary = AnonMap(1);
-    if (temporary > 0) {
-      require(AnonUnmap((void*)(u32)temporary) == S_OK, "release watermark probe");
+    const u32 temporary = AnonMap(1);
+    const int status = AnonMapStatus(temporary);
+    if (status == S_OK) {
+      require(AnonUnmap((void*)temporary) == S_OK, "release watermark probe");
       break;
     }
-    require(temporary == S_NOMEM && StreamTicks() - start < 900, "wait for normal watermarks");
+    require(status == S_NOMEM && StreamTicks() - start < 900, "wait for normal watermarks");
     Yield(1);
   }
   auto* rebuilt = allocate(2032);

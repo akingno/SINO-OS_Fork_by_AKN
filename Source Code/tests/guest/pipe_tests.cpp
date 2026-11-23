@@ -147,15 +147,14 @@ static int blocking_case(const char* mode) {
             finish_wait(0) == S_BADHANDLE && Close(replacement) == 0, "slot reuse cannot redirect wait");
     pair.read = (u32)duplicate;
   } else if (streq(mode, "unmap")) {
-    int address = AnonMap(4096);
-    require((u32)address >= USER_DYNAMIC_BASE &&
-            (u32)address < USER_DYNAMIC_END, "map waiter buffer");
+    const u32 address = AnonMap(4096);
+    require(address >= USER_DYNAMIC_BASE && address < USER_DYNAMIC_END, "map waiter buffer");
     begin_wait(0, 1, pair.read, (u8*)address, 0);
     require(AnonUnmap((void*)address) == 0 && transfer(0, pair.write, (void*)"U", 1) == 1 &&
             finish_wait(0) == S_INVALID && transfer(1, pair.read, output, 1) == 1 &&
             output[0] == 'U', "retry revalidates the buffer before consuming pipe data");
   } else if (streq(mode, "wire")) {
-    u32 address = (u32)AnonMap(RUN_IO_MAX);
+    const u32 address = AnonMap(RUN_IO_MAX);
     require(address >= USER_DYNAMIC_BASE && address < USER_DYNAMIC_END, "map maximum transfer buffer");
     require(blocking_transfer(1, pair.read, (void*)0, 0, 0) == 0 &&
             blocking_transfer(1, pair.read, output, RUN_IO_MAX + 1, 1) == S_INVALID &&

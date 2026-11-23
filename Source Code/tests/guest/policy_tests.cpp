@@ -118,11 +118,10 @@ static int paging_window_tests(int fault) {
   *last = 0xabcdef01u;
   require(api(QUERY_START, (u32)last, sizeof(StartInfo), 0) == S_INVALID &&
           *last == 0xabcdef01u, "hole rejects full output before writing");
-  const int beyondWindow = USER_DYNAMIC_END == USER_ARGUMENTS ? 2 : S_INVALID;
   require(*(volatile u32*)high == 0 &&
           api(QUERY_START, high, sizeof(StartInfo), 0) == S_INVALID &&
-          api(SYS_LOG, USER_DYNAMIC_END - 1, 0, 2) == beyondWindow &&
           api(SYS_LOG, USER_END - 1, 0, 2) == S_INVALID &&
+          api(SYS_LOG, USER_END, 0, 1) == S_INVALID &&
           api(SYS_LOG, 0xfffffff0u, 0, 32) == S_INVALID,
           "high read-only page, window end and overflow checks");
   if (fault) {

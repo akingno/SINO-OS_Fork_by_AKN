@@ -6,7 +6,7 @@ namespace threadprobe {
 inline constexpr u32 PageBytes = 4096;
 inline constexpr u32 StackBytes = 16 * 1024;
 inline constexpr u32 GuardBytes = 16 * 1024;
-inline constexpr u32 WorkerWindowEnd = USER_MAIN_STACK_TOP + 0x20000u;
+inline constexpr u32 WorkerWindowEnd = USER_STACK_END;
 
 struct StackSample {
   volatile u32 esp;

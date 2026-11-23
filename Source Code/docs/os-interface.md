@@ -220,21 +220,28 @@ only `FEATURE_ANON_MEMORY` allocate and zero the entire mapping up front.
 
 - `SYS_ANON_MAP` (`0x14e`) takes the requested byte count in EBX. The kernel
   rounds up to 4096 bytes and chooses a page-aligned base in
-  `[0x40400000, 0x80000000)` and returns the positive base.
+  `[0x80030000, 0xFF800000)`. EAX contains that nonzero base on success. EAX
+  values `0xffffffe0` through `0xffffffff` encode errors `-32` through `-1`.
+  A successful address may use bit 31. Keep user space below the reserved
+  encodings when changing the address layout.
 - `SYS_ANON_UNMAP` (`0x14f`) takes the original allocation base in EBX and
   releases every remaining fragment of that allocation, returning `S_OK`.
   A released address may be reused by a later map.
 - Both calls require ECX and EDX to be zero. Invalid inputs, including zero
   map size, rounding overflow, and unknown or interior unmap addresses, return
   `S_INVALID`. Each process can hold up to 128 live allocations, 512 anonymous
-  fragments including allocation heads, and 128 MiB of reserved pages.
-  Quota, address-space or VMA metadata exhaustion returns `S_LIMIT`.
+  fragments including allocation heads. The anonymous window holds up to
+  2,138,898,432 bytes of reservations. A request must fit in one available
+  gap. Slot, address-space or VMA metadata exhaustion returns `S_LIMIT`.
 
-SDK `AnonMap` and `AnonUnmap` preserve the syscall status. Use the raw anonymous
-APIs for page-aligned reservations or page protection. The SDK heap provides
+SDK `AnonMap` returns raw `u32` bits. `AnonMapStatus` returns `S_OK` for a
+successful result or the decoded error, including reserved encodings. When it
+returns `S_OK`, use the original bits as the address. `AnonUnmap` returns an
+ordinary signed status. Use these APIs for page-aligned reservations or page
+protection. The SDK heap provides
 16-byte-aligned allocations. Small allocations share slabs, and large allocations
-have independent anonymous mappings. Both use the process's anonymous reservation
-quota, which includes retained empty slabs.
+have independent anonymous mappings. Retained empty slabs occupy window space.
+A large allocation also needs room for its heap header.
 
 - `malloc` returns null for a zero size or a reservation failure. The bytes it
   returns may contain previous contents.
@@ -343,8 +350,8 @@ SNX v2 uses the magic `0x31584e53`, a 32-byte header and link base
 
 The loader places the read-only argument and executable strings at
 `0x80000000` and the main stack top at `0x80010000`. Worker stacks and their
-adjacent guards use first-fit in `[0x80010000, 0x80030000)`. The dynamic allocator skips
-pages occupied by the actual image. The repository linker script emits
+adjacent guards use first-fit in `[0x80010000, 0x80030000)`. The anonymous window
+begins after the stacks and ends at the shared supervisor KMAP PDE. The repository linker script emits
 version 2 for each application and probe.
 
 The kernel publishes E820 RAM above 64 MiB after switching to its formal

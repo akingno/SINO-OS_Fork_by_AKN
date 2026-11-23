@@ -22,6 +22,11 @@ enum {
   S_CLOSED = -12,
   S_TIMEOUT = -13
 };
+/* SYS_ANON_MAP reserves the EAX encodings of -32 through -1 for errors. */
+#define ANON_MAP_ERROR_BASE 0xffffffe0u
+#ifdef __cplusplus
+static_assert((u32)S_TIMEOUT >= ANON_MAP_ERROR_BASE, "status codes fit the mapping error range");
+#endif
 enum {
   SYS_EXIT = 0x100,
   SYS_YIELD,
@@ -275,16 +280,22 @@ typedef struct {
   u32 size, dir;
 } FileInfo;
 #define USER_BASE 0x40000000u
-#define USER_DYNAMIC_BASE 0x40400000u
-#define USER_DYNAMIC_END 0x80000000u
-#define ANON_MAX_REGIONS 128u
-#define ANON_MAX_BYTES 0x8000000u
-#define ANON_MAX_FRAGMENTS 512u
 #define SNX_ABI_VERSION 2u
 #define SNX_V2_IMAGE_BYTES 0x1000000u
 #define USER_ARGUMENTS 0x80000000u
 #define USER_MAIN_STACK_TOP (USER_ARGUMENTS + 0x10000u)
-#define USER_END (USER_ARGUMENTS + 0x30000u)
+#define USER_STACK_END (USER_ARGUMENTS + 0x30000u)
+#define USER_END 0xff800000u
+#define USER_DYNAMIC_BASE USER_STACK_END
+#define USER_DYNAMIC_END USER_END
+#define ANON_MAX_BYTES (USER_DYNAMIC_END - USER_DYNAMIC_BASE)
+#define ANON_MAX_REGIONS 128u
+#define ANON_MAX_FRAGMENTS 512u
+#ifdef __cplusplus
+static_assert(USER_END <= ANON_MAP_ERROR_BASE, "user addresses must not overlap mapping errors");
+static_assert(USER_BASE + SNX_V2_IMAGE_BYTES <= USER_ARGUMENTS && USER_STACK_END < USER_END,
+              "user image, stacks, and anonymous window must fit");
+#endif
 #define NATIVE_MAGIC 0x31584e53u /* SNX1; deliberately not PE/Win32 */
 typedef struct {
   u32 magic, abi, image_bytes, entry, data_offset, memory_bytes, reserved[2];

@@ -182,9 +182,9 @@ async function imageContracts(source) {
             await probe('run -s /boot/poltest.snx paging-a', /PAGING STRICT A PASS/);
         });
         await check('memory.images.v2-startup-strings-and-high-argument-stack-protection', ['v2 startup strings and high argument/stack protection',
-            'wide zeroed BSS crosses the old image and dynamic boundaries',
+            'wide zeroed BSS crosses an image PDE boundary',
             'v2 thread entry policy and relocated worker stack',
-            '13 MiB anonymous heap skips the image and verifies every byte',
+            '13 MiB anonymous heap uses the high window and verifies every byte',
             'large workload allocates real high pages and returns to baseline'], async () => {
             const header = bootFile(source, 'MEMV2.SNX');
             assert.equal(header.readUInt32LE(4), 2);
@@ -209,15 +209,26 @@ async function imageContracts(source) {
 }
 
 async function anonymousContracts(source) {
-    await boot(source, 'anonymous', vm.memoryMiB, async ({check, probe, command, free, baseline}) => {
+    await boot(source, 'anonymous', vm.memoryMiB, async ({check, probe, command, free, baseline, report}) => {
         await check('memory.anonymous.strict-feature-discovery', ['strict feature discovery', 'zero, overflow and reserved map arguments',
             'rounded aligned independent regions', 'zero-filled pages and independent writes',
             'malformed and interior unmap leave data intact', 'released address and double-unmap rejected',
             'first-fit reuse starts zeroed', '128-region quota, slot reuse and independence across bitmap words', 'exit releases outstanding regions'], () =>
             probe('run -s /boot/fstest.snx anon-map', /ANON MAPPING PASS/));
-        await check('memory.anonymous.exact-byte-quota-and-one-byte-excess', ['exact 128 MiB quota and one-byte excess', 'unaligned and external unmap rejected',
-            'last byte of the exact region is accessible', 'full unmap returns quota and space'], () =>
-            probe('run -s /boot/fstest.snx anon-d-quota', /ANON D QUOTA PASS/));
+        await check('memory.anonymous.exact-byte-quota-and-one-byte-excess', ['exact high-window capacity and one-byte excess',
+            'unaligned and external unmap rejected', 'four resident pages including the last user byte',
+            'full unmap returns space and first-fit reuses it'], async () => {
+            let observedLog;
+            await probe('run -s /boot/fstest.snx anon-d-quota', /ANON WINDOW RESIDENT/, 0, async ({pid, log}) => {
+                assert.match(await command('ps'), new RegExp('^' + pid + '\\s+1\\s+4\\s+', 'm'));
+                observedLog = log;
+            });
+            const output = observedLog();
+            assert.match(output, /ANON D QUOTA PASS/);
+            const ticks = output.match(/ANON WINDOW UNMAP TICKS (\d+)/);
+            assert(ticks, 'sparse unmap timing');
+            report.sparseUnmap = {ticks: Number(ticks[1]), tickHz: 100, residentPages: 4};
+        });
         await check('memory.anonymous.strict-granted-cross-page-file-i-o', ['strict granted cross-page file I/O', 'anonymous pipe I/O and teardown'], () =>
             probe('run /boot/fstest.snx anon-parent', /ANON I\/O PASS[\s\S]*ANON PARENT PASS/));
         await check('memory.anonymous.released-address-faults-and-exit-reclaims-the-remaining-region', ['released address faults and exit reclaims the remaining region'], () =>

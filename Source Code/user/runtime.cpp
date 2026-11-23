@@ -4,9 +4,10 @@
 namespace {
 
 sino::heap::MapResult mapHeapRegion(void*, u32 bytes) {
-  const int result = AnonMap(bytes);
-  if (result <= 0) { return {nullptr, result}; }
-  return {(void*)(u32)result, S_OK};
+  const u32 result = AnonMap(bytes);
+  const int status = AnonMapStatus(result);
+  if (status != S_OK) { return {nullptr, status}; }
+  return {(void*)result, S_OK};
 }
 
 int unmapHeapRegion(void*, void* base) { return AnonUnmap(base); }

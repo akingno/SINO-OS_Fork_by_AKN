@@ -217,7 +217,7 @@ static void blocking_case(const char* mode) {
     require(reply.result.size == 0xccccccccu && Close(replacement) == 0, "closed wait leaves output untouched");
     handle = observer;
   } else if (streq(mode, "unmap")) {
-    u32 address = (u32)AnonMap(4096);
+    const u32 address = AnonMap(4096);
     require(address >= USER_DYNAMIC_BASE && address < USER_DYNAMIC_END, "map result output");
     begin_wait(0, handle, (ProcessCompletion*)address);
     require(AnonUnmap((void*)address) == 0 && CancelProcess(handle) == 0, "unmap before result publication");

@@ -11,7 +11,7 @@
 
 #define USER_FLAGS (PAGE_PRESENT | PAGE_USER)
 #define USER_FIRST_PDE (USER_BASE / TABLE_BYTES)
-#define USER_END_PDE ((USER_END + TABLE_BYTES - 1) / TABLE_BYTES)
+#define USER_END_PDE (USER_END / TABLE_BYTES)
 
 static_assert(BOOT_POOL_START % TABLE_BYTES == 0 &&
                    BOOT_IDENTITY_BYTES % TABLE_BYTES == 0 &&
@@ -21,8 +21,9 @@ static_assert(1 + (BOOT_IDENTITY_BYTES - BOOT_POOL_START) / TABLE_BYTES <= 16,
                "temporary page tables fit the low boot reserve");
 static_assert(KMAP_PDE_INDEX* TABLE_BYTES == KMAP_BASE,
                "KMAP_BASE matches its PDE index");
-static_assert(KMAP_PDE_INDEX >= USER_END_PDE,
-               "KMAP PDE does not overlap user area");
+static_assert(USER_BASE % TABLE_BYTES == 0 && USER_END == KMAP_BASE,
+              "private user PDEs end before the shared KMAP PDE");
+static_assert(USER_DYNAMIC_BASE % PAGE_SIZE == 0, "anonymous window starts at a page boundary");
 
 // 1GiB以下的恒等映射
 u32 direct_map_end;
@@ -311,39 +312,42 @@ UserMapResult paging_user_map(u32* pd, u32 va, phys_t page, int write) {
   return UserMapResult::Ok;
 }
 
-// 取消一个用户虚拟页的映射，如果对应页表已经没有任何有效映射则把页表页释放了
-phys_t paging_user_unmap(u32* pd, u32 va) {
-  if (!page_aligned(va)) {
-    return PHYS_NULL;
+static u32 user_table_range_end(u32 base, u32 end) {
+  const u32 boundary = (pde_index(base) + 1) * TABLE_BYTES;
+  return boundary < end ? boundary : end;
+}
+
+u32 paging_user_unmap(u32* pd, u32 base, u32 end) {
+  if (!pd || base < USER_BASE || end > USER_END || base > end || !page_aligned(base | end)) {
+    panic("Invalid user unmap range", base, end);
   }
-  u32* pt = user_table(pd, va);
-  if (!pt || !(pt[pte_index(va)] & PAGE_PRESENT)) {
-    return PHYS_NULL;
-  }
-  u32 pte = pt[pte_index(va)];
-  pt[pte_index(va)] = 0;
-  u32 i = 0;
-  while (i < TABLE_ENTRIES && !(pt[i] & PAGE_PRESENT)) {
-    i++;
-  }
-  if (i == TABLE_ENTRIES) { // 1024 个 PTE 都没有 PAGE_PRESENT
-    pd[pde_index(va)] = 0;
-    /* Flush the entire TLB: the paging-structure cache may still reference
-     * this page table, so a single invlpg is insufficient.  Must complete
-     * before the table page is freed.  If CR4.PGE is ever enabled, the
-     * no-global-pages invariant that exempts inactive PDs must be revisited. */
-    if (paging_is_active(pd)) {
-      paging_activate(pd);
+  const bool active = paging_is_active(pd);
+  u32 freed = 0;
+  for (u32 start = base, stop; start < end; start = stop) {
+    stop = user_table_range_end(start, end);
+    u32* table = user_table(pd, start);
+    if (!table) { continue; }
+    const u32 before = freed;
+    for (u32 va = start; va < stop; va += PAGE_SIZE) {
+      u32& entry = table[pte_index(va)];
+      if (!(entry & PAGE_PRESENT)) { continue; }
+      const phys_t page = entry_address(entry);
+      entry = 0;
+      if (active) { invlpg(va); }
+      page_free(page);
+      ++freed;
     }
-    kpage_free(pt);
-  } else {
-    /* Only the data PTE changed (1→0); invlpg suffices.  Inactive PDs need
-     * no invalidation: every CR3 switch flushes the TLB (no global pages). */
-    if (paging_is_active(pd)) {
-      invlpg(va);
+    if (freed == before) { continue; }
+    u32 index = 0;
+    while (index < TABLE_ENTRIES && !(table[index] & PAGE_PRESENT)) { ++index; }
+    if (index == TABLE_ENTRIES) {
+      pd[pde_index(start)] = 0;
+      // Drop cached paging-structure references before recycling the table itself.
+      if (active) { paging_activate(pd); }
+      kpage_free(table);
     }
   }
-  return entry_address(pte);
+  return freed;
 }
 
 // 查询某个用户虚拟地址实际生效的分页权限标志
@@ -358,37 +362,36 @@ void paging_user_protect(u32* pd, u32 base, u32 end, bool write) {
   if (!pd || base < USER_DYNAMIC_BASE || end > USER_DYNAMIC_END || base >= end ||
       !page_aligned(base | end)) { panic("Invalid protection range", base, end); }
   const bool active = paging_is_active(pd);
-  for (u32 va = base; va < end; va += PAGE_SIZE) {
-    u32* table = user_table(pd, va);
+  for (u32 start = base, stop; start < end; start = stop) {
+    stop = user_table_range_end(start, end);
+    u32* table = user_table(pd, start);
     if (!table) { continue; }
-    u32& entry = table[pte_index(va)];
-    if (!(entry & PAGE_PRESENT)) { continue; }
-    const u32 updated = write ? entry | PAGE_WRITE : entry & ~PAGE_WRITE;
-    if (updated != entry) {
-      entry = updated;
-      if (active) { invlpg(va); }
+    for (u32 va = start; va < stop; va += PAGE_SIZE) {
+      u32& entry = table[pte_index(va)];
+      if (!(entry & PAGE_PRESENT)) { continue; }
+      const u32 updated = write ? entry | PAGE_WRITE : entry & ~PAGE_WRITE;
+      if (updated != entry) {
+        entry = updated;
+        if (active) { invlpg(va); }
+      }
     }
   }
 }
 
-u32 paging_user_count(const u32* pd) {
+u32 paging_user_count(const u32* pd, u32 base, u32 end) {
   u32 count = 0;
-  for (u32 pde = USER_FIRST_PDE; pde < USER_END_PDE; pde++) {
-    const u32* pt = user_table(pd, pde * TABLE_BYTES);
-    if (!pt) {
-      continue;
-    }
-    for (u32 i = 0; i < TABLE_ENTRIES; i++){
-      if (pt[i] & PAGE_PRESENT){
-        count++;
-      }
+  for (u32 start = base, stop; start < end; start = stop) {
+    stop = user_table_range_end(start, end);
+    const u32* table = user_table(pd, start);
+    if (!table) { continue; }
+    for (u32 va = start; va < stop; va += PAGE_SIZE) {
+      if (table[pte_index(va)] & PAGE_PRESENT) { ++count; }
     }
   }
   return count;
 }
 
 // 彻底销毁一个用户进程的分页结构，同时释放仍由这些映射拥有的数据物理页。
-// paging_user_unmap 只解除一个页面的映射，这个会释放整个进程的用户页表
 // TODO: 如果引入COW,这里逻辑就要改
 u32 paging_user_destroy(u32* pd) {
   if (paging_is_active(pd)){

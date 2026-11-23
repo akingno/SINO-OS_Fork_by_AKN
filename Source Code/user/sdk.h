@@ -14,12 +14,15 @@ void free(void *pointer);
 void *calloc(u32 count, u32 bytes);
 void *realloc(void *pointer, u32 bytes);
 u32 malloc_size(const void *pointer);
-static inline int api(u32 n, u32 a, u32 b, u32 c) {
+static inline u32 api_raw(u32 n, u32 a, u32 b, u32 c) {
   __asm__ volatile("int $0x80"
                    : "+a"(n)
                    : "b"(a), "c"(b), "d"(c)
                    : "memory", "cc");
-  return (int)n;
+  return n;
+}
+static inline int api(u32 n, u32 a, u32 b, u32 c) {
+  return (int)api_raw(n, a, b, c);
 }
 /* Console device access belongs exclusively to the kernel-started conhost. */
 static inline int ConsoleReadKey(void) { return api(SYS_CONSOLE, 0, 0, 0); }
@@ -66,9 +69,13 @@ static inline int AnonQuery(const void* base) {
 }
 static inline int AnonLock(void* base) { return api(SYS_ANON_LOCK, (u32)base, 0, 0); }
 static inline int AnonUnlock(void* base) { return api(SYS_ANON_UNLOCK, (u32)base, 0, 0); }
-/* Map returns a positive base or an S_* error. Unmap takes the exact base. */
-static inline int AnonMap(u32 bytes) {
-  return api(SYS_ANON_MAP, bytes, 0, 0);
+/* Map returns a raw EAX value. Decode it before using it as an address. */
+static inline u32 AnonMap(u32 bytes) {
+  return api_raw(SYS_ANON_MAP, bytes, 0, 0);
+}
+static constexpr int AnonMapStatus(u32 result) {
+  /* Only the complement of a reserved error is converted to a signed value. */
+  return result >= ANON_MAP_ERROR_BASE ? -1 - (int)(~result) : S_OK;
 }
 static inline int AnonUnmap(void *base) {
   return api(SYS_ANON_UNMAP, (u32)base, 0, 0);

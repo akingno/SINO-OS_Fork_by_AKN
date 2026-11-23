@@ -139,7 +139,8 @@ task 提取契约见 [task-subsystem.md](Source Code/docs/task-subsystem.md)。C
 
 - 构建与加载只支持 SNX v2，内存映像上限 16 MiB，链接基址 `0x40000000`。用户栈有 16 KiB 映射和紧邻下方的 16 KiB 无映射 Guard VMA。主栈顶为 `0x80010000`，工作栈及 Guard 在 `[0x80010000, 0x80030000)` first-fit。拒绝 v1 与资源回收由 process 专项覆盖
 - `tools/build-user.js` 为内置 Ring 3 C++ 程序及 SDK 运行时启用 GCC `-fstack-clash-protection`。编译选项变更时，核对 4 KiB 逐页探测指令，运行线程、进程与 Shell 等待、普通控制台共 30 项，映像边界变化加 images 11 项，详见 TESTING.md
-- 每进程匿名配额为 128 份分配、512 个 VMA 片段（含分配头）及 128 MiB 虚拟预留。配额变更选 anonymous 7 项、e1 6 项、e2 6 项、process 8 项及普通启动 1 项
+- 每进程最多 128 份匿名分配和 512 个 VMA 片段（含分配头）。匿名窗口为 `[0x80030000, 0xFF800000)`，字节上限取窗口长度，约 2040 MiB。高地址及页表边界变更按 TESTING.md 选 47 项
+- `SYS_ANON_MAP=0x14e` 通过 EAX 返回非零页对齐地址或 `0xffffffe0..0xffffffff` 中的错误编码。SDK `AnonMap` 返回 `u32`，用 `AnonMapStatus` 解码。返回约定迁移选 heap 7 项、三类 waits 29 项及 thread-waits 8 项，共 44 项
 - 用户缓冲区先核对活动 CR3、完整 VMA 覆盖和 PTE 权限，再为匿名 VMA 分配后备页。跨相邻且权限足够的 VMA 合法。匿名驻留计数为 `u32`，VMA 节点在 i386 仍为 32 字节。选测见 TESTING.md
 - SDK 堆提供 16 字节对齐，1–4080 字节使用 64 KiB slab，更大请求独立映射。每进程最多缓存 4 个 hot 和 12 个 cold 空 slab，预留失败时优先归还 cold 映射。契约见 [mm-access.md](Source Code/docs/mm-access.md#用户态堆)
 - VFS 全局 128 节点，单文件 64 KiB（含磁盘 SNX）

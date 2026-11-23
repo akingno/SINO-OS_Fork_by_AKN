@@ -51,7 +51,7 @@
 | `test-pids.js <ShellBridge 目录>` | 8 | PID 槽复用/旧 kill 拒绝、容量/畸形标识、历史完成记录取消隔离、映像失败回滚；Shell/文件/管道/Event/线程实际编号消耗；支持 --list，不自动加入 core |
 | `test-identifiers.js` | 6 | 直接使用内核编号算法；缩小代数耗尽、预留撤销、陈旧/畸形 PID、完整正整数边界、cookie 全局槽均衡与退役、Object/TID 不回绕；支持 --list |
 | `test-memory.js images <ShellBridge 目录>` | 11 | 4 GiB 单核/E820 空洞、定向映像/页表 OOM 回滚、SNX v2 启动与参数、高页、线程栈与冷启动 |
-| `test-memory.js anonymous <ShellBridge 目录>` | 7 | 匿名映射、配额、跨页 I/O、定向 OOM/首次触页故障及可写副本注入隔离 |
+| `test-memory.js anonymous <ShellBridge 目录>` | 7 | 匿名映射、整窗稀疏预留、跨页 I/O、定向 OOM/首次触页故障及可写副本注入隔离 |
 | `test-memory.js heap <ShellBridge 目录>` | 7 | SDK 分配与容量、四线程、独立大块、`realloc`、预留失败重试、hot/cold 缓存及内核实际丢弃后的重建 |
 | `test-memory.js reclaim <ShellBridge 目录>` | 5 | 水位精确边界、预留准入、按评分和驻留页排序、回收后补页、失败语义、进程组继承与回收 |
 | `test-memory.js purgeable <ShellBridge 目录>` | 5 | 可丢弃 ABI、锁计数、LOW 丢弃和重建、CRITICAL 回收顺序及最后解锁重启丢弃 |

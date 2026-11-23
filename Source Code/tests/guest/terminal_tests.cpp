@@ -9,9 +9,9 @@ static int start_program(const char* path,const char* mode){u32 offset=0;RunSpec
 static int start(const char* mode){return start_program("/boot/termtest.snx",mode);}
 static void done(int h,u32 reason){RunResult r;check(RunWaitFor(h,&r,600)==0&&r.completion.reason==reason&&!r.completion.code,"typed child result");check(Close(h)==0,"close observer");}
 static int uaccess_terminal_parent(void) {
-  const int base = AnonMap(4096);
-  check(base > 0, "terminal test page");
-  auto* edge = (u8*)(u32)base;
+  const u32 base = AnonMap(4096);
+  check(AnonMapStatus(base) == S_OK, "terminal test page");
+  auto* edge = (u8*)base;
   u8* tail = edge + 4092;
   check(api(SYS_TERMINAL, (u32)tail, sizeof(Request), 0) == S_INVALID,
         "bad outer terminal request stops before dispatch");
@@ -43,9 +43,9 @@ static int uaccess_terminal_parent(void) {
   return 0;
 }
 static int uaccess_terminal_child(int term) {
-  const int base = AnonMap(4096);
-  check(base > 0, "terminal child test page");
-  auto* edge = (u8*)(u32)base;
+  const u32 base = AnonMap(4096);
+  check(AnonMapStatus(base) == S_OK, "terminal child test page");
+  auto* edge = (u8*)base;
   u8* tail = edge + 4092;
   tail[0] = 0xa7;
   check(StreamWrite(term, "okay", 4) == 4, "terminal child ready");
@@ -104,7 +104,7 @@ static int read_worker_result(void) {
 static void blocking_child(int term, const char* mode) {
   if (streq(mode, "snapshot") || streq(mode, "unmap") || streq(mode, "local-close")) {
     if (streq(mode, "unmap")) {
-      u32 address = (u32)AnonMap(4096);
+      const u32 address = AnonMap(4096);
       check(address >= USER_DYNAMIC_BASE && address < USER_DYNAMIC_END, "map read output");
       start_read_worker(term, (void*)address);
       check(AnonUnmap((void*)address) == S_OK, "unmap read output while blocked");

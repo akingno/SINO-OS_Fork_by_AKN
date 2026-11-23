@@ -23,9 +23,17 @@ void require(bool ok, const char* reason) {
 }
 
 volatile u8* reserve(u32 pages) {
-  const int base = AnonMap(pages * PageBytes);
-  require(base > 0, "reserve anonymous memory before pressure");
-  return (volatile u8*)(u32)base;
+  const u32 base = AnonMap(pages * PageBytes);
+  require(AnonMapStatus(base) == S_OK, "reserve anonymous memory before pressure");
+  return (volatile u8*)base;
+}
+
+volatile u8* reserveInNewPageTable() {
+  constexpr u32 tableBytes = 4 * 1024 * 1024;
+  constexpr u32 offset = tableBytes - (USER_DYNAMIC_BASE % tableBytes);
+  volatile u8* base = reserve(offset / PageBytes + 1);
+  require((u32)base == USER_DYNAMIC_BASE, "table fault reservation starts at the anonymous window");
+  return base + offset;
 }
 
 int queryGroup() {
@@ -58,10 +66,11 @@ void logGroup(const char* label, int group) {
 void waitForPressure(bool expected) {
   const u32 start = StreamTicks();
   for (;;) {
-    const int mapped = AnonMap(1);
-    require(mapped == S_NOMEM || (mapped > 0 && AnonUnmap((void*)(u32)mapped) == S_OK),
+    const u32 mapped = AnonMap(1);
+    const int status = AnonMapStatus(mapped);
+    require(status == S_NOMEM || (status == S_OK && AnonUnmap((void*)mapped) == S_OK),
             "poll pressure with a temporary reservation");
-    if ((mapped == S_NOMEM) == expected) { return; }
+    if ((status == S_NOMEM) == expected) { return; }
     require(StreamTicks() - start < 900, "pressure did not reach the requested state");
     Yield(1);
   }
@@ -128,7 +137,7 @@ int fragmentTest(const char* mode) {
   auto output = [&](unsigned i) { return QuerySystemInfo((SystemInfo*)addr(i)); };
   if (budget) {
     fillFragmentQuota(page);
-    require(AnonMap(1) == S_LIMIT && protect(FragmentQuotaSplitPage, 1, false) == S_LIMIT &&
+    require(AnonMapStatus(AnonMap(1)) == S_LIMIT && protect(FragmentQuotaSplitPage, 1, false) == S_LIMIT &&
             output(FragmentQuotaSplitPage) == S_OK, "fragment quota and protection rollback");
     require(protect(ANON_MAX_FRAGMENTS - 1, 1, true) == S_OK &&
             protect(FragmentQuotaSplitPage, 1, false) == S_OK, "reuse fragment quota");
@@ -254,16 +263,20 @@ int unmapRangeTest(const char* mode) {
     SystemInfo info;
     require(QuerySystemInfo(&info) == S_OK && (info.features & FEATURE_ANON_UNMAP_RANGE),
             "range-unmap feature bit");
-    const u32 quotaRemainder = ANON_MAX_BYTES - 4 * PageBytes;
-    require(AnonMap(quotaRemainder) == S_LIMIT, "full reservation charged");
+    const u32 tailCapacity = ANON_MAX_BYTES - 6 * PageBytes;
+    require(AnonMapStatus(AnonMap(tailCapacity)) == S_LIMIT, "tail still occupied before shrink");
     require(unmap(6, 2) == S_OK, "tail shrink");
     require(page[0] == 0x10 && page[5 * PageBytes] == 0x15, "tail content");
     require(unmap(2, 2) == S_OK, "middle hole");
     require(page[0] == 0x10 && page[PageBytes] == 0x11, "front after hole");
     require(page[4 * PageBytes] == 0x14 && page[5 * PageBytes] == 0x15, "back after hole");
-    const int quota = AnonMap(quotaRemainder);
-    require(quota > 0 && AnonMap(PageBytes) == S_LIMIT && AnonUnmap((void*)(u32)quota) == S_OK,
-            "partial unmap releases exactly four pages of virtual quota");
+    require(AnonMapStatus(AnonMap(tailCapacity + PageBytes)) == S_LIMIT,
+            "disjoint free ranges cannot satisfy a larger contiguous allocation");
+    const u32 tail = AnonMap(tailCapacity);
+    const u32 middle = AnonMap(2 * PageBytes);
+    require(tail == (u32)addr(6) && middle == (u32)addr(2) && AnonMapStatus(AnonMap(PageBytes)) == S_LIMIT,
+            "new reservations fill the tail and middle hole exactly");
+    require(AnonUnmap((void*)tail) == S_OK && AnonUnmap((void*)middle) == S_OK, "release both independent allocations");
     require(AnonUnmap(addr(0)) == S_OK && reserve(8) == page, "cleanup shrink");
   } else if (streq(mode, "e2-cross")) {
     auto* adjacent = reserve(1);
@@ -295,9 +308,9 @@ int unmapRangeTest(const char* mode) {
             "release original head and independent hole allocation");
   } else if (streq(mode, "e2-reuse")) {
     require(unmap(3, 2) == S_OK, "punch hole");
-    int nb = AnonMap(2 * PageBytes);
-    require(nb == (int)(u32)addr(3), "reuse exact hole address");
-    volatile u8* np = (volatile u8*)(u32)nb;
+    const u32 newBase = AnonMap(2 * PageBytes);
+    require(newBase == (u32)addr(3), "reuse exact hole address");
+    volatile u8* np = (volatile u8*)newBase;
     np[0] = 0xAA;
     require(AnonUnmap(addr(0)) == S_OK, "free old");
     require(np[0] == 0xAA, "new survives");
@@ -306,7 +319,7 @@ int unmapRangeTest(const char* mode) {
     page[3 * PageBytes] = 0x55;
     require(unmap(3, 2) == S_LIMIT, "oom rollback");
     require(page[3 * PageBytes] == 0x55, "content after oom");
-    require(AnonMap(ANON_MAX_BYTES - 6 * PageBytes) == S_LIMIT, "oom leaves reservation charged");
+    require(AnonMapStatus(AnonMap(ANON_MAX_BYTES - 6 * PageBytes)) == S_LIMIT, "oom leaves reservation charged");
     require(unmap(3, 2) == S_OK, "retry after oom");
     require(AnonUnmap(addr(0)) == S_OK, "cleanup oom");
   } else {
@@ -323,9 +336,10 @@ int protectionTest(const char* mode) {
             "start faulting writer");
     // Stay runnable. The worker's deferred fault queues it behind this thread.
     for (;;) {
-      const int tmp = AnonMap(1);
-      if (tmp == S_NOMEM) { break; }
-      require(tmp > 0 && AnonUnmap((void*)(u32)tmp) == S_OK, "wait for injected pressure");
+      const u32 tmp = AnonMap(1);
+      const int status = AnonMapStatus(tmp);
+      if (status == S_NOMEM) { break; }
+      require(status == S_OK && AnonUnmap((void*)tmp) == S_OK, "wait for injected pressure");
     }
     require(sino::mprotect(base, PageBytes, Protection::Read) == S_OK, "downgrade before retry");
     Log("MP DOWNGRADED\n");
@@ -542,13 +556,14 @@ int main() {
     Log("RECLAIM LOW READY\n");
     const u32 start = (u32)api(SYS_TICKS, 0, 0, 0);
     for (;;) {
-      const int base = AnonMap(1);
-      if (base == S_NOMEM) { break; }
-      require(base > 0 && AnonUnmap((void*)(u32)base) == S_OK, "poll reservation");
+      const u32 base = AnonMap(1);
+      const int status = AnonMapStatus(base);
+      if (status == S_NOMEM) { break; }
+      require(status == S_OK && AnonUnmap((void*)base) == S_OK, "poll reservation");
       require((u32)api(SYS_TICKS, 0, 0, 0) - start < 900, "LOW did not arrive");
       Yield(1);
     }
-    require(AnonMap(0) == S_INVALID && AnonMap(ANON_MAX_BYTES) == S_LIMIT,
+    require(AnonMapStatus(AnonMap(0)) == S_INVALID && AnonMapStatus(AnonMap(ANON_MAX_BYTES)) == S_LIMIT,
             "invalid request and quota retain precedence");
     require(reserved[0] == 0 && reserved[PageBytes] == 0, "existing region can still populate");
     reserved[PageBytes] = 0x6d;
@@ -559,7 +574,7 @@ int main() {
   }
 
   if (streq(mode, "retry") || streq(mode, "fault") || streq(mode, "table-fault")) {
-    volatile u8* memory = reserve(1);
+    volatile u8* memory = streq(mode, "table-fault") ? reserveInNewPageTable() : reserve(1);
     Log("RECLAIM TOUCH READY\n");
     require(*memory == 0, "first touch receives a zero page");
     *memory = 0x6d;
@@ -569,7 +584,7 @@ int main() {
   }
 
   if (streq(mode, "copy") || streq(mode, "table-copy")) {
-    volatile u8* memory = reserve(1);
+    volatile u8* memory = streq(mode, "table-copy") ? reserveInNewPageTable() : reserve(1);
     require(QuerySystemInfo((SystemInfo*)memory) == S_NOMEM, "system call preserves S_NOMEM");
     Log(streq(mode, "copy") ? "RECLAIM COPY PASS\n" : "RECLAIM TABLE COPY PASS\n");
     hold();

@@ -182,17 +182,6 @@ namespace task {
     return {PHYS_NULL, mapped == UserMapResult::TableNoMemory ? UserPageStatus::TableNoMemory
                                                              : UserPageStatus::Invalid};
   }
-  static u32 free_user_pages(Process* p, u32 start, u32 end) {
-    u32 freed = 0;
-    for (u32 va = start; va < end; va += PAGE_SIZE) {
-      phys_t page = paging_user_unmap(p->pd, va);
-      if (page) {
-        page_free(page);
-        freed++;
-      }
-    }
-    return freed;
-  }
   using mm::VmaNode;
   using mm::VmaType;
 
@@ -203,7 +192,7 @@ namespace task {
   }
   static u32 free_anon_pages(Process* p, VmaNode& region) {
     const u32 base = region.startPage * PAGE_SIZE;
-    const u32 freed = free_user_pages(p, base, base + region.pageCount * PAGE_SIZE);
+    const u32 freed = paging_user_unmap(p->pd, base, base + region.pageCount * PAGE_SIZE);
     if (freed != region.resident || freed > p->pages_used) {
       panic("Anonymous resident page count", freed, region.resident);
     }
@@ -225,11 +214,11 @@ namespace task {
     }
     return ANON_MAX_REGIONS;
   }
-  static int anon_map(Process* p, u32 bytes) {
+  static u32 anon_map(Process* p, u32 bytes) {
     if (!bytes || !page_ceil_checked(bytes, &bytes)) {
       return S_INVALID;
     }
-    if (p->anonFragments >= ANON_MAX_FRAGMENTS || bytes > ANON_MAX_BYTES - p->vma_bytes) {
+    if (p->anonFragments >= ANON_MAX_FRAGMENTS || bytes > ANON_MAX_BYTES) {
       return S_LIMIT;
     }
     const u32 id = find_anon_id(p);
@@ -254,10 +243,9 @@ namespace task {
       kfree(region);
       return S_LIMIT;
     }
-    p->vma_bytes += bytes;
     p->anonIds[id / AnonIdWordBits] |= 1u << (id % AnonIdWordBits);
     ++p->anonFragments;
-    return (int)(basePage * PAGE_SIZE);
+    return basePage * PAGE_SIZE;
   }
   static bool belongs(const VmaNode* n, u8 id) {
     return n && n->type == VmaType::Anonymous && n->allocId == id;
@@ -266,14 +254,6 @@ namespace task {
     return belongs(n, id) && !n->lock_count && !n->hasFlag(VmaNode::Flag::Purgeable) &&
            !n->hasFlag(VmaNode::Flag::Purged);
   }
-  static u32 count_resident(const Process* p, u32 begin, u32 end) {
-    u32 count = 0;
-    for (u32 i = begin; i < end; ++i) {
-      if (paging_user_flags(p->pd, i * PAGE_SIZE) & PAGE_PRESENT) { ++count; }
-    }
-    return count;
-  }
-
   // Add this node's resident pages before, inside, and after [begin, end).
   static void split_resident(const Process* p, const VmaNode& node, u32 begin, u32 end, u32 (&counts)[3]) {
     const u32 start = node.startPage;
@@ -290,14 +270,14 @@ namespace task {
     if (remaining > node.pageCount) { panic("VMA resident exceeds range", start, remaining); }
     for (unsigned i = 0; i < 3; ++i) {
       if (i == largest || !pages[i]) { continue; }
-      const u32 resident = count_resident(p, boundary[i], boundary[i + 1]);
+      const u32 resident = paging_user_count(p->pd, boundary[i] * PAGE_SIZE, boundary[i + 1] * PAGE_SIZE);
       if (resident > remaining) { panic("VMA resident split underflow", start, resident); }
       counts[i] += resident;
       remaining -= resident;
     }
     if (remaining > pages[largest]) { panic("VMA resident split exceeds range", start, remaining); }
 #ifdef SINO_SHELL_BRIDGE
-    const u32 actual = count_resident(p, boundary[largest], boundary[largest + 1]);
+    const u32 actual = paging_user_count(p->pd, boundary[largest] * PAGE_SIZE, boundary[largest + 1] * PAGE_SIZE);
     if (remaining != actual) { panic("VMA resident split mismatch", remaining, actual); }
 #endif
     counts[largest] += remaining;
@@ -404,7 +384,6 @@ namespace task {
       if (belongs(n, id)) {
         if (!mm::vma_remove(p->vma_root, n)) { panic("Anonymous VMA ownership", p->pid, base); }
         free_anon_pages(p, *n);
-        p->vma_bytes -= n->pageCount * PAGE_SIZE;
         --p->anonFragments;
         kfree(n);
       }
@@ -466,7 +445,7 @@ namespace task {
     for (unsigned i = 0; i < inputs; ++i) {
       if (!mm::vma_remove(p->vma_root, nodes[i])) { panic("Unmap range detach", p->pid, base); }
     }
-    u32 freed = free_user_pages(p, base, base + bytes);
+    const u32 freed = paging_user_unmap(p->pd, base, base + bytes);
     if (freed != resident[1] || freed > p->pages_used) {
       panic("Unmap range resident", freed, resident[1]);
     }
@@ -493,7 +472,6 @@ namespace task {
     }
     for (unsigned i = slot; i < inputs; ++i) { kfree(nodes[i]); }
     p->anonFragments = p->anonFragments - inputs + outputs;
-    p->vma_bytes -= bytes;
     return S_OK;
   }
   static int anon_purgeable(Process* p, u32 base, AnonPurgeableOp operation) {
@@ -605,7 +583,7 @@ namespace task {
   }
   static void release_user_stack(Process* p, u32 top) {
     const u32 start = top - UserStackBytes;
-    if (free_user_pages(p, start, top) != UserStackBytes / PAGE_SIZE) {
+    if (paging_user_unmap(p->pd, start, top) != UserStackBytes / PAGE_SIZE) {
       panic("User stack backing", p->pid, top);
     }
     remove_stack_vma(p, start, VmaType::Stack);
@@ -624,7 +602,7 @@ namespace task {
     for (u32 va = start; va < top; va += PAGE_SIZE) {
       const auto allocation = alloc_user_page(p, va, 1);
       if (!allocation.page) {
-        free_user_pages(p, start, va);
+        paging_user_unmap(p->pd, start, va);
         remove_stack_vma(p, start, VmaType::Stack);
         remove_stack_vma(p, guard, VmaType::Guard);
         return allocation.status == UserPageStatus::Invalid ? S_INVALID : S_NOMEM;
@@ -645,7 +623,7 @@ namespace task {
       }
       if (!guard) { count += node->pageCount; }
     }
-    if (count != paging_user_count(p->pd)) { panic("Launch VMA coverage", count, p->pid); }
+    if (count != paging_user_count(p->pd, USER_BASE, USER_END)) { panic("Launch VMA coverage", count, p->pid); }
     pr_debug("Launch VMA coverage passed\n");
   }
   /* Test-only mappings for the strict paging probe on the read-only boot disk. */
@@ -664,7 +642,7 @@ namespace task {
     if (!alloc_user_page(p, high, 0).page) {
       return S_NOMEM;
     }
-    free_user_pages(p, high, high + PAGE_SIZE);
+    paging_user_unmap(p->pd, high, high + PAGE_SIZE);
     if (free_pages != before) {
       return S_INVALID;
     }
@@ -1444,7 +1422,7 @@ namespace task {
       constexpr u32 stackPages = (UserStackBytes + UserStackGuardBytes) / PAGE_SIZE;
       u32 guardPage;
       if (!mm::vma_find_gap(current->vma_root, USER_MAIN_STACK_TOP / PAGE_SIZE,
-                           UserWorkerStackEnd / PAGE_SIZE, stackPages, guardPage)) { return S_LIMIT; }
+                           USER_STACK_END / PAGE_SIZE, stackPages, guardPage)) { return S_LIMIT; }
       const u32 top = (guardPage + stackPages) * PAGE_SIZE;
       int result = alloc_user_stack(current, top);
       if (result != S_OK) { return result; }
@@ -1579,7 +1557,7 @@ namespace task {
     default: return 0;
     }
   }
-  int dispatchSyscall(Frame* f) {
+  u32 dispatchSyscall(Frame* f) {
     u32 a = f->ebx, b = f->ecx, c = f->edx;
     u32* user_pd = current->pd;
     char path[VFS_PATH];
@@ -1618,7 +1596,7 @@ namespace task {
     case SYS_MPROTECT:
       return protect_anon(current, a, b, c);
     case SYS_ANON_MAP:
-      return b || c ? S_INVALID : anon_map(current, a);
+      return b || c ? (u32)S_INVALID : anon_map(current, a);
     case SYS_ANON_UNMAP:
       return b || c ? S_INVALID : anon_unmap(current, a);
     case SYS_ANON_UNMAP_RANGE:

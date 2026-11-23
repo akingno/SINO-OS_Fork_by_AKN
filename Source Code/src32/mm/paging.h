@@ -49,10 +49,11 @@ extern u32 direct_map_end;
 u32* paging_user_create(void);
 u32 paging_user_destroy(u32* pd);
 
-phys_t paging_user_unmap(u32* pd, u32 va);
+/* Release the backed pages in a page-aligned half-open user range. */
+u32 paging_user_unmap(u32* pd, u32 base, u32 end);
 u32 paging_user_flags(const u32* pd, u32 va);
 void paging_user_protect(u32* pd, u32 base, u32 end, bool write);
-u32 paging_user_count(const u32* pd);
+u32 paging_user_count(const u32* pd, u32 base, u32 end);
 void paging_activate(const u32* pd);
 
 /* Kernel guards require a live kpage allocation. Initialize the token to zero

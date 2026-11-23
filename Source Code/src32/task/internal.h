@@ -16,9 +16,8 @@ inline constexpr int MaxThreads = 4;
 static_assert(MaxThreads < 8, "TID ABI reserves three low bits for slot + 1");
 inline constexpr u32 UserStackBytes = 16384u;
 inline constexpr u32 UserStackGuardBytes = 16384u;
-inline constexpr u32 UserWorkerStackEnd = USER_MAIN_STACK_TOP + 0x20000u;
 static_assert((MaxThreads - 1) * (UserStackBytes + UserStackGuardBytes) <=
-              UserWorkerStackEnd - USER_MAIN_STACK_TOP, "worker stacks must fit their window");
+              USER_STACK_END - USER_MAIN_STACK_TOP, "worker stacks must fit their window");
 
 struct UserFrame {
   Frame frame;
@@ -94,7 +93,6 @@ struct Process {
   u32 desktop_owner;
   u32 pages_used;
   mm::VmaNode* vma_root;
-  u32 vma_bytes;
   i16 reclaim_priority;
   u16 anonFragments;
   u32 anonIds[ANON_MAX_REGIONS / AnonIdWordBits];
@@ -126,7 +124,7 @@ void detachProcess(Process& process);
 void setEntryStack(const Process& process);
 void leave(Frame* frame);
 int retryWait(Thread* thread);
-int dispatchSyscall(Frame* frame);
+u32 dispatchSyscall(Frame* frame);
 int joinResult(Thread& caller, Frame& frame);
 extern "C" void user_enter(UserFrame*);
 

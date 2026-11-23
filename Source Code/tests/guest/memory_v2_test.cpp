@@ -30,10 +30,11 @@ static int worker(void* arg) {
 static void waitForPressure(bool low) {
   const u32 begin = StreamTicks();
   for (;;) {
-    const int mapped = AnonMap(1);
-    require(mapped == S_NOMEM || (mapped > 0 && AnonUnmap((void*)(u32)mapped) == S_OK),
+    const u32 mapped = AnonMap(1);
+    const int status = AnonMapStatus(mapped);
+    require(status == S_NOMEM || (status == S_OK && AnonUnmap((void*)mapped) == S_OK),
             "poll pressure with a temporary reservation");
-    if ((mapped == S_NOMEM) == low) { return; }
+    if ((status == S_NOMEM) == low) { return; }
     require(StreamTicks() - begin < 900, "host resource sample timed out");
     Yield(1);
   }
@@ -78,12 +79,13 @@ int main(void) {
           QueryStartInfo((StartInfo*)(USER_MAIN_STACK_TOP - threadprobe::StackBytes - sizeof(StartInfo))) == S_INVALID,
           "argument page read-only and high stack guard unmapped");
 
+  constexpr u32 imagePdeBoundary = USER_BASE + 4 * 1024 * 1024;
   u32 end = (u32)(image + sizeof(image));
-  require((u32)image < USER_DYNAMIC_BASE && end > USER_DYNAMIC_BASE &&
+  require((u32)image < imagePdeBoundary && end > imagePdeBoundary &&
           !image[WideImageSampleOffset] && !image[sizeof(image) - 1], "wide BSS is zero-filled");
   image[sizeof(image) - 1] = 0x5a;
-  require(QueryStartInfo((StartInfo*)(USER_DYNAMIC_BASE - 8)) == S_OK,
-          "copy crosses the dynamic base inside the image");
+  require(QueryStartInfo((StartInfo*)(imagePdeBoundary - 8)) == S_OK,
+          "copy crosses a PDE inside the wide image");
   require(thread::create(reinterpret_cast<thread::Entry>(image), nullptr,
                          ThreadCreateFlags::Detached) == S_INVALID &&
           threadprobe::createCaptured(worker, worker_stack, ThreadCreateFlags::Detached) > 0,
@@ -94,8 +96,8 @@ int main(void) {
 
   const u32 size = 13 * 1024 * 1024;
   volatile u8* heap = (volatile u8*)malloc(size);
-  require(heap && (u32)heap >= end && malloc_size((const void*)heap) >= size,
-          "heap skips the wide image and reports its capacity");
+  require(heap && (u32)heap >= USER_DYNAMIC_BASE && (u32)heap < USER_DYNAMIC_END &&
+          malloc_size((const void*)heap) >= size, "heap uses high addresses and reports its capacity");
   for (u32 i = 0; i < size; i++) heap[i] = (u8)(i ^ (i >> 12) ^ 0x3c);
   for (u32 i = 0; i < size; i++)
     if (heap[i] != (u8)(i ^ (i >> 12) ^ 0x3c)) require(0, "large heap byte mismatch");
