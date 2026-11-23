@@ -63,8 +63,9 @@ void object_unref(int index) {
       filesys_release(o->value);
     else if (o->type == ObjType::PIPE_READ || o->type == ObjType::PIPE_WRITE)
       pipe_release(o);
-    else if(o->type==ObjType::TERM_CONTROL||o->type==ObjType::TERM_CLIENT)
-      terminal_release(o->value,o->type==ObjType::TERM_CLIENT);
+    else if (o->type == ObjType::TERM_CONTROL || o->type == ObjType::TERM_CLIENT) {
+      terminal::release(*o);
+    }
   }
 }
 int handle_close(Handle* table, u32 h) {

@@ -8,17 +8,22 @@
 #include "lib/kstring.h"
 #include "mm/kmalloc.h"
 #include "mm/page.h"
+struct ClientIdentity {
+  u32 index; /* Object index + 1, or zero when detached. */
+  u32 generation;
+};
 typedef struct {
-  u32 refs, width, height, mode, foreground, closed, eof;
+  u32 refs, width, height, mode, foreground;
   u32 foreground_object; /* Client object index + 1. */
   u32 input_size, output_size, line_size, events;
   u8 input[1024], output[1024], line[256];
   TerminalEvent event[8];
   u32 shell, task, root, rights, request_id, phase, desktop;
+  ClientIdentity shell_client;
   InteractiveSpec request;
   InteractiveResult result;
   TerminalEdit edit;
-  u32 edit_pending, editing;
+  bool closed, eof, edit_pending, editing;
 } Terminal;
 typedef struct {
   Terminal* terminal;
@@ -39,17 +44,22 @@ static void wake_readers(Terminal* t) {
     process_terminal_wake(t->foreground_object);
 }
 static void wake_shell(Terminal* t) {
-  if (!t->shell)
+  const ClientIdentity identity = t->shell_client;
+  if (!t->shell || !identity.index || identity.index > OBJECTS) {
     return;
-  for (u32 i = 0; i < OBJECTS; i++) {
-    if (!objects[i].refs || objects[i].type != ObjType::TERM_CLIENT)
-      continue;
-    const Client* client = (const Client*)objects[i].value;
-    if (client->terminal == t && client->pid == t->shell) {
-      process_interactive_wake(i + 1);
-      return;
-    }
   }
+  const Object& object = objects[identity.index - 1];
+  if (!object.refs || object.type != ObjType::TERM_CLIENT ||
+      object.generation != identity.generation) {
+    return;
+  }
+  const Client* client = (const Client*)object.value;
+  if (client->terminal == t && client->pid == t->shell) {
+    process_interactive_wake(identity.index);
+  }
+}
+static void remember_shell_client(Terminal* t, u32 object) {
+  t->shell_client = {object, objects[object - 1].generation};
 }
 static void publish_result(Terminal* t) {
   t->phase = 3;
@@ -69,6 +79,9 @@ static void set_foreground(Terminal* t, u32 pid, u32 object) {
   reset(t);
   t->foreground = pid;
   t->foreground_object = object;
+  if (pid == t->shell) {
+    remember_shell_client(t, object);
+  }
   task::terminalForeground(pid, true);
 }
 static void unref(Terminal* t) {
@@ -79,19 +92,24 @@ static void unref(Terminal* t) {
     count--;
   }
 }
-void terminal_release(int value, int client) {
-  if (client) {
-    Client* c = (Client*)value;
+void terminal::release(const Object& object) {
+  if (object.type == ObjType::TERM_CLIENT) {
+    Client* c = (Client*)object.value;
     Terminal* t = c->terminal;
+    if (t->shell_client.index == (u32)(&object - objects) + 1 &&
+        t->shell_client.generation == object.generation) {
+      t->shell_client = {};
+    }
     if (t->foreground == c->pid)
       reset(t);
     kfree(c);
     unref(t);
   } else {
-    Terminal* t = (Terminal*)value;
+    Terminal* t = (Terminal*)object.value;
     t->closed = 1;
     wake_readers(t);
     wake_shell(t);
+    t->shell_client = {};
     if (t->shell)
       process_terminal_cancel(t->shell);
     if (t->task)
@@ -208,6 +226,7 @@ static int feed(Terminal* t, const TerminalRequest* r) {
     event(t, TERM_HANGUP, 0, 0, 0);
     wake_readers(t);
     wake_shell(t);
+    t->shell_client = {};
     return 0;
   }
   if (r->value == TERM_RESIZE) {
@@ -467,6 +486,7 @@ static int interactive_call(Terminal* t, Client* c, Object* control,
       t->phase = 2;
     } else {
       t->shell = child;
+      remember_shell_client(t, t->foreground_object);
       t->rights = q->rights;
       t->desktop = q->program == IX_SHELL && process_workspace_frontend(pid);
       if (directory) {

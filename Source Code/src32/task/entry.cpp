@@ -22,7 +22,14 @@ extern "C" {
   int process_run_result(Handle * a0, u32 a1, RunResult * a2) { return task::runResult(a0, a1, a2); }
   int process_run_read(Handle * a0, u32 a1, u32 a2, u32 a3, void * a4, u32 a5) { return task::runRead(a0, a1, a2, a3, a4, a5); }
   int process_cancel_owned(Handle * a0, u32 a1) { return task::cancelOwned(a0, a1); }
-  Handle* process_terminal_target(Handle* a0, u32 a1, u32* a2) { return task::terminalTarget(a0, a1, a2); }
+  Handle* process_terminal_target(Handle* owner, u32 handle, u32* pid) {
+    task::Process* process = task::terminalTarget(owner, handle);
+    if (!process) {
+      return nullptr;
+    }
+    *pid = process->pid;
+    return process->handles;
+  }
   Handle* process_interactive_handles(u32 a0) { return task::interactiveHandles(a0); }
   int process_terminal_cancel(u32 a0) { return task::terminalCancel(a0); }
   int process_interactive_result(Handle* a0, u32 a1, ProcessCompletion* a2) { return task::interactiveResult(a0, a1, a2); }

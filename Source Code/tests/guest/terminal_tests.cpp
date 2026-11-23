@@ -264,16 +264,33 @@ int main(void){
  check(call(5,a,(void*)USER_BASE,32,0,0)==S_INVALID&&call(5,a,info,31,0,0)==S_INVALID&&call(4,a,0,0,6,0)==S_INVALID,"query memory and resize validation");
  check(call(7,a,bytes,1,0,0)==S_BADHANDLE,"controller cannot impersonate program");
  check(call(4,a,bytes,257,1,0)==S_INVALID,"input bound");
- int p=start("echo");check(p>0&&call(3,a,0,0,p,0)>0,"owned foreground attach");
+ int p = start("echo");
+ check(p > 0, "launch foreground target");
+ int wait_only = api(SYS_DUP, p, PROCESS_WAIT, 0);
+ int cancel_only = api(SYS_DUP, p, PROCESS_CANCEL, 0);
+ check(wait_only > 0 && cancel_only > 0 &&
+       TerminalForeground(a, wait_only) == S_BADHANDLE &&
+       TerminalForeground(a, cancel_only) == S_BADHANDLE,
+       "foreground attach requires both completion rights");
+ check(Close(wait_only) == S_OK && Close(cancel_only) == S_OK &&
+       TerminalForeground(a, p) > 0, "owned foreground attach");
  u32 begin=StreamTicks();int n;while((n=call(9,a,bytes,5,0,0))==S_AGAIN&&StreamTicks()-begin<100)Yield(1);
  check(n==5,"raw checkpoint");check(call(9,b,bytes,5,0,0)==S_AGAIN,"session output isolation");
  check(call(4,a,"a\0b",3,1,0)==0,"raw input feed");
  begin=StreamTicks();while((n=call(9,a,bytes,4,0,0))==S_AGAIN&&StreamTicks()-begin<100)Yield(1);check(n==4,"line checkpoint");
  check(call(4,a,"xy\bz\n",5,1,0)==0&&call(4,a,0,0,6,(100u<<16)|30)==0&&call(4,a,0,0,3,0)==0,"canonical resize EOF input");
- done(p,PROCESS_EXITED);
+ RunResult previous;
+ check(RunWaitFor(p, &previous, 600) == S_OK &&
+       previous.completion.reason == PROCESS_EXITED && !previous.completion.code,
+       "foreground target completes");
  check(call(5,a,info,32,0,0)==0&&info[4]==3&&!info[5],"exit restores mode and foreground");
  call(9,a,bytes,256,0,0);
- p=start("fault");check(p>0&&call(3,a,0,0,p,0)>0,"fault attach");done(p,PROCESS_FAULTED);
+ int replacement = start("fault");
+ check(replacement > 0 && TerminalForeground(a, p) == S_BADHANDLE &&
+       CancelProcess(p) == S_OK, "completed handle cannot target a replacement");
+ check(TerminalForeground(a, replacement) > 0 && Close(p) == S_OK,
+       "live replacement can take foreground");
+ done(replacement, PROCESS_FAULTED);
  check(call(5,a,info,32,0,0)==0&&info[4]==3&&!info[5],"fault restores mode");call(9,a,bytes,256,0,0);
  p=start("spin");check(p>0&&call(3,a,0,0,p,0)>0,"cancel attach");
  begin=StreamTicks();while((n=call(9,a,bytes,5,0,0))==S_AGAIN&&StreamTicks()-begin<100)Yield(1);check(n==5,"raw special key checkpoint");

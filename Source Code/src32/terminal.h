@@ -6,10 +6,12 @@
 extern "C" {
 #endif
 int terminal_bind_interactive(void*,Handle*,u32,CliInfo*);
-void terminal_release(int, int);
 int terminal_call(Handle*, u32, u32, const TerminalRequest*, u32* user_pd);
 #ifdef __cplusplus
 }
 #endif
-namespace terminal { u32 readState(u32 object); }
+namespace terminal {
+u32 readState(u32 object);
+void release(const Object& object);
+}
 #endif

@@ -80,6 +80,11 @@ namespace task {
     Process& p = processes[slot];
     return p.state && p.pid == pid ? &p : nullptr;
   }
+  static Process* completionProcess(const Object& object) {
+    Process* process = findProcess(completions[object.value].result.pid);
+    const u32 index = (u32)(&object - objects) + 1;
+    return process && process->completion_object == index ? process : nullptr;
+  }
   static struct {
     u32 pid;
     char name[64];
@@ -1080,14 +1085,7 @@ namespace task {
       }
       return h;
     }
-    Handle* handles = terminalTarget(owner, h, pid);
-    Process* child = 0;
-    for (int i = 0; i < MaxProcesses; i++) {
-      if (handles == processes[i].handles) {
-        child = &processes[i];
-        break;
-      }
-    }
+    Process* child = terminalTarget(owner, h);
     if (!child) {
       kpage_free(cli);
       if (grant >= 0) {
@@ -1096,6 +1094,8 @@ namespace task {
       handle_close(owner, h);
       return S_IO;
     }
+    *pid = child->pid;
+    Handle* handles = child->handles;
     child->interactive = cli;
     int status = 0;
     if (grant >= 0) {
@@ -1261,26 +1261,21 @@ namespace task {
     if (completions[object->value].complete) {
       return 0;
     }
-    for (int i = 0; i < MaxProcesses; i++) {
-      Process* p = &processes[i];
-      if (p->state && p->pid == completions[object->value].result.pid &&
-        p->completion_object == (u32)(object - objects) + 1) {
-        p->retire(PROCESS_CANCELED, 0);
-        return 0;
-      }
+    Process* process = completionProcess(*object);
+    if (!process) {
+      return S_NOTFOUND;
     }
-    return S_NOTFOUND;
+    process->retire(PROCESS_CANCELED, 0);
+    return S_OK;
   }
-  Handle* terminalTarget(Handle* owner,u32 h,u32* pid) {
-    Object* o=handle_get(owner,h,ObjType::PROCESS,PROCESS_WAIT|PROCESS_CANCEL);
-    if(!o||completions[o->value].complete){
-      return 0;
+  Process* terminalTarget(Handle* owner, u32 handle) {
+    Object* object = handle_get(owner, handle, ObjType::PROCESS, PROCESS_WAIT | PROCESS_CANCEL);
+    if (!object || completions[object->value].complete) {
+      return nullptr;
     }
-    for(int i=0;i<MaxProcesses;i++){
-      if(processes[i].state==1 && processes[i].policy==PROCESS_STRICT &&
-        processes[i].completion_object==(u32)(o-objects)+1){*pid=processes[i].pid;return processes[i].handles;}
-    }
-    return 0;
+    Process* process = completionProcess(*object);
+    return process && process->state == 1 && process->policy == PROCESS_STRICT
+      ? process : nullptr;
   }
   Handle* interactiveHandles(u32 pid) {
     Process* p = findProcess(pid);
