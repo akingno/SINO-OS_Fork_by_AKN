@@ -116,6 +116,7 @@ namespace task {
     pr_debug("USER GDT/TSS ready, CPL3 selectors 1B/23, I/O denied\n");
   }
   static void release(Process* p) {
+    const terminal::ControlIdentity console = p->consoleCompletion;
     detachProcess(*p);
     for (auto& t : p->thread) { t.dropJoinRecord(); }
     for (int i = 0; i < MaxProcesses; i++) {
@@ -150,6 +151,7 @@ namespace task {
         completions[slot].run->incomplete = 1;
       }
       notify(p->completion_object, WaitReason::COMPLETION, true);
+      terminal::completionPublished(console, p->pid);
       object_unref(object);
     }
     // 资源、等待节点、归属与历史结果处理完，才允许复用编号槽位。
@@ -687,9 +689,6 @@ namespace task {
       }
     }
   }
-  void interactiveWake(u32 object) {
-    notify(object, WaitReason::IX_RESULT, true);
-  }
   int launch(const char* path, u32 caps) {
     return launchArgs(path, caps, "");
   }
@@ -1113,6 +1112,7 @@ namespace task {
       handle_close(owner, h);
       return status;
     }
+    child->consoleCompletion = terminal::controlIdentity(session);
     return h;
   }
   void runLimits(RunLimits* out) {
@@ -1484,7 +1484,8 @@ namespace task {
   }
   static bool isTerminalWait(WaitReason reason) {
     return reason == WaitReason::TERM_READ || reason == WaitReason::TERM_INPUT ||
-           reason == WaitReason::TERM_WRITE || reason == WaitReason::IX_RESULT;
+           reason == WaitReason::TERM_WRITE || reason == WaitReason::TERM_EDIT_ACK ||
+           reason == WaitReason::IX_RESULT;
   }
   static void blockTerminal(Frame* frame, const Object* client, const TerminalRequest& request,
                             WaitReason reason, u32 timeout) {
@@ -1492,6 +1493,43 @@ namespace task {
     thread.waitTerminal = request;
     thread.block((u32)(client - objects) + 1, reason, timeout);
     leave(frame);
+  }
+  static bool validConsoleWait(const ConsoleWaitRequest& request) {
+    const u32 interests = request.interests;
+    if (!interests || (interests & ~CONSOLE_INTERESTS) ||
+        ((interests & CONSOLE_KEY) && (interests & CONSOLE_INPUT_RETRY)) ||
+        !request.shell || (!!request.child != !!(interests & CONSOLE_CHILD_DONE))) {
+      return false;
+    }
+    if (!(interests & CONSOLE_INPUT_RETRY)) {
+      return !request.input_type && !request.input_value;
+    }
+    switch (request.input_type) {
+      case TERM_TEXT: return request.input_value <= 255;
+      case TERM_KEY: return request.input_value != 0;
+      case TERM_EOF:
+      case TERM_CANCEL: return !request.input_value;
+      default: return false;
+    }
+  }
+  static int consoleWaitReady(const Object& control, const ConsoleWaitRequest& request) {
+    const Object* root = handle_get(current->handles, request.shell, ObjType::PROCESS, PROCESS_WAIT);
+    const Object* child = request.child
+      ? handle_get(current->handles, request.child, ObjType::PROCESS, PROCESS_WAIT) : nullptr;
+    if (!root || (request.child && !child)) {
+      return S_BADHANDLE;
+    }
+    const auto& shell = completions[root->value];
+    u32 completed = shell.complete ? (u32)CONSOLE_SHELL_DONE : 0u;
+    u32 childPid = 0;
+    if (child) {
+      const auto& command = completions[child->value];
+      childPid = command.result.pid;
+      if (command.complete) {
+        completed |= CONSOLE_CHILD_DONE;
+      }
+    }
+    return terminal::consoleReady(control, request, shell.result.pid, childPid, completed);
   }
   int retryWait(Thread* t) {
     u32 now = ticks;
@@ -1507,6 +1545,17 @@ namespace task {
       } else if (t->waitOp == WaitReason::EVENT) {
         Object* event = handle_get(current->handles, f->ebx, ObjType::EVENT, 1);
         result = !event ? S_BADHANDLE : event->value ? S_OK : S_AGAIN;
+      } else if (t->waitOp == WaitReason::CONSOLE) {
+        const auto& request = t->waitConsole;
+        const Object* control = handle_get(current->handles, request.control, ObjType::TERM_CONTROL, 1);
+        if (!current->input_frontend) {
+          result = S_DENIED;
+        } else if (!control || (u32)(control - objects) + 1 != t->waitObject ||
+                   control->generation != t->waitGeneration) {
+          result = S_CLOSED;
+        } else {
+          result = consoleWaitReady(*control, request);
+        }
       } else {
         if (isTerminalWait(t->waitOp)) {
           result = terminal_call(current->handles, current->pid, current->policy,
@@ -1574,10 +1623,39 @@ namespace task {
         if (!current->input_frontend) {
           return S_DENIED;
         }
-        if (!a) {
+        if (a == (u32)ConsoleOp::ReadKey) {
           return b || c ? S_INVALID : key_read();
         }
-        if (a != 1 || c != sizeof(ConsoleFrame)) {
+        if (a == (u32)ConsoleOp::Wait) {
+          ConsoleWaitRequest request;
+          if (c != sizeof(request)) {
+            return S_INVALID;
+          }
+          UACCESS_TRY(copy_from_user(user_pd, &request, b, sizeof(request)));
+          if (!validConsoleWait(request)) {
+            return S_INVALID;
+          }
+          const Object* control = handle_get(current->handles, request.control, ObjType::TERM_CONTROL, 1);
+          if (!control) {
+            return S_BADHANDLE;
+          }
+          const WaitKey key{(u32)(control - objects) + 1, control->generation, WaitReason::CONSOLE};
+          if (waitOccupied(key)) {
+            return S_BUSY;
+          }
+          r = consoleWaitReady(*control, request);
+          if (r == S_AGAIN) {
+            if ((request.interests & CONSOLE_KEY) && !terminal::armConsoleKeyboard(key)) {
+              return S_BUSY;
+            }
+            Thread& thread = current->thread[currentThread];
+            thread.waitConsole = request;
+            thread.block(key.object, key.reason, 0);
+            leave(f);
+          }
+          return r;
+        }
+        if (a != (u32)ConsoleOp::Present || c != sizeof(ConsoleFrame)) {
           return S_INVALID;
         }
         UACCESS_TRY(uaccess_prepare(user_pd, b, c, UserAccess::READ));
@@ -1641,6 +1719,10 @@ namespace task {
           request.value = 0;
         } else if (request.op == TERM_WAIT_INPUT) {
           waitOp = WaitReason::TERM_INPUT;
+        } else if ((request.op == TERM_EDIT || request.op == TERM_EDIT_STATUS) &&
+                   request.extra == TERM_EDIT_BLOCK) {
+          waitOp = WaitReason::TERM_EDIT_ACK;
+          timeout = 0;
         } else if (request.op == IX_RESULT && (request.extra & IX_RESULT_BLOCK)) {
           waitOp = WaitReason::IX_RESULT;
           timeout &= ~IX_RESULT_BLOCK;
@@ -2131,6 +2213,14 @@ namespace task {
       if (r == S_OK) {
         for (int i = 0; i < MaxThreads; i++) {
           Thread* t = &current->thread[i];
+          if (t->waitOp == WaitReason::CONSOLE) {
+            if (t->waitConsole.control == a) {
+              t->finishWait(S_CLOSED, ticks);
+            } else if (t->waitConsole.shell == a || t->waitConsole.child == a) {
+              t->finishWait(S_BADHANDLE, ticks);
+            }
+            continue;
+          }
           u32 handle = isTerminalWait(t->waitOp)
           ? t->waitTerminal.handle : t->saved.frame.ebx;
           if (t->waitOp != WaitReason::NONE && handle == a) {

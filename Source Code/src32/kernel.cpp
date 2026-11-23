@@ -19,6 +19,7 @@
 #include "fs/boot_fat12.h"
 #include "panic.h"
 #include "console.h"
+#include "terminal.h"
 
 #define SCREEN_WIDTH  1024
 #define SCREEN_HEIGHT 768
@@ -251,6 +252,7 @@ extern "C" void irq_dispatch(Frame* f) {
           if (next != key_tail) {
             keys[key_head] = v;
             key_head = next;
+            terminal::keyboardQueued();
           }
         }
       }
@@ -309,8 +311,9 @@ void arch_init(void) {
   if (mouse_present)
     vm_mouse_init();
 }
+bool key_pending(void) { return key_head != key_tail; }
 int key_read(void) {
-  while (key_head != key_tail) {
+  while (key_pending()) {
     u8 v = keys[key_tail];
     key_tail = (key_tail + 1) & 127;
     int key = keyboard_decode(v);
@@ -380,6 +383,7 @@ extern "C" void kmain(void) {
   shell_tests();
 #endif
 #ifdef SINO_SHELL_BRIDGE
+  terminal::consoleSelfTest();
   shell_bridge_init();
 #else
   if (process_launch_console() < 0)

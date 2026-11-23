@@ -6,6 +6,7 @@
 #include "schedule.h"
 #include "collections.h"
 #include "wait.h"
+#include "../terminal.h"
 
 namespace mm { struct VmaNode; }
 
@@ -39,7 +40,10 @@ struct Thread {
   WaitReason waitOp;
   u32 waitDeadline;
   int waitTimed;
-  TerminalRequest waitTerminal;
+  union {
+    TerminalRequest waitTerminal;
+    ConsoleWaitRequest waitConsole;
+  };
   UserFrame saved;
   u32 anonFaultPage; // Zero or an anonymous page awaiting one retry on dispatch.
   QueueLink<Thread> schedLink;
@@ -76,6 +80,7 @@ enum class ReclaimClass : i16 {
   Background = 400
 };
 struct Process {
+  terminal::ControlIdentity consoleCompletion;
   u32 pid, state, caps;
   u32 group_id;
   int code;
@@ -139,7 +144,6 @@ int desktopRun(u32 a0, u32 a1, const DesktopRun* a2);
 void completionRelease(int a0);
 void streamRelease(int a0);
 void pipeWake(const Object* a0);
-void interactiveWake(u32 a0);
 int runStart(Handle * a0, const RunSpec * a1);
 int runStartDirectory(Handle * a0, const RunSpec * a1, u32 a2, u32 a3);
 int runStartBound(Handle* owner, const RunSpec* spec, u32 directory, u32 rights,

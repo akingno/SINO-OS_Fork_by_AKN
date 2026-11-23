@@ -164,6 +164,16 @@ buffer before copying. Partial progress returns to the caller.
 `StreamWriteAllFor` submits the remaining suffix using the original
 deadline and reports accepted bytes even when the operation times out.
 
+### Edit frame acknowledgement
+
+On `TERM_EDIT` and `TERM_EDIT_STATUS`, `extra=TERM_EDIT_BLOCK` parks the
+foreground root Shell while a frame is pending. The first operation retries
+publication after the previous frame is acknowledged and revalidates its source
+buffer on retry. The second waits until the published frame is acknowledged.
+The controller acknowledges the matching serial after rendering. Redirecting
+the foreground, closing the handle or hanging up the session also wakes the
+affected Shell waiter. With `extra=0`, both operations retain immediate status.
+
 ## Verification
 
 `regression.ps1 -Suite terminal` runs strict tasks against two independent

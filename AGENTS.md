@@ -87,7 +87,7 @@ Shell 宿主测试参数：`-ExpectedExitCode 1` 断言预期失败，`-TimeoutS
 
 | 任务 | 起读文件 / 符号 | 对应验证入口 |
 | --- | --- | --- |
-| 开机文字 Shell | user/console_host.cpp、src32/console.cpp、task/process.cpp:SYS_CONSOLE、loader.asm | `node 'Source Code/tests/host/test-console.js' <普通 BuildOnly 目录>`；9 项；追加 `--persistence` 为 3 项跨重启自动保存检查；契约 docs/text-console.md |
+| 开机文字 Shell | user/console_host.cpp、src32/console.cpp、task/process.cpp:SYS_CONSOLE、loader.asm | `node 'Source Code/tests/host/test-console.js' <普通 BuildOnly 目录>`；9 项，含阻塞空闲与键盘唤醒；追加 `--persistence` 为 3 项跨重启自动保存检查；契约 docs/text-console.md |
 | 构建、引导 | build32.ps1、build-image32.js、src32/loader.asm、src32/kernel.cpp:kmain | `tests/host/test-boot.js ` |
 | FAT12 启动卷 | src32/fs/boot_fat12.cpp:fs_init / fs_read / fs_read_at、src32/boot-ramdisk.h | 普通镜像无窗口启动；ShellBridge 验证 `/boot` 读取 |
 | 物理页分配、启动页表 | src32/mm/page.cpp:page_init / kpage_alloc_run、page_internal.h:BuddyZone、src32/mm/paging.cpp:paging_bootstrap / paging_kernel_init | 普通镜像无窗口启动，核对启动日志 |

@@ -12,6 +12,17 @@ int terminal_call(Handle*, u32, u32, const TerminalRequest*, u32* user_pd);
 }
 #endif
 namespace terminal {
+struct ControlIdentity { u32 index, generation; };
+ControlIdentity controlIdentity(void* session);
+void completionPublished(ControlIdentity control, u32 pid);
+int consoleReady(const Object& control, const ConsoleWaitRequest& request,
+                 u32 shellPid, u32 childPid, u32 completed);
+bool armConsoleKeyboard(task::WaitKey key);
+void disarmConsoleKeyboard(task::WaitKey key);
+void keyboardQueued();
+#ifdef SINO_SHELL_BRIDGE
+void consoleSelfTest();
+#endif
 void wakeWaiter(u32 object, task::WaitReason reason);
 void release(const Object& object);
 }

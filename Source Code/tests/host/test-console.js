@@ -1,12 +1,13 @@
 /* Real VGA text and PS/2 input; no desktop, scene, screenshot or mouse helpers. */
 const fs = require('node:fs'), path = require('node:path'), net = require('node:net');
 const assert = require('node:assert/strict');
-const {spawn} = require('node:child_process');
+const {spawn, execFileSync} = require('node:child_process');
 const {createHash} = require('node:crypto');
 const root = path.resolve(__dirname, '../..');
 const {QMP} = require(path.join(root, 'tools/qmp'));
 const {qemuPath, sources} = require(path.join(root, 'tools/dev-run'));
 const vm = require('../../tools/vm-config');
+const {tool} = require('../../tools/host-tools');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const persistence = process.argv.includes('--persistence');
 const {volume} = require(path.join(root, 'tools/test-volume'));
@@ -20,6 +21,18 @@ async function main(arg) {
     const iso = fs.readFileSync(path.join(buildDir,'SINO.iso'));
     assert.equal(createHash('sha256').update(iso).digest('hex'), build.isoSha256);
     const directory = fs.mkdtempSync(path.join(buildDir,'console-'));
+    let scheduleStats, ticksAddress;
+    if (!persistence) {
+        const elf = path.join(buildDir,'kernel-normal.exe');
+        const binary = path.join(directory,'inspection-kernel.bin');
+        execFileSync(tool('objcopy'),['-O','binary',elf,binary],{windowsHide:true});
+        assert.equal(createHash('sha256').update(fs.readFileSync(binary)).digest('hex'), build.kernelSha256,
+            'matching ordinary kernel symbols');
+        const symbols = execFileSync(tool('nm'),['-n',elf],{encoding:'utf8',windowsHide:true});
+        scheduleStats = Number.parseInt(symbols.match(/^([0-9a-f]+) \w _task_schedule_stats\s*$/m)?.[1],16);
+        ticksAddress = Number.parseInt(symbols.match(/^([0-9a-f]+) \w _ticks\s*$/m)?.[1],16);
+        assert(Number.isInteger(scheduleStats) && Number.isInteger(ticksAddress),'scheduler inspection symbols');
+    }
     fs.writeFileSync(path.join(directory,'SINO.iso'), iso);
     const disk = fs.openSync(path.join(directory,'data.img'),'wx'); fs.ftruncateSync(disk,16*1024*1024);fs.closeSync(disk);
     const server = net.createServer();await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
@@ -52,8 +65,27 @@ async function main(arg) {
         if(error)throw error;assert(child.exitCode===null && !/KERNEL PANIC|USER PROBE FAIL/.test(log()),'guest failed');
         if(await fn())return;assert(Date.now()<end,'Timeout: '+label);await sleep(50);
     }}
-    async function screen(){const file=path.join(directory,'vga.bin');await q.hmp(`pmemsave 0xb8000 4000 "${file.replaceAll('\\','/')}"`);
-        const b=fs.readFileSync(file);assert(Array.from({length:2000},(_,i)=>b[i*2+1]).every(a=>a===7),'monochrome VGA');return Array.from({length:25},(_,y)=>Array.from({length:80},(_,x)=>String.fromCharCode(b[(y*80+x)*2])).join('').trimEnd()).join('\n').trimEnd();}
+    async function guestMemory(address, length, filename) {
+        const file=path.join(directory,filename);
+        await q.hmp(`pmemsave 0x${address.toString(16)} ${length} "${file.replaceAll('\\','/')}"`);
+        const bytes=fs.readFileSync(file);
+        assert.equal(bytes.length,length);
+        return bytes;
+    }
+    async function screen(){const b=await guestMemory(0xb8000,4000,'vga.bin');
+        assert(Array.from({length:2000},(_,i)=>b[i*2+1]).every(a=>a===7),'monochrome VGA');return Array.from({length:25},(_,y)=>Array.from({length:80},(_,x)=>String.fromCharCode(b[(y*80+x)*2])).join('').trimEnd()).join('\n').trimEnd();}
+    async function confirmIdle() {
+        const begin=(await guestMemory(ticksAddress,4,'ticks.bin')).readUInt32LE();
+        const before=await guestMemory(scheduleStats,60,'schedule.bin');
+        await until(async()=>(((await guestMemory(ticksAddress,4,'ticks.bin')).readUInt32LE()-begin)>>>0)>=225,
+            'PIT ticks while the console is idle');
+        const after=await guestMemory(scheduleStats,60,'schedule.bin');
+        assert.equal(after.readUInt32LE(4),before.readUInt32LE(4),'no idle user-thread dispatches');
+        assert(after.readUInt32LE(28)>before.readUInt32LE(28),'idle_halt continues during PIT interrupts');
+        await type('date\n');
+        await until(async()=>/\n\d{4}-\d{2}-\d{2}\ngsh:\/ \$$/.test(await screen()),
+            'keyboard resumes the idle console and RTC cache stays fresh');
+    }
     async function key(...codes){await q.call('send-key',{keys:codes.map(data=>({type:'qcode',data})),'hold-time':15});await sleep(65);}
     async function type(text){const codes={' ':'spc','\n':'ret','.':'dot','/':'slash','-':'minus',';':'semicolon',"'":'apostrophe','\\':'backslash'};
         for(const c of text){if(c==='>')await key('shift','dot');else await key(codes[c]||c);}}
@@ -96,7 +128,9 @@ async function main(arg) {
         } else {
         await check(cases[0],async()=>{await until(()=>log().includes('CONSOLE SHELL ready'),'autostart');
             assert(log().includes(`SINO BUILD ID: ${build.buildId}`));assert(!log().includes('SINO SHELL BRIDGE'));
-            await until(async()=>(await screen()).endsWith('gsh:/ $'),'visible prompt');});
+            await until(async()=>(await screen()).endsWith('gsh:/ $'),'visible prompt');
+            await sleep(100);
+            await confirmIdle();});
         await check(cases[1],async()=>{await type('echo helo');await key('left');await type('l');await key('ret');
             await until(async()=>/\nhello\n/.test(await screen()),'cursor edit');await key('up');await key('ret');
             await until(async()=>((await screen()).match(/\nhello\n/g)||[]).length===2,'history');});

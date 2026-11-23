@@ -33,27 +33,40 @@ static int start(void) {
   shell = InteractiveStart(control, &intent, directory, 0);
   return shell < 0;
 }
-static int input(int key) {
-  if (key == 3) return TerminalFeed(control, TERM_CANCEL, 0, 0, 0);
-  if (key == 4) return TerminalFeed(control, TERM_EOF, 0, 0, 0);
+struct PendingInput {
+  u32 type, value;
+};
+static PendingInput classify_input(int key) {
+  if (key == 3) { return {TERM_CANCEL, 0}; }
+  if (key == 4) { return {TERM_EOF, 0}; }
   if (key == 13 || key == 8 || key == 9 || (key >= 32 && key < 127)) {
-    char c = key == 13 ? '\n' : (char)key;
+    return {TERM_TEXT, key == 13 ? (u32)'\n' : (u32)key};
+  }
+  return {TERM_KEY, (u32)key};
+}
+static int input(PendingInput pending) {
+  if (pending.type == TERM_TEXT) {
+    const char c = (char)pending.value;
     return TerminalFeed(control, TERM_TEXT, &c, 1, 0);
   }
-  return TerminalFeed(control, TERM_KEY, 0, 0, (u32)key);
+  return TerminalFeed(control, pending.type, 0, 0, pending.value);
 }
 int main(void) {
-  int pending = 0, announced = 0;
+  int announced = 0;
   for (;;) {
     if (start()) { cleanup(); Log("CONSOLE SHELL start failed\n"); return 1; }
+    int pending = 0;
     for (;;) {
+      ProcessCompletion done;
+      const bool shell_done = GetProcessResult(shell, &done) == S_OK;
       int dirty = 0;
-      if (child > 0) {
+      if (!shell_done && child > 0) {
         int status = InteractiveFinish(control, child);
-        if (!status) { Close(child); child = 0; }
+        if (!status) { Close(child); child = 0; pending = 0; }
+        else if (status == S_CLOSED) { break; }
         else if (status != S_AGAIN) { cleanup(); return 1; }
       }
-      if (!child && InteractiveRequest(control, &intent) == S_OK) {
+      if (!shell_done && !child && InteractiveRequest(control, &intent) == S_OK) {
         int boot = intent.program == IX_BOOTTOOLS;
         int grant = intent.rights ? directory : 0;
         if (boot) grant = GrantDirectory("/boot", intent.rights | FS_DELEGATE);
@@ -62,7 +75,7 @@ int main(void) {
         if (child < 0) child = 0; /* The broker publishes the launch error. */
         pending = 0;
       }
-      for (int i = 0; i < 8; i++) {
+      for (int i = 0; !shell_done && i < 8; i++) {
         if (!pending) pending = ConsoleReadKey();
         if (pending < 0) { cleanup(); return 1; }
         if (!pending) break;
@@ -72,8 +85,9 @@ int main(void) {
           dirty = 1; pending = 0; continue;
         }
         if (model.scroll) { model.scroll = 0; dirty = 1; }
-        int status = input(pending);
+        int status = input(classify_input(pending));
         if (status == S_AGAIN) break;
+        if (status == S_CLOSED) { pending = 0; break; }
         if (status < 0) { cleanup(); return 1; }
         pending = 0;
       }
@@ -83,22 +97,30 @@ int main(void) {
         if (n <= 0) break;
         terminal_model_write(&model, bytes, (u32)n); dirty = 1;
       }
-      if (TerminalCall(TERM_EDIT_VIEW, control, &edit, sizeof(edit), 0, 0) == S_OK) {
+      const bool edited = TerminalCall(TERM_EDIT_VIEW, control, &edit, sizeof(edit), 0, 0) == S_OK;
+      if (edited) {
         terminal_edit_apply(&model, &view, &edit); dirty = 1;
-        if (TerminalCall(TERM_EDIT_ACK, control, 0, 0, edit.serial, 0) < 0) {
-          cleanup(); return 1;
-        }
       }
       if (dirty) {
         if (present() < 0) { cleanup(); return 1; }
         if (!announced && view.active) { Log("CONSOLE SHELL ready\n"); announced = 1; }
       }
-      ProcessCompletion done;
-      if (GetProcessResult(shell, &done) == S_OK) {
-        cleanup(); pending = 0;
-        Log("CONSOLE SHELL restarting\n"); Yield(2); break;
+      if (edited && TerminalCall(TERM_EDIT_ACK, control, 0, 0, edit.serial, 0) < 0) {
+        cleanup(); return 1;
       }
-      Yield(1);
+      if (shell_done) { break; }
+      const PendingInput retry = pending ? classify_input(pending) : PendingInput{};
+      u32 interests = CONSOLE_OUTPUT | CONSOLE_SHELL_DONE |
+                      (pending ? CONSOLE_INPUT_RETRY : CONSOLE_KEY);
+      interests |= child ? CONSOLE_CHILD_DONE : CONSOLE_REQUEST;
+      const ConsoleWaitRequest wait{(u32)control, interests, (u32)shell, (u32)child,
+                                    retry.type, retry.value};
+      const int waited = ConsoleWait(&wait);
+      if (waited == S_CLOSED) { break; }
+      if (waited < 0) { cleanup(); return 1; }
     }
+    cleanup();
+    Log("CONSOLE SHELL restarting\n");
+    Yield(2);
   }
 }

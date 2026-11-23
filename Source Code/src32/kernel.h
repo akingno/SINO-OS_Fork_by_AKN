@@ -15,6 +15,7 @@ extern u32 fault_resume, fault_expected, fault_count;
 extern int mouse_present;
 void arch_init(void);
 int key_read(void);
+bool key_pending(void);
 typedef struct {
   i32 x, y;
   u32 time;

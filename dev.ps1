@@ -24,6 +24,9 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Build failed. No VM was started.' }
     if ($BuildOnly) {
         & node $helper record $runRoot
+        if ($LASTEXITCODE -eq 0) {
+            Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Source Code\build32\kernel-normal.exe') -Destination (Join-Path $runRoot 'kernel-normal.exe')
+        }
     } else {
         & node $helper run $runRoot
     }

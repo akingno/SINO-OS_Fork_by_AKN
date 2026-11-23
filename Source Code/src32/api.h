@@ -130,6 +130,16 @@ enum class AnonPurgeableOp : u32 { Clear = 0, Mark = 1, Query = 2 };
 #define CONSOLE_COLUMNS 80u
 #define CONSOLE_ROWS 25u
 typedef struct { u32 cursor; u16 cells[CONSOLE_COLUMNS * CONSOLE_ROWS]; } ConsoleFrame;
+enum class ConsoleOp : u32 { ReadKey = 0, Present = 1, Wait = 2 };
+enum ConsoleInterest : u32 {
+  CONSOLE_KEY = 1u << 0, CONSOLE_INPUT_RETRY = 1u << 1, CONSOLE_OUTPUT = 1u << 2,
+  CONSOLE_REQUEST = 1u << 3, CONSOLE_SHELL_DONE = 1u << 4, CONSOLE_CHILD_DONE = 1u << 5,
+  CONSOLE_INTERESTS = (1u << 6) - 1
+};
+struct ConsoleWaitRequest {
+  u32 control, interests, shell, child, input_type, input_value;
+};
+static_assert(sizeof(ConsoleWaitRequest) == 24, "console wait ABI");
 enum { FEATURE_SYSTEM_INFO = 1, FEATURE_STRICT_POLICY = 2, FEATURE_START_INFO = 4 };
 #define FEATURE_COMPLETION 8u
 #define FEATURE_BOUNDED_RUN 16u
@@ -168,6 +178,7 @@ enum { TERM_TEXT=1, TERM_KEY, TERM_EOF, TERM_HANGUP, TERM_CANCEL, TERM_RESIZE };
 #define TERM_READ_BLOCK 1u
 enum { TERM_LINE=1, TERM_ECHO=2 };
 enum { TERM_EDIT=17, TERM_EDIT_VIEW, TERM_EDIT_STATUS, TERM_EDIT_ACK };
+#define TERM_EDIT_BLOCK 1u /* extra, for TERM_EDIT and TERM_EDIT_STATUS */
 enum { TERM_DESKTOP_RUN=21, TERM_WAIT_INPUT=22 };
 enum { DESKTOP_RUN_APP=1, DESKTOP_RUN_STRICT, DESKTOP_KILL=5 };
 typedef struct { char path[128], argument[256]; } DesktopRun;

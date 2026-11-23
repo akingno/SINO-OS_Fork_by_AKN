@@ -14,7 +14,6 @@ extern "C" {
   void process_completion_release(int a0) { task::completionRelease(a0); }
   void process_stream_release(int a0) { task::streamRelease(a0); }
   void process_pipe_wake(const Object* a0) { task::pipeWake(a0); }
-  void process_interactive_wake(u32 a0) { task::interactiveWake(a0); }
   int process_run_start(Handle * a0, const RunSpec * a1) { return task::runStart(a0, a1); }
   int process_run_start_directory(Handle * a0, const RunSpec * a1, u32 a2, u32 a3) { return task::runStartDirectory(a0, a1, a2, a3); }
   int process_run_start_bound(Handle * a0, const RunSpec * a1, u32 a2, u32 a3, const u32 * a4) { return task::runStartBound(a0, a1, a2, a3, a4); }

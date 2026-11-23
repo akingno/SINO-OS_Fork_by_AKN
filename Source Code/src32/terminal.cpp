@@ -5,16 +5,18 @@
 #include "mm/uaccess.h"
 #include "task/task.h"
 #include "task/wait.h"
+#include "sync/irq.h"
 #include "lib/kstring.h"
 #include "mm/kmalloc.h"
 #include "mm/page.h"
+#include "panic.h"
 struct ClientIdentity {
   u32 index; /* Object index + 1, or zero when detached. */
   u32 generation;
 };
 typedef struct {
   u32 refs, width, height, mode, foreground;
-  u32 foreground_object; /* Client object index + 1. */
+  u32 foreground_object, control_object; /* Object index + 1. */
   u32 input_size, output_size, line_size, events;
   u8 input[1024], output[1024], line[256];
   TerminalEvent event[8];
@@ -31,6 +33,52 @@ typedef struct {
 } Client;
 static_assert(sizeof(Terminal) <= 4096, "terminal metadata fits page");
 static u32 count;
+static task::WaitKey keyboard_wait;
+
+static void wake_console(const Terminal& terminal) {
+  task::notify(terminal.control_object, task::WaitReason::CONSOLE);
+}
+terminal::ControlIdentity terminal::controlIdentity(void* session) {
+  const auto& terminal = *static_cast<const Terminal*>(session);
+  const u32 index = terminal.control_object;
+  return index ? ControlIdentity{index, objects[index - 1].generation} : ControlIdentity{};
+}
+static const Object* live_control(u32 index, u32 generation) {
+  if (!index || index > OBJECTS) {
+    return nullptr;
+  }
+  const Object& object = objects[index - 1];
+  return object.refs && object.type == ObjType::TERM_CONTROL && object.generation == generation
+    ? &object : nullptr;
+}
+void terminal::completionPublished(ControlIdentity identity, u32 pid) {
+  const Object* control = live_control(identity.index, identity.generation);
+  if (control) {
+    const auto& terminal = *reinterpret_cast<const Terminal*>(control->value);
+    if (terminal.shell == pid || terminal.task == pid) {
+      wake_console(terminal);
+    }
+  }
+}
+bool terminal::armConsoleKeyboard(task::WaitKey key) {
+  sync::IrqGuard guard;
+  if (keyboard_wait.object) {
+    return false;
+  }
+  keyboard_wait = key;
+  return true;
+}
+void terminal::disarmConsoleKeyboard(task::WaitKey key) {
+  sync::IrqGuard guard;
+  if (keyboard_wait.object == key.object && keyboard_wait.generation == key.generation) {
+    keyboard_wait = {};
+  }
+}
+void terminal::keyboardQueued() {
+  if (live_control(keyboard_wait.object, keyboard_wait.generation)) {
+    task::notify(keyboard_wait.object, task::WaitReason::CONSOLE);
+  }
+}
 static bool input_ready(const Terminal& t, bool events) {
   return t.input_size || (!t.closed && t.eof) || (events && t.events);
 }
@@ -62,7 +110,7 @@ static void wake_events(Terminal* t) {
 static void wake_writers(Terminal* t) {
   terminal::wakeWaiter(t->foreground_object, task::WaitReason::TERM_WRITE);
 }
-static void wake_shell(Terminal* t) {
+static void wake_shell(Terminal* t, task::WaitReason reason) {
   const ClientIdentity identity = t->shell_client;
   if (!t->shell || !identity.index || identity.index > OBJECTS) {
     return;
@@ -74,7 +122,7 @@ static void wake_shell(Terminal* t) {
   }
   const Client* client = (const Client*)object.value;
   if (client->terminal == t && client->pid == t->shell) {
-    process_interactive_wake(identity.index);
+    task::notify(identity.index, reason, true);
   }
 }
 static void remember_shell_client(Terminal* t, u32 object) {
@@ -82,7 +130,7 @@ static void remember_shell_client(Terminal* t, u32 object) {
 }
 static void publish_result(Terminal* t) {
   t->phase = 3;
-  wake_shell(t);
+  wake_shell(t, task::WaitReason::IX_RESULT);
 }
 static void reset(Terminal* t) {
   if (t->foreground_object) {
@@ -90,11 +138,13 @@ static void reset(Terminal* t) {
     task::notify(t->foreground_object, task::WaitReason::TERM_READ, true);
     task::notify(t->foreground_object, task::WaitReason::TERM_INPUT, true);
     task::notify(t->foreground_object, task::WaitReason::TERM_WRITE, true);
+    task::notify(t->foreground_object, task::WaitReason::TERM_EDIT_ACK, true);
   }
   t->edit_pending=t->editing=0;
   t->mode = TERM_LINE | TERM_ECHO;
   t->foreground = t->foreground_object = 0;
   t->input_size = t->line_size = t->events = t->eof = 0;
+  wake_console(*t);
 }
 static void set_foreground(Terminal* t, u32 pid, u32 object) {
   reset(t);
@@ -130,7 +180,10 @@ void terminal::release(const Object& object) {
     t->closed = 1;
     wake_readers(t);
     wake_writers(t);
-    wake_shell(t);
+    wake_shell(t, task::WaitReason::IX_RESULT);
+    wake_shell(t, task::WaitReason::TERM_EDIT_ACK);
+    disarmConsoleKeyboard({t->control_object, object.generation, task::WaitReason::CONSOLE});
+    t->control_object = 0; // objectClosed already notified the console wait.
     t->shell_client = {};
     if (t->shell)
       process_terminal_cancel(t->shell);
@@ -160,6 +213,7 @@ static int create(Handle* owner, u32 w, u32 h) {
     unref(t);
     return o;
   }
+  t->control_object = (u32)o + 1;
   int handle = handle_open(owner, o, 1);
   if (handle < 0)
     object_unref(o);
@@ -227,20 +281,160 @@ static int event(Terminal* t, u32 type, u32 value, u32 w, u32 h) {
   t->event[t->events++] = (TerminalEvent){type, value, w, h};
   return 0;
 }
-static int feed(Terminal* t, const TerminalRequest* r) {
-  if (r->value < TERM_TEXT || r->value > TERM_RESIZE)
-    return S_INVALID;
-  if (t->closed)
+static bool editing_input(const Terminal& t) {
+  return t.editing && t.foreground == t.shell && !t.mode;
+}
+static int feed_status(const Terminal& t, u32 type, u32 bytes) {
+  if (t.closed) {
     return S_CLOSED;
+  }
+  if (type == TERM_CANCEL) {
+    return t.shell && t.foreground == t.shell && !t.editing && t.events == 8
+      ? S_AGAIN : S_OK;
+  }
+  if (type == TERM_HANGUP || type == TERM_RESIZE) {
+    return S_OK;
+  }
+  if (!t.foreground) {
+    return S_AGAIN;
+  }
+  if (type == TERM_KEY) {
+    return (t.mode & TERM_LINE) ? S_INVALID : t.events == 8 ? S_AGAIN : S_OK;
+  }
+  if (type == TERM_EOF) {
+    return !t.eof && (t.events == 8 || t.line_size > sizeof(t.input) - t.input_size)
+      ? S_AGAIN : S_OK;
+  }
+  if (t.eof) {
+    return S_CLOSED;
+  }
+  return editing_input(t) && bytes > 8 - t.events ? S_AGAIN : S_OK;
+}
+struct TextInput {
+  u8 line[256], committed[512], echo[256];
+  u32 line_size, committed_size, echo_size;
+};
+static int prepare_text(const Terminal& t, const u8* text, u32 bytes, TextInput& input) {
+  input.line_size = t.line_size;
+  input.committed_size = input.echo_size = 0;
+  memcpy(input.line, t.line, input.line_size);
+  if (t.mode & TERM_LINE) {
+    for (u32 i = 0; i < bytes; i++) {
+      u8 ch = text[i];
+      if (ch == 8 || ch == 127) {
+        if (input.line_size) {
+          input.line_size--;
+          while (input.line_size && (input.line[input.line_size] & 0xc0) == 0x80) {
+            input.line_size--;
+          }
+          input.echo[input.echo_size++] = 8;
+        }
+        continue;
+      }
+      if (input.line_size == sizeof(input.line)) {
+        return S_LIMIT;
+      }
+      input.line[input.line_size++] = ch;
+      input.echo[input.echo_size++] = ch;
+      if (ch == '\n') {
+        memcpy(input.committed + input.committed_size, input.line, input.line_size);
+        input.committed_size += input.line_size;
+        input.line_size = 0;
+      }
+    }
+  } else {
+    memcpy(input.committed, text, bytes);
+    memcpy(input.echo, text, bytes);
+    input.committed_size = input.echo_size = bytes;
+  }
+  if (input.committed_size > sizeof(t.input) - t.input_size ||
+      ((t.mode & TERM_ECHO) && input.echo_size > sizeof(t.output) - t.output_size)) {
+    return S_AGAIN;
+  }
+  return S_OK;
+}
+int terminal::consoleReady(const Object& control, const ConsoleWaitRequest& request,
+                           u32 shellPid, u32 childPid, u32 completed) {
+  const auto& t = *reinterpret_cast<const Terminal*>(control.value);
+  if (t.closed) {
+    return S_CLOSED;
+  }
+  if (!shellPid || t.shell != shellPid || (request.child && (!childPid || t.task != childPid))) {
+    return S_DENIED;
+  }
+  const u32 interests = request.interests;
+  if ((interests & completed) ||
+      ((interests & CONSOLE_KEY) && key_pending()) ||
+      ((interests & CONSOLE_OUTPUT) && (t.output_size || t.edit_pending)) ||
+      ((interests & CONSOLE_REQUEST) && t.phase == 1)) {
+    return S_OK;
+  }
+  if (interests & CONSOLE_INPUT_RETRY) {
+    const bool text = request.input_type == TERM_TEXT;
+    int status = feed_status(t, request.input_type, text ? 1u : 0u);
+    if (status == S_OK && text && !editing_input(t)) {
+      TextInput input;
+      const u8 byte = (u8)request.input_value;
+      status = prepare_text(t, &byte, 1, input);
+    }
+    if (status != S_AGAIN) {
+      return S_OK;
+    }
+  }
+  return S_AGAIN;
+}
+#ifdef SINO_SHELL_BRIDGE
+void terminal::consoleSelfTest() {
+  auto* t = static_cast<Terminal*>(kpage_alloc());
+  if (!t) {
+    panic("Console wait test allocation", 0, 0);
+  }
+  constexpr u32 shell = 1;
+  t->shell = t->foreground = shell;
+  const Object control{1, 1, ObjType::TERM_CONTROL, (int)t};
+  ConsoleWaitRequest request{0, CONSOLE_INPUT_RETRY, 0, 0, TERM_EOF, 0};
+  t->events = 8;
+  t->input_size = sizeof(t->input);
+  t->line_size = 1;
+  const int full = consoleReady(control, request, shell, 0, 0);
+  t->events--;
+  const int eventSpace = consoleReady(control, request, shell, 0, 0);
+  t->input_size--;
+  const int bothSpaces = consoleReady(control, request, shell, 0, 0);
+  t->mode = TERM_LINE | TERM_ECHO;
+  t->output_size = sizeof(t->output);
+  request.input_type = TERM_TEXT;
+  request.input_value = 'x';
+  const int fullEcho = consoleReady(control, request, shell, 0, 0);
+  t->output_size--;
+  const int echoSpace = consoleReady(control, request, shell, 0, 0);
+  t->closed = true;
+  const int closed = consoleReady(control, request, shell, 0, 0);
+  kpage_free(t);
+  if (full != S_AGAIN || eventSpace != S_AGAIN || bothSpaces != S_OK ||
+      fullEcho != S_AGAIN || echoSpace != S_OK || closed != S_CLOSED) {
+    panic("Console input wait predicate", full, closed);
+  }
+}
+#endif
+static int feed(Terminal* t, const TerminalRequest* r) {
+  if (r->value < TERM_TEXT || r->value > TERM_RESIZE) {
+    return S_INVALID;
+  }
+  const int status = feed_status(*t, r->value, r->bytes);
+  if (status) {
+    return status;
+  }
   if (r->value == TERM_CANCEL) {
     if (t->shell && t->foreground == t->shell) {
-      if(t->editing)t->events=0;
-      int status = event(t, TERM_INTERRUPT, 0, 0, 0);
-      if (!status) {
-        t->input_size = t->line_size = t->eof = 0;
-        wake_events(t);
+      if (t->editing) {
+        t->events = 0;
       }
-      return status;
+      event(t, TERM_INTERRUPT, 0, 0, 0);
+      t->input_size = t->line_size = t->eof = 0;
+      wake_events(t);
+      wake_console(*t);
+      return S_OK;
     }
     return process_terminal_cancel(t->foreground);
   }
@@ -249,53 +443,43 @@ static int feed(Terminal* t, const TerminalRequest* r) {
     event(t, TERM_HANGUP, 0, 0, 0);
     wake_readers(t);
     wake_writers(t);
-    wake_shell(t);
+    wake_shell(t, task::WaitReason::IX_RESULT);
+    wake_shell(t, task::WaitReason::TERM_EDIT_ACK);
+    wake_console(*t);
     t->shell_client = {};
-    return 0;
+    return S_OK;
   }
   if (r->value == TERM_RESIZE) {
     u32 w = r->extra >> 16, h = r->extra & 65535;
-    if (!dimensions(w, h))
+    if (!dimensions(w, h)) {
       return S_INVALID;
-    int status = event(t, TERM_RESIZE, 0, w, h);
-    if (!status) {
+    }
+    const int queued = event(t, TERM_RESIZE, 0, w, h);
+    if (queued == S_OK) {
       t->width = w;
       t->height = h;
       wake_events(t);
     }
-    return status;
+    return queued;
   }
-  if (!t->foreground)
-    return S_AGAIN;
   if (r->value == TERM_KEY) {
-    if (t->mode & TERM_LINE)
-      return S_INVALID;
-    int status = event(t, TERM_KEY, r->extra, 0, 0);
-    if (status == S_OK) {
-      wake_events(t);
-    }
-    return status;
+    event(t, TERM_KEY, r->extra, 0, 0);
+    wake_events(t);
+    return S_OK;
   }
   if (r->value == TERM_EOF) {
-    if (t->eof)
-      return 0;
-    if (t->line_size > 1024 - t->input_size || t->events == 8)
-      return S_AGAIN;
-    memcpy(t->input + t->input_size, t->line, t->line_size);
-    t->input_size += t->line_size;
-    t->line_size = 0;
-    t->eof = 1;
-    int status = event(t, TERM_EOF, 0, 0, 0);
-    wake_readers(t);
-    return status;
+    if (!t->eof) {
+      memcpy(t->input + t->input_size, t->line, t->line_size);
+      t->input_size += t->line_size;
+      t->line_size = 0;
+      t->eof = 1;
+      event(t, TERM_EOF, 0, 0, 0);
+      wake_readers(t);
+    }
+    return S_OK;
   }
-  if (r->value != TERM_TEXT || r->extra)
-    return S_INVALID;
-  if (t->eof)
-    return S_CLOSED;
-  if(t->editing && t->foreground==t->shell && !t->mode){
-    if(r->bytes>8-t->events)return S_AGAIN;
-    const u8* text = (const u8*)r->buffer;
+  const auto* text = reinterpret_cast<const u8*>(r->buffer);
+  if (editing_input(*t)) {
     for (u32 i = 0; i < r->bytes; i++) {
       event(t, TERM_TEXT, text[i], 0, 0);
     }
@@ -304,53 +488,24 @@ static int feed(Terminal* t, const TerminalRequest* r) {
     }
     return S_OK;
   }
-  u8 line[256], committed[512], echo[256];
-  u32 echo_size = 0;
-  u32 ln = t->line_size, n = 0;
-  memcpy(line, t->line, ln);
-  const u8* text = (const u8*)r->buffer;
-  if (t->mode & TERM_LINE) {
-    for (u32 i = 0; i < r->bytes; i++) {
-      u8 ch = text[i];
-      if (ch == 8 || ch == 127) {
-        if (ln) {
-          ln--;
-          while (ln && (line[ln] & 0xc0) == 0x80)
-            ln--;
-          echo[echo_size++] = 8;
-        }
-        continue;
-      }
-      if (ln == 256)
-        return S_LIMIT;
-      line[ln++] = ch;
-      echo[echo_size++] = ch;
-      if (ch == '\n') {
-        memcpy(committed + n, line, ln);
-        n += ln;
-        ln = 0;
-      }
-    }
-  } else {
-    n = r->bytes;
-    memcpy(committed, text, n);
-    memcpy(echo, text, n);
-    echo_size = n;
+  TextInput input;
+  const int prepared = prepare_text(*t, text, r->bytes, input);
+  if (prepared) {
+    return prepared;
   }
-  if (n > 1024 - t->input_size ||
-      ((t->mode & TERM_ECHO) && echo_size > 1024 - t->output_size))
-    return S_AGAIN;
-  memcpy(t->input + t->input_size, committed, n);
-  t->input_size += n;
-  memcpy(t->line, line, ln);
-  t->line_size = ln;
-  if (t->mode & TERM_ECHO) {
-    memcpy(t->output + t->output_size, echo, echo_size);
-    t->output_size += echo_size;
+  memcpy(t->input + t->input_size, input.committed, input.committed_size);
+  t->input_size += input.committed_size;
+  memcpy(t->line, input.line, input.line_size);
+  t->line_size = input.line_size;
+  if ((t->mode & TERM_ECHO) && input.echo_size) {
+    memcpy(t->output + t->output_size, input.echo, input.echo_size);
+    t->output_size += input.echo_size;
+    wake_console(*t);
   }
-  if (n)
+  if (input.committed_size) {
     wake_readers(t);
-  return 0;
+  }
+  return S_OK;
 }
 int terminal_bind_interactive(void* session, Handle* handles, u32 pid,
                               CliInfo* cli) {
@@ -423,6 +578,7 @@ static int interactive_call(Terminal* t, Client* c, Object* control,
     memcpy(&t->request, q, sizeof(*q));
     t->request_id = q->id;
     t->phase = 1;
+    wake_console(*t);
     return 0;
   }
   if (r->op == IX_RESULT) {
@@ -589,11 +745,16 @@ int terminal_call(Handle* owner, u32 pid, u32 policy, const TerminalRequest* r,
       UACCESS_TRY(uaccess_prepare(user_pd, r->buffer, sizeof(TerminalEdit), UserAccess::WRITE));
       if(!t->edit_pending||t->output_size)return S_AGAIN;memcpy((void*)r->buffer,&t->edit,sizeof(t->edit));return 0;
     }
-    if(r->op==TERM_EDIT_ACK){
-      if(!control)return S_DENIED;if(r->buffer||r->bytes||r->extra)return S_INVALID;
-      if(!t->edit_pending||r->value!=t->edit.serial)return S_NOTFOUND;t->edit_pending=0;return 0;
+    if (r->op == TERM_EDIT_ACK) {
+      if (!control) { return S_DENIED; }
+      if (r->buffer || r->bytes || r->extra) { return S_INVALID; }
+      if (!t->edit_pending || r->value != t->edit.serial) { return S_NOTFOUND; }
+      t->edit_pending = false;
+      wake_shell(t, task::WaitReason::TERM_EDIT_ACK);
+      return S_OK;
     }
-    if(!c||pid!=t->shell||pid!=t->foreground)return S_DENIED;
+    if (!c || pid != t->shell || pid != t->foreground) { return S_DENIED; }
+    if (t->closed) { return S_CLOSED; }
     if(r->op==TERM_EDIT_STATUS){if(r->buffer||r->bytes||r->value||r->extra)return S_INVALID;return t->edit_pending?S_AGAIN:0;}
     if (r->value || r->extra || r->bytes!=sizeof(TerminalEdit)) return S_INVALID;
     UACCESS_TRY(uaccess_prepare(user_pd, r->buffer, sizeof(TerminalEdit), UserAccess::READ));
@@ -602,7 +763,12 @@ int terminal_call(Handle* owner, u32 pid, u32 policy, const TerminalRequest* r,
     if(e->bytes>sizeof(e->text)||e->cursor>e->bytes||e->action>2||e->serial)return S_INVALID;
     for(u32 i=0;i<e->bytes;i++)if((u8)e->text[i]<32||e->text[i]==127)return S_INVALID;
     if(e->cursor<e->bytes&&((u8)e->text[e->cursor]&0xc0)==0x80)return S_INVALID;
-    u32 serial=t->edit.serial+1;if(!serial)serial=1;memcpy(&t->edit,e,sizeof(t->edit));t->edit.serial=serial;t->edit_pending=t->editing=1;return 0;
+    const u32 serial = t->edit.serial + 1;
+    memcpy(&t->edit, e, sizeof(t->edit));
+    t->edit.serial = serial ? serial : 1;
+    t->edit_pending = t->editing = true;
+    wake_console(*t);
+    return S_OK;
   }
   if (r->op >= IX_START && r->op <= IX_FINISH)
     return interactive_call(t, c, control, owner, pid, policy, r, user_pd);
@@ -655,6 +821,7 @@ int terminal_call(Handle* owner, u32 pid, u32 policy, const TerminalRequest* r,
     if (t->line_size)
       return S_BUSY; /* Never silently discard a partial line. */
     t->mode = r->value;
+    wake_console(*t);
     return 0;
   }
   if (r->value || r->extra)
@@ -694,6 +861,7 @@ int terminal_call(Handle* owner, u32 pid, u32 policy, const TerminalRequest* r,
     t->events--;
     for (u32 i = 0; i < t->events; i++)
       t->event[i] = t->event[i + 1];
+    wake_console(*t);
     return 0;
   }
   if (r->op != TERM_READ && r->op != TERM_WRITE && r->op != TERM_DRAIN)
@@ -712,6 +880,7 @@ int terminal_call(Handle* owner, u32 pid, u32 policy, const TerminalRequest* r,
       return S_AGAIN;
     memcpy(t->output + t->output_size, (void*)r->buffer, n);
     t->output_size += n;
+    wake_console(*t);
     return (int)n;
   }
   if (r->op == TERM_DRAIN) {
@@ -720,11 +889,13 @@ int terminal_call(Handle* owner, u32 pid, u32 policy, const TerminalRequest* r,
     }
     const int drained = pop(t->output, &t->output_size, (void*)r->buffer, r->bytes);
     wake_writers(t);
+    wake_console(*t);
     return drained;
   }
   if (t->input_size) {
     int result = pop(t->input, &t->input_size, (void*)r->buffer, r->bytes);
     wake_readers(t);
+    wake_console(*t);
     return result;
   }
   return t->closed ? S_CLOSED : t->eof ? 0 : S_AGAIN;

@@ -57,13 +57,10 @@ static void render_edit(u32 action) {
   frame.bytes = prefix + length;
   frame.cursor = prefix + editor.cursor;
   frame.action = action;
-  int s;
-  while ((s = TerminalEditSend(terminal, &frame)) == S_AGAIN)
-    Yield(1);
+  int s = TerminalEditSend(terminal, &frame);
   if (s < 0)
     edit_failure("SHELL EDIT SEND ", s);
-  while ((s = TerminalCall(TERM_EDIT_STATUS, terminal, 0, 0, 0, 0)) == S_AGAIN)
-    Yield(1);
+  s = TerminalEditWait(terminal);
   if (s < 0)
     edit_failure("SHELL EDIT ACK ", s);
 }

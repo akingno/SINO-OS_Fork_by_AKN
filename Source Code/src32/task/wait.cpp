@@ -49,6 +49,9 @@ WaitKey clearWait(Thread& t) {
   unlink(t);
   disarmTimer(t.timer);
   dropTicket(t);
+  if (key.reason == WaitReason::CONSOLE) {
+    terminal::disarmConsoleKeyboard(key);
+  }
   t.releaseJoinClaim();
   t.waitObject = t.waitGeneration = t.waitDeadline = 0;
   t.waitTimed = 0;
@@ -119,6 +122,11 @@ void objectClosed(u32 object) {
   for (u32 reason = 1; reason < (u32)WaitReason::Count; reason++) {
     notify(object, (WaitReason)reason, true);
   }
+}
+bool waitOccupied(WaitKey key) {
+  sync::IrqGuard guard;
+  const WaitBucket& b = bucket(key);
+  return b.generation == key.generation && (!b.waiters.empty() || b.inFlight);
 }
 void handoff(WaitKey key) {
   if (!key.object || key.object > OBJECTS) { return; }

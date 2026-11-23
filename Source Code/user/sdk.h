@@ -29,6 +29,9 @@ static inline int ConsoleReadKey(void) { return api(SYS_CONSOLE, 0, 0, 0); }
 static inline int ConsolePresent(const ConsoleFrame* frame) {
   return api(SYS_CONSOLE, 1, (u32)frame, sizeof(*frame));
 }
+static inline int ConsoleWait(const ConsoleWaitRequest* request) {
+  return api(SYS_CONSOLE, (u32)ConsoleOp::Wait, (u32)request, sizeof(*request));
+}
 static inline int api_wait(u32 call, int handle, const void* buffer, u32 selector, u32 timeout) {
   __asm__ volatile("int $0x80" : "+a"(call)
                    : "b"(handle), "c"(buffer), "d"(selector), "S"(timeout)
@@ -115,7 +118,12 @@ static inline int TerminalCall(u32 op,int handle,void* buffer,u32 bytes,u32 valu
   TerminalRequest r={op,(u32)handle,(u32)buffer,bytes,value,extra};
   return api(SYS_TERMINAL,(u32)&r,sizeof(r),0);
 }
-static inline int TerminalEditSend(int t,const TerminalEdit *e){return TerminalCall(TERM_EDIT,t,(void*)e,sizeof(*e),0,0);}
+static inline int TerminalEditSend(int t, const TerminalEdit* edit) {
+  return TerminalCall(TERM_EDIT, t, (void*)edit, sizeof(*edit), 0, TERM_EDIT_BLOCK);
+}
+static inline int TerminalEditWait(int t) {
+  return TerminalCall(TERM_EDIT_STATUS, t, 0, 0, 0, TERM_EDIT_BLOCK);
+}
 static inline int TerminalCreate(u32 w,u32 h){return TerminalCall(TERM_CREATE,0,0,0,w,h);}
 static inline int TerminalCurrent(void){return TerminalCall(TERM_CURRENT,0,0,0,0,0);}
 static inline int TerminalForeground(int t,int task){return TerminalCall(TERM_FOREGROUND,t,0,0,(u32)task,0);}
