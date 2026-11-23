@@ -10,22 +10,24 @@ async function probe(api, app, args, marker, options = {}) {
     await api.gone(pid);
     assert.match(api.guestLog().slice(offset), marker);
 }
-async function quietShell(api, log) {
+async function quietShell(api, log, {
+    waiting = 'SHELL WAIT HOLD', resumed = 'SHELL WAIT RELEASE', reportKey = 'shellWait'
+} = {}) {
     const deadline = Date.now() + 8000;
-    while (!log().includes('SHELL WAIT HOLD')) {
-        assert(Date.now() < deadline, 'Shell did not withhold its broker result');
+    while (!log().includes(waiting)) {
+        assert(Date.now() < deadline, 'Missing wait marker: ' + waiting);
         await sleep(20);
     }
     await sleep(60);
     const start = await api.value('ticks'), before = await api.value('process_switches');
     let ticks = 0;
     while (ticks < 15) {
-        assert(Date.now() < deadline && !log().includes('SHELL WAIT RELEASE'), 'broker released before measurement');
+        assert(Date.now() < deadline && !log().includes(resumed), 'Wait ended before measurement');
         await sleep(30); ticks = ((await api.value('ticks')) - start) >>> 0;
     }
     const dispatches = ((await api.value('process_switches')) - before) >>> 0;
-    assert(!log().includes('SHELL WAIT RELEASE'), 'measurement crossed broker release');
-    api.report.shellWait = {ticks, dispatches};
+    assert(!log().includes(resumed), 'Measurement crossed wait completion');
+    api.report[reportKey] = {ticks, dispatches};
     assert.equal(dispatches, 0, 'user dispatches while Shell waited');
 }
 async function checkedProbe(api, name, app, args, marker, options) {

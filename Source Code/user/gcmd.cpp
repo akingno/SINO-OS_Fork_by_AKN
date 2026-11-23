@@ -33,10 +33,16 @@ int main(void) {
     SystemInfo info;
     if (QuerySystemInfo(&info))
       return 1;
-    u32 begin = StreamTicks(), duration = (u32)seconds * info.ticks_hz;
-    while (!StreamTimeoutExpired(StreamTicks(), begin, duration))
-      Yield(1);
-    return 0;
+    const u32 begin = StreamTicks();
+    const u32 duration = (u32)seconds * info.ticks_hz;
+    for (;;) {
+      const u32 elapsed = StreamTicks() - begin;
+      if (elapsed >= duration) {
+        return 0;
+      }
+      const u32 remaining = duration - elapsed;
+      Yield(remaining > 1000 ? 1000 : remaining);
+    }
   }
   if (streq(command, "exitcode")) {
     i32 code;

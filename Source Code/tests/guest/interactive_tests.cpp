@@ -38,7 +38,32 @@ static int hold_process_slot() {
   require(status == S_NOTFOUND, "process quota gate removed");
   return 0;
 }
-enum { GSH_SMOKE, GSH_HOLD_RESULT, GSH_REJECT_START, GSH_HANGUP };
+enum { GSH_SMOKE, GSH_HOLD_RESULT, GSH_REJECT_START, GSH_HANGUP,
+       GSH_SLEEP_ZERO, GSH_SLEEP_SEGMENTED, GSH_SLEEP_CANCEL };
+static void check_sleep(int scenario, int term, int child, u32 started) {
+  SystemInfo info;
+  require(QuerySystemInfo(&info) == S_OK && info.ticks_hz, "query sleep clock");
+  ProcessCompletion completed;
+  if (scenario == GSH_SLEEP_CANCEL) {
+    Yield(10);
+    require(GetProcessResult(child, &completed) == S_AGAIN &&
+            TerminalFeed(term, TERM_CANCEL, nullptr, 0, 0) == S_OK &&
+            ProcessWaitFor(child, &completed, info.ticks_hz) == S_OK &&
+            completed.reason == PROCESS_CANCELED, "cancel a sleeping foreground worker");
+    return;
+  }
+  if (scenario == GSH_SLEEP_SEGMENTED) {
+    Log("SHELL SLEEP WAIT\n");
+    require(ProcessWaitFor(child, &completed, 12 * info.ticks_hz) == S_OK &&
+            StreamTicks() - started >= 11 * info.ticks_hz,
+            "segmented sleep completes at the requested deadline");
+    Log("SHELL SLEEP WAKE\n");
+  } else {
+    require(ProcessWaitFor(child, &completed, info.ticks_hz) == S_OK,
+            "zero sleep completes immediately");
+  }
+  require(completed.reason == PROCESS_EXITED && !completed.code, "sleep exits successfully");
+}
 static int gsh_smoke(int scenario) {
   int term = TerminalCreate(120, 25);
   u32 rights = FS_READ | FS_LOOKUP | FS_ENUM;
@@ -47,8 +72,15 @@ static int gsh_smoke(int scenario) {
   root.rights = rights;
   int shell = InteractiveStart(term, &root, dir, 0);
   require(term > 0 && dir > 0 && shell > 0, "headless gsh launch");
-  const char command[] = "echo shell-ok\n";
-  const char* marker = scenario == GSH_REJECT_START ? "start failed " : "shell-ok\n";
+  const bool testing_sleep = scenario >= GSH_SLEEP_ZERO;
+  const char* command = "echo shell-ok\n";
+  if (testing_sleep) {
+    command = scenario == GSH_SLEEP_ZERO ? "sleep 0\n"
+            : scenario == GSH_SLEEP_SEGMENTED ? "sleep 11\n"
+            : "sleep 30\n";
+  }
+  const u32 command_bytes = strlen(command);
+  const char* marker = testing_sleep ? "" : scenario == GSH_REJECT_START ? "start failed " : "shell-ok\n";
   u32 marker_bytes = strlen(marker);
   u32 sent = 0, matched = 0, begin = StreamTicks();
   int ready = 0, child = 0, finished = 0, prompt_after = 0, hangup_observed = 0;
@@ -66,7 +98,7 @@ static int gsh_smoke(int scenario) {
       ready = 1;
       prompt_after = finished && matched == marker_bytes && streq(edit.text, "gsh:/ $ ");
     } else require(status == S_AGAIN, "headless edit query");
-    if (ready && sent < sizeof(command) - 1) {
+    if (ready && sent < command_bytes) {
       status = TerminalFeed(term, TERM_TEXT, command + sent, 1, 0);
       if (status == S_OK) sent++;
       else require(status == S_AGAIN, "headless input backpressure");
@@ -92,7 +124,7 @@ static int gsh_smoke(int scenario) {
       status = InteractiveRequest(term, &request);
       if (status == S_OK) {
         require(request.program == IX_COMMAND && request.argc == 2 && !request.rights,
-                "headless gsh routes echo to strict worker");
+                "headless gsh routes command to strict worker");
         if (scenario == GSH_HANGUP) {
           Yield(4);
           require(TerminalFeed(term, TERM_HANGUP, 0, 0, 0) == S_OK, "hang up a pending broker request");
@@ -103,12 +135,17 @@ static int gsh_smoke(int scenario) {
           hangup_observed = 1;
           break;
         }
+        const u32 started = StreamTicks();
         child = InteractiveStart(term, &request, scenario == GSH_REJECT_START ? dir : 0, 1);
         if (scenario == GSH_REJECT_START) {
           require(child == S_DENIED, "headless broker rejects unauthorized grant");
           finished = 1;
         } else {
-          require(child > 0, "headless echo worker launch");
+          require(child > 0, "headless command worker launch");
+          if (testing_sleep) {
+            check_sleep(scenario, term, child, started);
+            begin = StreamTicks();
+          }
         }
       } else require(status == S_AGAIN, "headless worker request");
     }
@@ -117,7 +154,9 @@ static int gsh_smoke(int scenario) {
   require(hangup_observed || prompt_after, "gsh reaches the expected final state");
   require(Close(term) == S_OK && Close(shell) == S_OK && Close(dir) == S_OK,
           "headless gsh resources released");
-  Log(scenario == GSH_HANGUP ? "SHELL WAIT HANGUP PASS\n" : "SHELL PASS\n");
+  if (!testing_sleep) {
+    Log(scenario == GSH_HANGUP ? "SHELL WAIT HANGUP PASS\n" : "SHELL PASS\n");
+  }
   return 0;
 }
 int main(void) {
@@ -128,8 +167,14 @@ int main(void) {
   }
   if (start.policy == PROCESS_COMPAT && streq(Arguments(), "shell-smoke"))
     return gsh_smoke(GSH_SMOKE);
-  if (start.policy == PROCESS_COMPAT && streq(Arguments(), "shell-wait"))
-    return gsh_smoke(GSH_HOLD_RESULT);
+  if (start.policy == PROCESS_COMPAT && streq(Arguments(), "shell-wait")) {
+    gsh_smoke(GSH_HOLD_RESULT);
+    gsh_smoke(GSH_SLEEP_ZERO);
+    gsh_smoke(GSH_SLEEP_SEGMENTED);
+    gsh_smoke(GSH_SLEEP_CANCEL);
+    Log("SHELL SLEEP PASS\n");
+    return 0;
+  }
   if (start.policy == PROCESS_COMPAT && streq(Arguments(), "shell-error"))
     return gsh_smoke(GSH_REJECT_START);
   if (start.policy == PROCESS_COMPAT && streq(Arguments(), "shell-hangup"))

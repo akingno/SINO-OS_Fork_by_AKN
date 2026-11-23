@@ -17,19 +17,23 @@ async function terminal(api) {
         await checkedProbe(api, mode, 'termtest', 'b:' + mode, /TERMINAL BLOCK PASS/);
 }
 async function shell(api) {
-    await checkedProbe(api, 'headless Shell result wait', 'brokerqa', 'shell-wait', /SHELL PASS/, {
+    await checkedProbe(api, 'headless Shell result wait', 'brokerqa', 'shell-wait', /SHELL SLEEP PASS/, {
         async observe(context, log) {
             await quietShell(context, log);
             await context.until(() => log().includes('SHELL PASS'), 'Shell regains foreground');
-            const updates = [...log().matchAll(/PROCESS foreground (gsh|gcmd)\.snx pid=(0x[0-9A-F]{8}) reclaim=(0x[0-9A-F]{8})\n/g)];
+            const echoLog = log().split('SHELL PASS', 1)[0];
+            const updates = [...echoLog.matchAll(/PROCESS foreground (gsh|gcmd)\.snx pid=(0x[0-9A-F]{8}) reclaim=(0x[0-9A-F]{8})\n/g)];
             assert.deepEqual(updates.map(([, name, , score]) => [name, Number(score)]),
                 [['gsh', 0], ['gsh', 200], ['gcmd', 0], ['gsh', 0]]);
             assert.equal(new Set(updates.filter(([, name]) => name === 'gsh').map(([, , pid]) => pid)).size, 1);
             const shellPid = updates[0][2];
             const commandPid = updates[2][2];
-            assert.deepEqual([...log().matchAll(/PROCESS group pid=(0x[0-9A-F]{8}) id=(0x[0-9A-F]{8})\n/g)]
+            assert.deepEqual([...echoLog.matchAll(/PROCESS group pid=(0x[0-9A-F]{8}) id=(0x[0-9A-F]{8})\n/g)]
                 .map(([, pid, group]) => [pid, group]), [[commandPid, shellPid]],
                 'each session root starts a group and the command inherits the shell group');
+            await quietShell(context, log, {
+                waiting: 'SHELL SLEEP WAIT', resumed: 'SHELL SLEEP WAKE', reportKey: 'sleepWait'
+            });
         }
     });
     await checkedProbe(api, 'headless Shell broker failure', 'brokerqa', 'shell-error', /SHELL PASS/);
