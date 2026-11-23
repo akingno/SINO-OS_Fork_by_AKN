@@ -34,25 +34,33 @@ static u32 count;
 static bool input_ready(const Terminal& t, bool events) {
   return t.input_size || (!t.closed && t.eof) || (events && t.events);
 }
-void terminal::wakeInput(u32 object, task::WaitReason reason) {
+void terminal::wakeWaiter(u32 object, task::WaitReason reason) {
   if (!object || object > OBJECTS || !objects[object - 1].refs ||
       objects[object - 1].type != ObjType::TERM_CLIENT) {
     return;
   }
   const Client* c = (const Client*)objects[object - 1].value;
   const Terminal* t = c->terminal;
-  if (t->closed || t->eof || t->foreground_object != object) {
+  const bool writing = reason == task::WaitReason::TERM_WRITE;
+  if (t->closed || t->foreground_object != object || (!writing && t->eof)) {
     task::notify(object, reason, true);
-  } else if (input_ready(*t, reason == task::WaitReason::TERM_INPUT)) {
+    return;
+  }
+  const bool ready = writing ? t->output_size < sizeof(t->output)
+                             : input_ready(*t, reason == task::WaitReason::TERM_INPUT);
+  if (ready) {
     task::notify(object, reason);
   }
 }
 static void wake_readers(Terminal* t) {
-  terminal::wakeInput(t->foreground_object, task::WaitReason::TERM_READ);
-  terminal::wakeInput(t->foreground_object, task::WaitReason::TERM_INPUT);
+  terminal::wakeWaiter(t->foreground_object, task::WaitReason::TERM_READ);
+  terminal::wakeWaiter(t->foreground_object, task::WaitReason::TERM_INPUT);
 }
 static void wake_events(Terminal* t) {
-  terminal::wakeInput(t->foreground_object, task::WaitReason::TERM_INPUT);
+  terminal::wakeWaiter(t->foreground_object, task::WaitReason::TERM_INPUT);
+}
+static void wake_writers(Terminal* t) {
+  terminal::wakeWaiter(t->foreground_object, task::WaitReason::TERM_WRITE);
 }
 static void wake_shell(Terminal* t) {
   const ClientIdentity identity = t->shell_client;
@@ -81,6 +89,7 @@ static void reset(Terminal* t) {
     task::terminalForeground(t->foreground, false);
     task::notify(t->foreground_object, task::WaitReason::TERM_READ, true);
     task::notify(t->foreground_object, task::WaitReason::TERM_INPUT, true);
+    task::notify(t->foreground_object, task::WaitReason::TERM_WRITE, true);
   }
   t->edit_pending=t->editing=0;
   t->mode = TERM_LINE | TERM_ECHO;
@@ -120,6 +129,7 @@ void terminal::release(const Object& object) {
     Terminal* t = (Terminal*)object.value;
     t->closed = 1;
     wake_readers(t);
+    wake_writers(t);
     wake_shell(t);
     t->shell_client = {};
     if (t->shell)
@@ -238,6 +248,7 @@ static int feed(Terminal* t, const TerminalRequest* r) {
     t->closed = 1;
     event(t, TERM_HANGUP, 0, 0, 0);
     wake_readers(t);
+    wake_writers(t);
     wake_shell(t);
     t->shell_client = {};
     return 0;
@@ -703,11 +714,14 @@ int terminal_call(Handle* owner, u32 pid, u32 policy, const TerminalRequest* r,
     t->output_size += n;
     return (int)n;
   }
-  if (r->op == TERM_DRAIN)
-    return t->output_size
-               ? pop(t->output, &t->output_size, (void*)r->buffer, r->bytes)
-           : t->closed ? 0
-                       : S_AGAIN;
+  if (r->op == TERM_DRAIN) {
+    if (!t->output_size) {
+      return t->closed ? 0 : S_AGAIN;
+    }
+    const int drained = pop(t->output, &t->output_size, (void*)r->buffer, r->bytes);
+    wake_writers(t);
+    return drained;
+  }
   if (t->input_size) {
     int result = pop(t->input, &t->input_size, (void*)r->buffer, r->bytes);
     wake_readers(t);

@@ -12,7 +12,7 @@ int terminal_call(Handle*, u32, u32, const TerminalRequest*, u32* user_pd);
 }
 #endif
 namespace terminal {
-void wakeInput(u32 object, task::WaitReason reason);
+void wakeWaiter(u32 object, task::WaitReason reason);
 void release(const Object& object);
 }
 #endif

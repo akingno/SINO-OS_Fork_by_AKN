@@ -1484,7 +1484,14 @@ namespace task {
   }
   static bool isTerminalWait(WaitReason reason) {
     return reason == WaitReason::TERM_READ || reason == WaitReason::TERM_INPUT ||
-           reason == WaitReason::IX_RESULT;
+           reason == WaitReason::TERM_WRITE || reason == WaitReason::IX_RESULT;
+  }
+  static void blockTerminal(Frame* frame, const Object* client, const TerminalRequest& request,
+                            WaitReason reason, u32 timeout) {
+    Thread& thread = current->thread[currentThread];
+    thread.waitTerminal = request;
+    thread.block((u32)(client - objects) + 1, reason, timeout);
+    leave(frame);
   }
   int retryWait(Thread* t) {
     u32 now = ticks;
@@ -1647,10 +1654,7 @@ namespace task {
         r = terminal_call(current->handles, current->pid, current->policy, &request, user_pd);
         if (waitOp != WaitReason::NONE && r == S_AGAIN) {
           o = handle_get(current->handles, request.handle, ObjType::TERM_CLIENT, 0);
-          Thread* t = &current->thread[currentThread];
-          t->waitTerminal = request;
-          t->block((u32)(o - objects) + 1, waitOp, timeout);
-          leave(f);
+          blockTerminal(f, o, request, waitOp, timeout);
         }
         return r;
       }
@@ -1777,9 +1781,17 @@ namespace task {
     case SYS_STREAM_WRITE: {
         int reading = f->eax == SYS_STREAM_READ;
         int blocking = (c & STREAM_BLOCK_FLAG) != 0;
-        if (!blocking && handle_get(current->handles, a, ObjType::TERM_CLIENT, 0)) {
-          TerminalRequest q={reading?TERM_READ:TERM_WRITE,a,b,c,0,0};
-          return terminal_call(current->handles,current->pid,current->policy,&q,user_pd);
+        o = handle_get(current->handles, a, ObjType::TERM_CLIENT, 0);
+        if (o) {
+          if (blocking && f->esi > STREAM_WAIT_MAX) {
+            return S_INVALID;
+          }
+          TerminalRequest request{reading ? TERM_READ : TERM_WRITE, a, b, c & ~STREAM_BLOCK_FLAG, 0, 0};
+          r = terminal_call(current->handles, current->pid, current->policy, &request, user_pd);
+          if (blocking && r == S_AGAIN) {
+            blockTerminal(f, o, request, reading ? WaitReason::TERM_READ : WaitReason::TERM_WRITE, f->esi);
+          }
+          return r;
         }
         o = pipe_handle(a, reading);
         if (o) {

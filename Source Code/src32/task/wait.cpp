@@ -126,8 +126,9 @@ void handoff(WaitKey key) {
   if (!o.refs || o.generation != key.generation) { return; }
   if (key.reason == WaitReason::PIPE_READ || key.reason == WaitReason::PIPE_WRITE) {
     pipeWake(&o);
-  } else if (key.reason == WaitReason::TERM_READ || key.reason == WaitReason::TERM_INPUT) {
-    terminal::wakeInput(key.object, key.reason);
+  } else if (key.reason == WaitReason::TERM_READ || key.reason == WaitReason::TERM_INPUT ||
+             key.reason == WaitReason::TERM_WRITE) {
+    terminal::wakeWaiter(key.object, key.reason);
   }
 }
 

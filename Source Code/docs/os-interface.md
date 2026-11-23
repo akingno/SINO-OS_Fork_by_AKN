@@ -129,13 +129,13 @@ kernel call and has no polling fallback on older kernels.
 ### Other blocking mechanisms
 
 `FEATURE_THREAD_WAIT` advertises opt-in blocking for pipe transfer, terminal
-input, owned completion results and the interactive broker result. The
-SDK exposes `StreamReadBlocking` and `StreamWriteBlocking` for pipes,
-`TerminalReadBlocking` for byte reads, `TerminalWaitInput` for event or byte
-readiness, and `WaitProcess` and `WaitRun`
-for completion records. The timeout range is 0..60000 guest ticks. Explicit
-blocking calls use zero for an indefinite wait. The `stream.h` bounded helpers
-use zero for an immediate attempt and can still run on kernels without this bit.
+I/O, owned completion results and the interactive broker result. The SDK
+exposes `StreamReadBlocking` and `StreamWriteBlocking` for pipes and
+terminal byte transfers, `TerminalReadBlocking` for direct terminal byte
+reads, `TerminalWaitInput` for event or byte readiness, and `WaitProcess`
+and `WaitRun` for completion records. The timeout range is 0..60000 guest
+ticks. Explicit blocking calls use zero for an indefinite wait. The
+`stream.h` bounded helpers use zero for an immediate attempt.
 
 The scheduler parks the calling thread and retries a signaled operation under
 that thread's address space. Finite waits retain their deadline across retries.

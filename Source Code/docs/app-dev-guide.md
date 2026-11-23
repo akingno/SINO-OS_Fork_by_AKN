@@ -102,9 +102,10 @@ SNX v2 的 32 字节头记录 magic、版本 2、映像大小、入口点、数�
 `user/stream.h` 提供有截止时间的等待辅助函数：
 
 - `StreamReadFor` / `StreamWriteFor` / `StreamWriteAllFor`：带超时的流操作
-- `StreamWaitFor` / `RunWaitFor` / `ProcessWaitFor`：使用单调截止时间和 Yield
+- `RunWaitFor` / `ProcessWaitFor`：按截止时间等待进程完成
+- `StreamReady`：立即查询流的就绪标志
 
-这些辅助函数使用 Yield 轮询，不是线程级阻塞等待。`S_TIMEOUT` 不自动取消子进程。
+流和完成等待在条件未就绪时挂起调用线程。`S_TIMEOUT` 不自动取消子进程。
 
 ## 示例应用
 

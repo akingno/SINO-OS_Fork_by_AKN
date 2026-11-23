@@ -105,11 +105,10 @@ Finite stdin is always READABLE and sets EOF when consumed; finite captures are
 WRITABLE with space and LIMIT when full. Readiness queries never consume data
 or terminate a capture-overflowing run.
 
-`user/stream.h` supplies bounded helpers. On kernels advertising THREAD_WAIT,
-pipe transfers, terminal byte reads and completion waits can suspend the caller.
+`user/stream.h` supplies bounded helpers for pipe and terminal transfers
+and for completion records. The caller suspends when a transfer is blocked.
 
-- StreamWaitFor(handle, READABLE or WRITABLE, timeout) polls readiness flags and returns them,
-  S_CLOSED for a hung-up writer, S_LIMIT for full finite capture, or S_TIMEOUT.
+- StreamReady(handle) queries readiness flags immediately.
 - StreamReadFor/StreamWriteFor retry only S_AGAIN, returning the first actual
   transfer/EOF/error, including short positive progress.
 - StreamWriteAllFor(handle, data, bytes, timeout, &written) uses one deadline
@@ -123,7 +122,6 @@ pipe transfers, terminal byte reads and completion waits can suspend the caller.
 Timeouts are 0..60000 guest ticks at the current 100 Hz. Zero permits an immediate
 attempt; it is not an infinite wait. Unsigned elapsed differences handle tick
 wrap within this bound. Persistent errors and closure return immediately.
-Terminal output backpressure and older kernels use the bounded Yield(1) retry.
 Readiness is a hint. Another reader or writer
 can consume the opportunity before the next syscall. Helpers do not reserve it.
 The older CliWriteAll remains a finite-backend helper and may return S_AGAIN on
@@ -139,13 +137,16 @@ peer closure and object destruction broadcast. Wait records add no endpoint
 references, so queue registration cannot suppress EOF. See
 [task scheduling contracts](task-subsystem.md) for node and timer ownership.
 
-The kernel supports a blocking mode to the pipe endpoints of SYS_STREAM_READ and
-SYS_STREAM_WRITE. EBX holds the handle and ECX holds the user buffer. Set
-`STREAM_BLOCK_FLAG` (bit 31) in EDX alongside the byte count (0..65536).
+SYS_STREAM_READ and SYS_STREAM_WRITE support blocking pipe and terminal
+transfers. EBX holds the handle and ECX holds the user buffer. Set
+`STREAM_BLOCK_FLAG` (bit 31) in EDX alongside the byte count (0..65536 for
+pipes, 0..1024 for terminals).
 ESI holds the timeout in guest ticks (0..60000), with zero selecting indefinite
 waiting. Calls without the flag ignore ESI and retain the existing behavior.
-The flag requires a pipe endpoint with matching rights. Finite and terminal
-stream handles return S_BADHANDLE in this mode.
+The flag requires a pipe endpoint or a terminal client with matching rights.
+Finite capture handles return S_BADHANDLE in this mode. See
+[terminal transfers](terminal-sessions.md#blocking-terminal-output) for drain
+and foreground wake conditions.
 
 A flagged call attempts the transfer first. On S_AGAIN the scheduler suspends
 the calling thread. Opposite-end progress or final peer close makes it eligible

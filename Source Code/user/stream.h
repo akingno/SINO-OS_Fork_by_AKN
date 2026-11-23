@@ -1,6 +1,6 @@
 #ifndef SINO_STREAM_H
 #define SINO_STREAM_H
-/* Bounded waits prefer kernel blocking. A zero timeout makes one attempt. */
+/* Bounded waits suspend on S_AGAIN. A zero timeout makes one attempt. */
 #include "sdk.h"
 #ifdef __cplusplus
 extern "C" {
@@ -9,46 +9,15 @@ static inline u32 StreamTicks(void) { return (u32)api(SYS_TICKS, 0, 0, 0); }
 static inline int StreamTimeoutExpired(u32 now, u32 begin, u32 timeout) {
   return (u32)(now - begin) >= timeout;
 }
-static inline int StreamWaitFor(int handle, u32 wanted, u32 timeout) {
-  if ((wanted != STREAM_READABLE && wanted != STREAM_WRITABLE) || timeout > STREAM_WAIT_MAX)
-    return S_INVALID;
-  u32 begin = StreamTicks();
-  for (;;) {
-    int state = StreamReady(handle);
-    if (state < 0 || ((u32)state & wanted)) return state;
-    if (state & STREAM_HANGUP) return S_CLOSED;
-    if (state & STREAM_LIMIT) return S_LIMIT;
-    if (StreamTimeoutExpired(StreamTicks(), begin, timeout)) return S_TIMEOUT;
-    Yield(1);
-  }
-}
 static inline int StreamTransferFor(u32 call, int handle, const void* buffer,
                                     u32 bytes, u32 begin, u32 timeout) {
   if (bytes & STREAM_BLOCK_FLAG) return S_INVALID;
   int result = api(call, (u32)handle, (u32)buffer, bytes);
   if (result != S_AGAIN) return result;
-  if (StreamTimeoutExpired(StreamTicks(), begin, timeout)) return S_TIMEOUT;
-  if (ThreadWaitAvailable()) {
-    u32 elapsed = StreamTicks() - begin;
-    if (elapsed >= timeout) return S_TIMEOUT;
-    if (call == SYS_STREAM_READ) {
-      result = StreamReadBlocking(handle, (void*)buffer, bytes, timeout - elapsed);
-      if (result != S_BADHANDLE) return result;
-      elapsed = StreamTicks() - begin;
-      if (elapsed >= timeout) return S_TIMEOUT;
-      return TerminalReadBlocking(handle, (void*)buffer, bytes, timeout - elapsed);
-    }
-    result = StreamWriteBlocking(handle, buffer, bytes, timeout - elapsed);
-    if (result != S_BADHANDLE) return result;
-    /* Terminal output still uses the ordinary bounded retry path. */
-    result = StreamWrite(handle, buffer, bytes);
-  }
-  while (result == S_AGAIN) {
-    if (StreamTimeoutExpired(StreamTicks(), begin, timeout)) return S_TIMEOUT;
-    Yield(1);
-    result = api(call, (u32)handle, (u32)buffer, bytes);
-  }
-  return result;
+  u32 elapsed = StreamTicks() - begin;
+  if (elapsed >= timeout) return S_TIMEOUT;
+  return call == SYS_STREAM_READ ? StreamReadBlocking(handle, (void*)buffer, bytes, timeout - elapsed)
+                                 : StreamWriteBlocking(handle, buffer, bytes, timeout - elapsed);
 }
 static inline int StreamReadFor(int handle, void* out, u32 bytes, u32 timeout) {
   if (timeout > STREAM_WAIT_MAX) return S_INVALID;
@@ -81,19 +50,10 @@ static inline int ResultWaitFor(u32 call, int handle, void* out, u32 bytes, u32 
   u32 begin = StreamTicks();
   int result = api(call, (u32)handle, (u32)out, bytes);
   if (result != S_AGAIN) return result;
-  if (StreamTimeoutExpired(StreamTicks(), begin, timeout)) return S_TIMEOUT;
-  if (ThreadWaitAvailable()) {
-    u32 elapsed = StreamTicks() - begin;
-    if (elapsed >= timeout) return S_TIMEOUT;
-    return call == SYS_RUN_RESULT ? WaitRun(handle, (RunResult*)out, timeout - elapsed)
-                                  : WaitProcess(handle, (ProcessCompletion*)out, timeout - elapsed);
-  }
-  while (result == S_AGAIN) {
-    if (StreamTimeoutExpired(StreamTicks(), begin, timeout)) return S_TIMEOUT;
-    Yield(1);
-    result = api(call, (u32)handle, (u32)out, bytes);
-  }
-  return result;
+  u32 elapsed = StreamTicks() - begin;
+  if (elapsed >= timeout) return S_TIMEOUT;
+  return call == SYS_RUN_RESULT ? WaitRun(handle, (RunResult*)out, timeout - elapsed)
+                                : WaitProcess(handle, (ProcessCompletion*)out, timeout - elapsed);
 }
 static inline int RunWaitFor(int handle, RunResult* out, u32 timeout) {
   return ResultWaitFor(SYS_RUN_RESULT, handle, out, sizeof(*out), timeout);

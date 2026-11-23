@@ -149,6 +149,21 @@ The kernel checks readiness and registers the wait under the same interrupt
 boundary. If another thread consumes the condition first, retry keeps the
 original deadline.
 
+### Blocking terminal output
+
+Flagged `SYS_STREAM_WRITE` on a foreground client transfers up to 1024
+bytes per call and returns the accepted byte count. If the output queue is
+full, only the calling thread parks. A controller drain wakes a writer
+after taking bytes out. If space remains after a writer completes,
+times out, or is canceled, another waiter can use it. Hangup, client
+closure and loss of foreground wake the affected writers to recheck
+their handles and permissions.
+
+Wakeup retries under the writer's address space and revalidates the source
+buffer before copying. Partial progress returns to the caller.
+`StreamWriteAllFor` submits the remaining suffix using the original
+deadline and reports accepted bytes even when the operation times out.
+
 ## Verification
 
 `regression.ps1 -Suite terminal` runs strict tasks against two independent

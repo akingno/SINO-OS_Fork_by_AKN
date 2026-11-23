@@ -86,14 +86,17 @@ static int read_worker(void*) {
   wait_done = 1;
   return S_OK;
 }
-static void start_wait_worker(TerminalRequest request) {
-  wait_request = request;
-  check(sino::thread::create(read_worker, nullptr, ThreadCreateFlags::Detached) > 0,
+static void start_worker(int (*entry)(void*), void* argument) {
+  check(sino::thread::create(entry, argument, ThreadCreateFlags::Detached) > 0,
         "start terminal waiter");
   u32 start = StreamTicks();
   while (!wait_entered && StreamTicks() - start < 30) Yield(1);
   Yield(4);
   check(wait_entered && !wait_done, "terminal waiter stays blocked");
+}
+static void start_wait_worker(TerminalRequest request) {
+  wait_request = request;
+  start_worker(read_worker, nullptr);
 }
 static void start_read_worker(int term, void* out) {
   start_wait_worker({TERM_READ, (u32)term, (u32)out, 4, TERM_READ_BLOCK, 0});
@@ -101,8 +104,126 @@ static void start_read_worker(int term, void* out) {
 static int read_worker_result(void) {
   u32 start = StreamTicks();
   while (!wait_done && StreamTicks() - start < 100) Yield(1);
-  check(wait_done, "terminal reader finishes");
+  check(wait_done, "terminal waiter finishes");
   return wait_status;
+}
+struct WriteArgs {
+  int terminal;
+  const void* source;
+};
+static int write_worker(void* argument) {
+  const auto& request = *static_cast<const WriteArgs*>(argument);
+  wait_entered = 1;
+  wait_status = StreamWriteBlocking(request.terminal, request.source, 2, 0);
+  wait_done = 1;
+  return S_OK;
+}
+static void writing_child(int term, const char* mode) {
+  const bool timeout = streq(mode, "timeout");
+  const bool unmap = streq(mode, "unmap");
+  memset(bytes, 'a', sizeof(bytes));
+  for (u32 remaining = timeout ? 1023 : 1024; remaining;) {
+    const u32 chunk = remaining < sizeof(bytes) ? remaining : sizeof(bytes);
+    check(TerminalWrite(term, bytes, chunk) == (int)chunk, "fill terminal output");
+    remaining -= chunk;
+  }
+
+  WriteArgs invalidated{term, nullptr};
+  if (unmap) {
+    const u32 address = AnonMap(4096);
+    check(AnonMapStatus(address) == S_OK, "map writer source");
+    auto* source = (char*)address;
+    source[0] = 'x';
+    source[1] = 'x';
+    invalidated.source = source;
+    start_worker(write_worker, &invalidated);
+    check(AnonUnmap(source) == S_OK, "unmap source while writer is parked");
+  }
+  check(TerminalMode(term, TERM_ECHO) == S_OK, "publish output-full checkpoint");
+  u32 written;
+  if (streq(mode, "raw")) {
+    check(StreamWriteAllFor(term, "ABCD", 4, 200, &written) == S_OK && written == 4,
+          "write all resumes from the accepted suffix");
+  } else if (unmap) {
+    check(StreamWriteBlocking(term, "OK", 2, 100) == 2 && read_worker_result() == S_INVALID,
+          "invalidated writer hands available space to the next writer");
+  } else if (timeout) {
+    const u32 begin = StreamTicks();
+    check(StreamWriteAllFor(term, "AB", 2, 10, &written) == S_TIMEOUT && written == 1 &&
+          StreamTicks() - begin >= 10 && StreamWriteFor(term, "B", 1, 0) == S_TIMEOUT,
+          "terminal write timeout retains partial progress and zero makes one attempt");
+  } else {
+    const int expected = streq(mode, "foreground") ? S_DENIED : S_CLOSED;
+    check(StreamWriteBlocking(term, "x", 1, 0) == expected,
+          "terminal state change resolves a parked writer");
+  }
+}
+static void drain_written_output(int control, const char* suffix) {
+  const u32 prefix = 1024 - strlen(suffix);
+  for (u32 offset = 0; offset < 1024; offset += sizeof(bytes)) {
+    check(TerminalDrain(control, bytes, sizeof(bytes)) == (int)sizeof(bytes), "drain remaining output");
+    for (u32 i = 0; i < sizeof(bytes); ++i) {
+      const u32 position = offset + i;
+      check(bytes[i] == (position < prefix ? 'a' : suffix[position - prefix]),
+            "terminal output preserves byte order");
+    }
+  }
+  check(TerminalDrain(control, bytes, 1) == S_AGAIN, "no duplicate output");
+}
+static void writing_parent(const char* mode) {
+  char arguments[32];
+  copy(arguments, "w:");
+  copy(arguments + 2, mode);
+  int control = TerminalCreate(80, 25);
+  const int child = start(arguments);
+  check(control > 0 && child > 0 && TerminalForeground(control, child) > 0,
+        "attach blocking terminal writer");
+  TerminalInfo info;
+  const u32 begin = StreamTicks();
+  do {
+    check(TerminalGetInfo(control, &info) == S_OK, "read writer checkpoint");
+    if (info.mode == TERM_ECHO) {
+      break;
+    }
+    Yield(1);
+  } while (StreamTicks() - begin < 100);
+  check(info.mode == TERM_ECHO, "writer filled terminal output");
+  Yield(4);
+
+  int next = 0;
+  const char* suffix = nullptr;
+  if (streq(mode, "raw") || streq(mode, "unmap")) {
+    RunResult pending;
+    check(GetRunResult(child, &pending) == S_AGAIN && TerminalDrain(control, bytes, 2) == 2 &&
+          bytes[0] == 'a' && bytes[1] == 'a', "first drain releases two output bytes");
+    if (streq(mode, "raw")) {
+      Yield(4);
+      check(GetRunResult(child, &pending) == S_AGAIN && TerminalDrain(control, bytes, 2) == 2 &&
+            bytes[0] == 'a' && bytes[1] == 'a', "second drain releases remaining output space");
+      suffix = "ABCD";
+    } else {
+      suffix = "OK";
+    }
+  } else if (streq(mode, "hangup")) {
+    check(TerminalFeed(control, TERM_HANGUP, nullptr, 0, 0) == S_OK, "hang up blocked writer");
+  } else if (streq(mode, "controller")) {
+    check(Close(control) == S_OK, "close controller while writer waits");
+    control = 0;
+  } else if (streq(mode, "foreground")) {
+    next = start_program("/boot/spin.snx", "spin");
+    check(next > 0 && TerminalForeground(control, next) > 0, "revoke writer foreground");
+  } else {
+    suffix = "A";
+  }
+  done(child, PROCESS_EXITED);
+  if (suffix) {
+    drain_written_output(control, suffix);
+  }
+  if (next) {
+    check(CancelProcess(next) == S_OK, "cancel replacement after writer probe");
+    done(next, PROCESS_CANCELED);
+  }
+  check(!control || Close(control) == S_OK, "release writer controller");
 }
 static void blocking_child(int term, const char* mode) {
   if (streq(mode, "snapshot") || streq(mode, "unmap") || streq(mode, "local-close")) {
@@ -260,6 +381,10 @@ static int blocking_parent(const char* args) {
     done(next, PROCESS_CANCELED);
   }
   check(!control || Close(control) == S_OK, "release controller");
+  if (streq(mode, "raw") || streq(mode, "unmap") || streq(mode, "hangup") ||
+      streq(mode, "controller") || streq(mode, "foreground") || streq(mode, "timeout")) {
+    writing_parent(mode);
+  }
   Log("TERMINAL BLOCK PASS\n");
   return 0;
 }
@@ -275,12 +400,13 @@ int main(void){
   check(call(1,0,0,0,80,25)==S_DENIED&&call(3,t,0,0,0,0)==S_BADHANDLE&&call(6,t,0,0,4,0)==S_INVALID,"client cannot acquire control or invalid mode");
   const char* mode=cli.bytes+cli.offsets[0];
   if(mode[0]=='b' && mode[1]==':'){blocking_child(t,mode+2);return 0;}
+  if(mode[0]=='w' && mode[1]==':'){writing_child(t,mode+2);return 0;}
   if(streq(mode,"uaccess-child"))return uaccess_terminal_child(t);
   if(streq(mode,"flood")){
    for(u32 i=0;i<256;i++)bytes[i]=(u8)i;
    for(int i=0;i<4;i++)check(call(8,t,bytes,256,0,0)==256,"bounded output fill");
    check(call(8,t,bytes,1,0,0)==S_AGAIN &&
-         StreamWriteFor(t, bytes, 1, 3) == S_TIMEOUT, "output backpressure and bounded fallback");return 0;
+         StreamWriteFor(t, bytes, 1, 3) == S_TIMEOUT, "output backpressure and bounded wait");return 0;
   }
   check((StreamReady(t)&STREAM_WRITABLE)&&StreamWriteFor(t,"ready",5,10)==5,"shared stream terminal output");
   if(streq(mode,"hangup")||streq(mode,"lost-controller")){

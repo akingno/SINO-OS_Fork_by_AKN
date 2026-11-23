@@ -47,10 +47,6 @@ static inline void Yield(u32 ticks) {
 static inline int QuerySystemInfo(SystemInfo *out) {
   return api(SYS_SYSTEM_INFO, (u32)out, sizeof(*out), 0);
 }
-static inline int ThreadWaitAvailable(void) {
-  SystemInfo info;
-  return QuerySystemInfo(&info) == S_OK && (info.features & FEATURE_THREAD_WAIT);
-}
 static inline int QueryStartInfo(StartInfo *out) {
   return api(SYS_START_INFO, (u32)out, sizeof(*out), 0);
 }
@@ -197,7 +193,7 @@ static inline int StreamWrite(int handle, const void *data, u32 bytes) {
   if (bytes & STREAM_BLOCK_FLAG) return S_INVALID;
   return api(SYS_STREAM_WRITE, (u32)handle, (u32)data, bytes);
 }
-/* The flagged stream ABI accepts pipe endpoints. */
+/* The flagged stream ABI accepts pipe endpoints and terminal clients. */
 static inline int StreamReadBlocking(int handle, void* out, u32 bytes, u32 timeout) {
   if (bytes > RUN_IO_MAX) return S_INVALID;
   return api_wait(SYS_STREAM_READ, handle, out, STREAM_BLOCK_FLAG | bytes, timeout);

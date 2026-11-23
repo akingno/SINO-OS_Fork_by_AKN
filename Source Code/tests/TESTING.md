@@ -49,6 +49,7 @@
 | 管道 IPC、标准流；`pipe / transfer_pipe` | `.\regression.ps1 -Suite pipes`；1 项 | 阻塞、关闭、超时或等待缓冲区变化加 `pipe-waits`；10 项 |
 | 终端 IPC / 字节会话后端 | `.\regression.ps1 -Suite terminal`；1 项 | 阻塞读取、控制者关闭或唤醒变化加 `terminal-waits`；11 项 |
 | 终端组合输入等待；`TERM_WAIT_INPUT / TerminalWaitInput` | `.\regression.ps1 -Suite 'terminal-waits,shell-waits'`；16 项 | Shell 和分页器输入调用迁移加普通控制台 9 项，覆盖编辑、EOF、前台交接和分页继续 |
+| 终端阻塞输出与 SDK 等待；`TERM_WRITE / StreamWriteBlocking` | `.\regression.ps1 -Suite 'terminal-waits,shell-waits'`；16 项 | 标准流和完成等待共用路径迁移加 `pipes,pipe-waits,completion-waits` 19 项及普通控制台 9 项，共 44 项 |
 | 公共等待机制；`retry_wait` | 按受影响对象选择 `completion-waits` / `pipe-waits` / `terminal-waits` | 确认影响所有对象时组合三项，共 29 项；涉及 Shell/SDK 等待再加 `shell-waits`，不得带入其他无关套件 |
 | 有限 CLI / 标准输入输出 | `.\regression.ps1 -Suite cli`；1 项 | SCS2 帧、租约、取消、捕获或宿主协议变化加 `managed-cli`；12 项 |
 | Shell / SDK 阻塞等待 | `.\regression.ps1 -Suite shell-waits`；5 项 | 影响具体管道或终端等待 API 时追加对应等待专项；纯命令语法另按其解析器/命令选择，不自动跑 108 项 |
