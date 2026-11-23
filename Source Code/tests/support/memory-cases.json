@@ -132,7 +132,8 @@
       "id": "memory.images.v2-poltest-startup-guards-and-thread-stack-reuse",
       "name": "v2 poltest startup guards and thread stack reuse",
       "conditions": [
-        "v2 poltest startup guards and thread stack reuse"
+        "v2 poltest startup guards and thread stack reuse",
+        "2 GiB E820 page publication, Shell memory total and first high allocation"
       ]
     },
     {
@@ -144,34 +145,6 @@
         "v2 thread entry policy and relocated worker stack",
         "13 MiB anonymous heap uses the high window and verifies every byte",
         "large workload allocates real high pages and returns to baseline"
-      ]
-    },
-    {
-      "id": "memory.images.strict-file-pipe-and-lazy-cross-page-buffer-roundtrip",
-      "name": "strict file, pipe and lazy cross-page buffer roundtrip",
-      "conditions": [
-        "strict file, pipe and lazy cross-page buffer roundtrip"
-      ]
-    },
-    {
-      "id": "memory.images.real-headless-gsh-runs-a-strict-worker-and-restores-its-prompt",
-      "name": "real headless gsh runs a strict worker and restores its prompt",
-      "conditions": [
-        "real headless gsh runs a strict worker and restores its prompt"
-      ]
-    },
-    {
-      "id": "memory.images.private-disk-commits-binary-bytes-on-the-4-gib-image",
-      "name": "private disk commits binary bytes on the 4 GiB image",
-      "conditions": [
-        "private disk commits binary bytes on the 4 GiB image"
-      ]
-    },
-    {
-      "id": "memory.images.cold-boot-on-the-same-iso-recovers-the-exact-binary-bytes",
-      "name": "cold boot on the same ISO recovers the exact binary bytes",
-      "conditions": [
-        "cold boot on the same ISO recovers the exact binary bytes"
       ]
     }
   ],

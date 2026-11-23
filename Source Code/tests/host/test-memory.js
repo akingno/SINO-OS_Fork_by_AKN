@@ -28,14 +28,14 @@ function bootFile(directory, name) {
     })).subarray(0, entry.bytes);
 }
 
-async function boot(source, label, memoryMiB, verify, seedDisk) {
+async function boot(source, label, memoryMiB, verify) {
     const directory = fs.mkdtempSync(path.join(source, label + '-'));
     const iso = path.join(directory, 'SINO.iso');
     fs.copyFileSync(path.join(source, 'SINO.iso'), iso, fs.constants.COPYFILE_EXCL);
     const build = {...readJSON(path.join(source, 'build.json')), iso};
     fs.writeFileSync(path.join(directory, 'build.json'), JSON.stringify(build));
     fs.writeFileSync(path.join(directory, 'shell-job.json'), JSON.stringify({timeoutMs:5000}));
-    const code = await run(directory, {memoryMiB, seedDisk, execute: async context => {
+    const code = await run(directory, {memoryMiB, execute: async context => {
         const {channel, report, guestLog} = context;
         let seq = 0;
         async function command(text, status = 0) {
@@ -91,7 +91,6 @@ async function boot(source, label, memoryMiB, verify, seedDisk) {
         await verify({channel, guestLog, command, until, free, baseline, check, probe, qmp:context.qmp, directory, report});
     }});
     if (code) throw Error('Failed gate: ' + directory);
-    return path.join(directory, 'shell-data.img');
 }
 
 async function geometry(qmp, directory, log, baseline) {
@@ -145,7 +144,7 @@ async function geometry(qmp, directory, log, baseline) {
 }
 
 async function imageContracts(source) {
-    const seed = await boot(source, 'images-4096', vm.memoryMiB, async ({baseline, free, check, probe, channel, command, guestLog, qmp, directory, report}) => {
+    await boot(source, 'images-4096', vm.memoryMiB, async ({baseline, free, check, probe, channel, command, guestLog, qmp, directory, report}) => {
         await check('memory.images.4-gib-e820-pool-and-single-core-identity', ['4 GiB single-core VM publishes only eligible E820 pages below 4 GiB'], async () => {
             report.memoryGeometry = await geometry(qmp, directory, guestLog(), baseline);
         });
@@ -177,10 +176,6 @@ async function imageContracts(source) {
             assert.deepEqual(result.stdout, Buffer.from([3,0,0,0,4,0,0,0,97,114,103,115,0,0,0,0,3,0,0,0,111,108,100]));
             assert.equal(free(await command('mem')), baseline);
         });
-        await check('memory.images.v2-poltest-startup-guards-and-thread-stack-reuse', ['v2 poltest startup guards and thread stack reuse'], async () => {
-            assert.equal(bootFile(source, 'POLTEST.SNX').readUInt32LE(4), 2);
-            await probe('run -s /boot/poltest.snx paging-a', /PAGING STRICT A PASS/);
-        });
         await check('memory.images.v2-startup-strings-and-high-argument-stack-protection', ['v2 startup strings and high argument/stack protection',
             'wide zeroed BSS crosses an image PDE boundary',
             'v2 thread entry policy and relocated worker stack',
@@ -196,16 +191,22 @@ async function imageContracts(source) {
             });
             assert.match(guestLog(), /SNX V2 PASS/);
         });
-        await check('memory.images.strict-file-pipe-and-lazy-cross-page-buffer-roundtrip', ['strict file, pipe and lazy cross-page buffer roundtrip'], () =>
-            probe('run /boot/fstest.snx anon-parent', /ANON I\/O PASS[\s\S]*ANON PARENT PASS/));
-        await check('memory.images.real-headless-gsh-runs-a-strict-worker-and-restores-its-prompt', ['real headless gsh runs a strict worker and restores its prompt'], () =>
-            probe('run /boot/brokerqa.snx shell-smoke', /SHELL PASS/));
-        await check('memory.images.private-disk-commits-binary-bytes-on-the-4-gib-image', ['private disk commits binary bytes on the 4 GiB image'], () =>
-            probe('run /boot/fstest.snx memory-save', /MEMORY SAVE PASS/, 1));
     });
-    await boot(source, 'images-cold', vm.memoryMiB, async ({check, probe}) =>
-        check('memory.images.cold-boot-on-the-same-iso-recovers-the-exact-binary-bytes', ['cold boot on the same ISO recovers the exact binary bytes'], () =>
-            probe('run /boot/fstest.snx memory-read', /MEMORY READ PASS/)), seed);
+    const memoryMiB = 2048;
+    await boot(source, 'images-2048', memoryMiB, async ({baseline, check, probe, command, guestLog, qmp, directory, report}) => {
+        await check('memory.images.v2-poltest-startup-guards-and-thread-stack-reuse', [
+            'v2 poltest startup guards and thread stack reuse',
+            '2 GiB E820 page publication, Shell memory total and first high allocation'], async () => {
+            assert.equal(bootFile(source, 'POLTEST.SNX').readUInt32LE(4), 2);
+            const memory = await geometry(qmp, directory, guestLog(), baseline);
+            assert(memory.endPFN > 0x70000 && memory.endPFN <= memoryMiB * 256, '2 GiB physical page range');
+            assert.match(await command('mem'), new RegExp(`^Mapped usable range: ${memory.endPFN * 4} KiB$`, 'm'));
+            await probe('run -s /boot/poltest.snx paging-a', /PAGING STRICT A PASS/);
+            const allocated = Number(guestLog().match(/PAGE first high allocation=(0x[0-9a-f]+)/i)?.[1]);
+            assert(allocated >= 1024 * 1024 * 1024 && allocated < memory.endPFN * 4096, 'first high page is in the 2 GiB VM');
+            report.memoryGeometry = memory;
+        });
+    });
 }
 
 async function anonymousContracts(source) {

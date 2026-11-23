@@ -157,8 +157,8 @@ test-memory.js images 验证映像及栈生命周期，anonymous 验证真实跨
 
 `node 'Source Code/tests/host/test-user-heap.js'` 验证分配器核心（20 项，`--list` 预览）。`test-memory.js heap`（7 项）通过 ShellBridge 验证 SDK 入口、四线程交错、真实水位下 cold 丢弃与重建，以及退出后的页数基线。
 
-默认 VM 为 4096 MiB、单核，报告通过 QMP 核对配置。images 11 项、anonymous 7 项、heap 7 项、reclaim 5 项、purgeable 5 项、pools 4 项。
-images 从客户机读取原始 E820，按保留优先规则独立核对 4 GiB 以下各池发布页数、水位阈值和 1 GiB 直接映射边界。pools 使用 4096 和 1024 MiB VM 分别验证双池调度与纯低端兜底。
+默认 VM 为 4096 MiB、单核，报告通过 QMP 核对配置。images 7 项、anonymous 7 项、heap 7 项、reclaim 5 项、purgeable 5 项、pools 4 项。
+images 在 4096 和 2048 MiB VM 上读取原始 E820，按保留优先规则独立核对 4 GiB 以下各池发布页数、水位阈值和 1 GiB 直接映射边界。pools 使用 4096 和 1024 MiB VM 分别验证双池调度与纯低端兜底。
 安装 RAM 与实际可管理页数不同，4 GiB 以上的重映射 RAM 在非 PAE 模式下不纳入物理池。
 
 ## 测试构建的分配失败注入
