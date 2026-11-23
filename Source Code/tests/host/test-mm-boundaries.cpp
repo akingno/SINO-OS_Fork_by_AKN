@@ -8,34 +8,59 @@
 #include "../../src32/mm/e820.h"
 #include "../../src32/mm/paging.h"
 #include "../../src32/mm/uaccess.h"
+#include "../../src32/mm/vma.h"
+using mm::VmaNode;
+using mm::VmaType;
 #define BASE 0x41000000u
 static u32 directory, foreign;
 static int active = 1, budget, populated;
-static u32 flags[3], reserved[3];
+static u32 flags[3];
+static VmaNode vmas[3];
 static u8* memory;
-extern "C" u32 process_user_limit(const u32* pd, u32 address) {
-  return pd == &directory && address >= BASE && address <= BASE + 3 * PAGE_SIZE
-             ? BASE + 3 * PAGE_SIZE : 0;
+namespace task {
+const VmaNode* userAccessVmas(const u32* pd) { return pd == &directory ? vmas : nullptr; }
+}
+namespace mm {
+const VmaNode* vma_find(const VmaNode* root, u32 page) {
+  for (const auto* node = root; node != vmas + 3; ++node) {
+    if (node->startPage == page && node->pageCount) { return node; }
+  }
+  return nullptr;
+}
+const VmaNode* vma_next(const VmaNode* node) {
+  while (++node != vmas + 3) {
+    if (node->pageCount) { return node; }
+  }
+  return nullptr;
+}
+}
+static void region(unsigned index, VmaType type, bool writable = false) {
+  auto& node = vmas[index];
+  node = VmaNode{BASE / PAGE_SIZE + index, 1, 0, 0, 0, type};
+  node.setFlag(VmaNode::Flag::Read, type != VmaType::Guard);
+  node.setFlag(VmaNode::Flag::Write, writable);
 }
 extern "C" int paging_is_active(const u32* pd) { return active && pd == &directory; }
 extern "C" u32 paging_user_flags(const u32* pd, u32 address) {
   if (pd != &directory || address < BASE || address >= BASE + 3 * PAGE_SIZE) return 0;
   return flags[(address - BASE) / PAGE_SIZE];
 }
-extern "C" int process_anon_page(u32* pd, u32 address, int populate, bool write) {
+extern "C" int process_populate_anon_page(u32* pd, u32 address, bool write) {
   if (pd != &directory || address < BASE || address >= BASE + 3 * PAGE_SIZE) return S_INVALID;
   u32 i = (address - BASE) / PAGE_SIZE;
-  if (!reserved[i] || (write && reserved[i] == 2)) return S_INVALID;
-  if (!populate) return S_OK;
+  const auto* node = mm::vma_find(task::userAccessVmas(pd), address / PAGE_SIZE);
+  assert(node && node->type == VmaType::Anonymous && !(flags[i] & PAGE_PRESENT));
+  const bool writable = node->hasFlag(VmaNode::Flag::Write);
+  assert(!write || writable);
   if (!budget) return S_NOMEM;
   budget--; populated++;
-  flags[i] = PAGE_PRESENT | PAGE_USER | (reserved[i] == 1 ? PAGE_WRITE : 0);
+  flags[i] = PAGE_PRESENT | PAGE_USER | (writable ? PAGE_WRITE : 0);
   memset(memory + i * PAGE_SIZE, 0, PAGE_SIZE);
   return S_OK;
 }
 static void reset(void) {
   active = 1; budget = 3; populated = 0;
-  memset(flags, 0, sizeof(flags)); memset(reserved, 0, sizeof(reserved));
+  memset(flags, 0, sizeof(flags)); memset(vmas, 0, sizeof(vmas));
   memset(memory, 0x5a, 3 * PAGE_SIZE);
 }
 static BootRange range(u32 base, u32 length, u32 type) {
@@ -74,29 +99,45 @@ int main(void) {
   assert(!e820_page_usable(ranges, 3, 2) && !e820_page_usable(ranges, 3, 3));
   assert(e820_page_usable(ranges, 3, 4) && !e820_page_usable(ranges, 3, 6));
   puts("PASS mm.boundaries.reserved-overlap-priority");
-  reset(); reserved[0] = 1;
+  reset(); region(0, VmaType::Anonymous, true);
   assert(uaccess_prepare(&foreign, BASE, 1, UserAccess::READ) == S_INVALID);
   active = 0; assert(uaccess_prepare(&directory, BASE, 1, UserAccess::READ) == S_INVALID);
   assert(!populated);
   puts("PASS mm.boundaries.uaccess-address-space");
   reset();
   assert(uaccess_prepare(&directory, BASE, 0, UserAccess::READ) == S_OK);
+  assert(uaccess_prepare(&directory, USER_END, 0, UserAccess::READ) == S_INVALID);
   assert(uaccess_prepare(&directory, BASE, 0, (UserAccess)99) == S_INVALID);
   assert(uaccess_prepare(&directory, 0xffffffffu, 2, UserAccess::READ) == S_INVALID);
   assert(uaccess_prepare(&directory, BASE + 3 * PAGE_SIZE, 1, UserAccess::READ) == S_INVALID);
-  flags[0] = PAGE_PRESENT | PAGE_USER;
+  flags[0] = PAGE_PRESENT | PAGE_USER | PAGE_WRITE;
+  assert(uaccess_prepare(&directory, BASE, 1, UserAccess::READ) == S_INVALID);
+  region(0, VmaType::Image);
   assert(uaccess_prepare(&directory, BASE, 1, UserAccess::READ) == S_OK);
   assert(uaccess_prepare(&directory, BASE, 1, UserAccess::WRITE) == S_INVALID && !populated);
+  region(0, VmaType::Stack, true);
+  flags[0] = PAGE_PRESENT | PAGE_USER;
+  assert(uaccess_prepare(&directory, BASE, 1, UserAccess::WRITE) == S_INVALID);
+  flags[0] = PAGE_PRESENT | PAGE_WRITE;
+  assert(uaccess_prepare(&directory, BASE, 1, UserAccess::READ) == S_INVALID);
+  flags[0] = 0;
+  assert(uaccess_prepare(&directory, BASE, 1, UserAccess::READ) == S_INVALID && !populated);
   puts("PASS mm.boundaries.uaccess-permissions-and-bounds");
-  reset(); reserved[0] = 1; char out[4] = "old";
+  reset(); region(0, VmaType::Anonymous, true); char out[4] = "old";
   assert(copy_from_user(&directory, out, BASE + PAGE_SIZE - 2, 4) == S_INVALID);
   assert(!populated && !memcmp(out, "old", 4));
   assert(copy_to_user(&directory, BASE + PAGE_SIZE - 2, "abcd", 4) == S_INVALID);
   assert(!populated && memory[PAGE_SIZE - 2] == 0x5a);
-  reserved[1] = 2;
+  region(1, VmaType::Anonymous);
+  assert(copy_to_user(&directory, BASE + PAGE_SIZE - 2, "abcd", 4) == S_INVALID && !populated);
+  region(1, VmaType::Guard);
+  flags[1] = PAGE_PRESENT | PAGE_USER | PAGE_WRITE;
+  assert(copy_from_user(&directory, out, BASE + PAGE_SIZE - 2, 4) == S_INVALID && !populated);
+  region(1, VmaType::Anonymous, true);
+  flags[1] = PAGE_PRESENT | PAGE_USER;
   assert(copy_to_user(&directory, BASE + PAGE_SIZE - 2, "abcd", 4) == S_INVALID && !populated);
   puts("PASS mm.boundaries.validation-before-allocation");
-  reset(); reserved[0] = reserved[1] = reserved[2] = 1; budget = 1;
+  reset(); region(0, VmaType::Anonymous, true); region(1, VmaType::Anonymous, true); budget = 1;
   assert(copy_to_user(&directory, BASE + PAGE_SIZE - 2, "abcd", 4) == S_NOMEM);
   assert(populated == 1 && flags[0] && !flags[1] && memory[PAGE_SIZE - 2] == 0);
   assert(copy_to_user(&directory, BASE, "ok", 3) == S_OK && !memcmp(memory, "ok", 3));
@@ -105,11 +146,13 @@ int main(void) {
   assert(uaccess_prepare(&directory, BASE, 1, UserAccess::READ) == S_OK && memory[0] == 0);
   puts("PASS mm.boundaries.partial-population-oom");
   reset(); flags[0] = flags[1] = PAGE_PRESENT | PAGE_USER | PAGE_WRITE;
+  region(0, VmaType::Stack, true); region(1, VmaType::Guard);
   memory[PAGE_SIZE - 2] = 'a'; memory[PAGE_SIZE - 1] = 0;
   flags[1] = 0;
   assert(copy_string_from_user(&directory, out, BASE + PAGE_SIZE - 2, 4) == S_OK && !strcmp(out, "a"));
   memory[PAGE_SIZE - 1] = 'b'; out[0] = 0;
   assert(copy_string_from_user(&directory, out, BASE + PAGE_SIZE - 2, 4) == S_INVALID && out[0] == 'a' && out[1] == 'b');
+  region(1, VmaType::Anonymous, true);
   flags[1] = PAGE_PRESENT | PAGE_USER | PAGE_WRITE;
   assert(copy_to_user(&directory, BASE + PAGE_SIZE - 2, "abc", 4) == S_OK);
   assert(copy_from_user(&directory, out, BASE + PAGE_SIZE - 2, 4) == S_OK && !strcmp(out, "abc"));

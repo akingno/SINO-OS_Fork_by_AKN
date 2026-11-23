@@ -32,11 +32,10 @@ extern "C" {
   int process_kill(u32 a0, i32 a1) { return task::kill(a0, a1); }
   void process_step() { task::step(); }
   int process_interrupt(Frame * a0) { return task::interrupt(a0); }
-  int process_anon_page(u32* pd, u32 page, int populate, bool write) {
-    const auto status = task::anonPage(pd, page, populate, write);
+  int process_populate_anon_page(u32* pd, u32 page, bool write) {
+    const auto status = task::anonPage(pd, page, 1, write);
     if (status == task::UserPageStatus::Ok) { return S_OK; }
     return status == task::UserPageStatus::Invalid ? S_INVALID : S_NOMEM;
   }
-  u32 process_user_limit(const u32* a0, u32 a1) { return task::userLimit(a0, a1); }
   void process_tests() { task::tests(); }
 }

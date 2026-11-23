@@ -106,7 +106,7 @@ static int paging_window_tests(int fault) {
   const u32 high = USER_DYNAMIC_END - 4096;
   StartInfo* across = (StartInfo*)(boundary - 8);
   require(QueryStartInfo(across) == 0 && across->policy == PROCESS_STRICT,
-          "writable buffer crosses a page directory boundary");
+          "writable buffer crosses adjacent VMAs and a page directory boundary");
 
   volatile u8* text = (volatile u8*)(boundary - 1);
   text[0] = 'O';
@@ -118,9 +118,11 @@ static int paging_window_tests(int fault) {
   *last = 0xabcdef01u;
   require(api(QUERY_START, (u32)last, sizeof(StartInfo), 0) == S_INVALID &&
           *last == 0xabcdef01u, "hole rejects full output before writing");
+  const int beyondWindow = USER_DYNAMIC_END == USER_ARGUMENTS ? 2 : S_INVALID;
   require(*(volatile u32*)high == 0 &&
           api(QUERY_START, high, sizeof(StartInfo), 0) == S_INVALID &&
-          api(SYS_LOG, USER_DYNAMIC_END - 1, 0, 2) == S_INVALID &&
+          api(SYS_LOG, USER_DYNAMIC_END - 1, 0, 2) == beyondWindow &&
+          api(SYS_LOG, USER_END - 1, 0, 2) == S_INVALID &&
           api(SYS_LOG, 0xfffffff0u, 0, 32) == S_INVALID,
           "high read-only page, window end and overflow checks");
   if (fault) {

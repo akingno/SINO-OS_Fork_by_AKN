@@ -244,9 +244,13 @@ int unmapRangeTest(const char* mode) {
   auto unmap = [&](unsigned i, unsigned n) {
     return AnonUnmapRange(addr(i), n * PageBytes);
   };
-  for (unsigned i = 0; i < 8; ++i) { page[i * PageBytes] = (u8)(0x10 + i); }
+  const bool shrink = streq(mode, "e2-shrink");
+  for (unsigned i = 0; i < 8; ++i) {
+    if (shrink && (i == 3 || i == 6)) { continue; }
+    page[i * PageBytes] = (u8)(0x10 + i);
+  }
 
-  if (streq(mode, "e2-shrink")) {
+  if (shrink) {
     SystemInfo info;
     require(QuerySystemInfo(&info) == S_OK && (info.features & FEATURE_ANON_UNMAP_RANGE),
             "range-unmap feature bit");

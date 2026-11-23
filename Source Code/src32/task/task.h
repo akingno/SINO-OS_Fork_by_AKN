@@ -39,13 +39,15 @@ int process_alive(u32);
 int process_kill(u32, i32);
 void process_step(void);
 int process_interrupt(Frame *);
-/* Validate or populate a missing page in the current process's anonymous range. */
-int process_anon_page(u32* pd, u32 page, int populate, bool write);
-u32 process_user_limit(const u32* pd, u32 address);
+/* Populate a missing page in the current process's anonymous range. */
+int process_populate_anon_page(u32* pd, u32 page, bool write);
 void process_tests(void);
 #ifdef __cplusplus
 }
+namespace mm { struct VmaNode; }
 namespace task {
+// Borrow the current process's VMA tree while its address space stays bound.
+const mm::VmaNode* userAccessVmas(const u32* pd);
 void terminalForeground(u32 pid, bool foreground);
 int interactiveStart(Handle* owner, const InteractiveSpec* spec, int directory,
                      void* session, u32 shellPid, u32* pid);

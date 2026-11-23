@@ -29,6 +29,7 @@
 | 物理页、页表、高页、SNX、用户栈；`page_* / paging_*` | 下方内存命令的 `images`；11 项，含 v2 clitest 参数与完成记录、v2 poltest 栈回收与复用 | 涉及匿名映射/OOM 时加 `anonymous`；启动页表/物理池初始化变化时加普通启动检查 |
 | E820 对齐/重叠、地址溢出、uaccess 复制契约 | `node 'Source Code/tests/host/test-mm-boundaries.js'`；10 项，`--list` 预览 | 替代页表与分配边界的宿主检查；系统路径仍按下列 images / anonymous 及追加条件选测 |
 | 用户缓冲区；`uaccess_*` | `anonymous`；7 项，含跨页文件/管道 I/O | 文件或终端系统调用校验路径变化时，加对应 `files` 或 `terminal-waits`；新的非法指针边界另加针对性探针 |
+| VMA 权限与匿名驻留拆分；`uaccess_prepare / split_resident` | `test-mm-boundaries.js` 10 项、`anonymous` 7 项、`e1` 和 `e2` 各 6 项、`files,policy` 4 项 | 跨 VMA 的映像、参数页及 PDE 探针变化时加 `images` 11 项，共 44 项 |
 | SNX 头和加载兼容性；`native_header_valid / launch_policy / linker.ld` | `images` 11 项、`process,policy` 10 项及普通启动 1 项 | process 现有 Ring 3 用例先运行 v2 副本，再修改同一文件的版本字段，验证 v1 拒绝和资源对账 |
 | 调度、进程/线程退出、故障回收；`process_step / release / entry.asm` | `.\regression.ps1 -Suite process`；8 项 | 完成通知/等待器变化加 `completion-waits`；管道/终端唤醒变化只加相应等待专项 |
 | 系统调用策略、权限、句柄授权；`launch_policy / syscall / object` | `.\regression.ps1 -Suite policy`；2 项 | 对象生命周期变化加受影响对象的套件；线程/进程资源变化加 `process` |

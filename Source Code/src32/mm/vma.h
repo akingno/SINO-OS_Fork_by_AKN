@@ -12,7 +12,7 @@ struct VmaNode {
 
   u32 startPage;
   u32 pageCount;
-  u16 resident;
+  u32 resident;
   u16 lock_count;
   u8 flags;
   VmaType type;
@@ -29,7 +29,7 @@ struct VmaNode {
     flags = enabled ? flags | bit : flags & ~bit;
   }
 };
-static_assert(sizeof(VmaNode) == 32, "VMA node must fit the 32-byte slab class");
+static_assert(sizeof(void*) != 4 || sizeof(VmaNode) == 32, "VMA node must fit the i386 32-byte slab class");
 
 // Insert a zero-initialized or previously detached node with a valid range.
 // Intervals are half-open in page numbers. Keep the range fixed while linked.
@@ -38,11 +38,13 @@ bool vma_insert(VmaNode*& root, VmaNode* node);
 bool vma_remove(VmaNode*& root, VmaNode* node);
 
 VmaNode* vma_find(VmaNode* root, u32 page);
+const VmaNode* vma_find(const VmaNode* root, u32 page);
 VmaNode* vma_find_exact(VmaNode* root, u32 startPage);
 VmaNode* vma_lower_bound(VmaNode* root, u32 page);
 // Walk in ascending address order while the tree is unchanged.
 VmaNode* vma_first(VmaNode* root);
 VmaNode* vma_next(VmaNode* node);
+const VmaNode* vma_next(const VmaNode* node);
 // Find the lowest free range of pageCount pages within [beginPage, endPage).
 bool vma_find_gap(VmaNode* root, u32 beginPage, u32 endPage, u32 pageCount, u32& startPage);
 

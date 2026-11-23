@@ -266,13 +266,43 @@ namespace task {
     return belongs(n, id) && !n->lock_count && !n->hasFlag(VmaNode::Flag::Purgeable) &&
            !n->hasFlag(VmaNode::Flag::Purged);
   }
-  static u16 count_resident(Process* p, u32 begin, u32 end) {
-    u16 count = 0;
+  static u32 count_resident(const Process* p, u32 begin, u32 end) {
+    u32 count = 0;
     for (u32 i = begin; i < end; ++i) {
       if (paging_user_flags(p->pd, i * PAGE_SIZE) & PAGE_PRESENT) { ++count; }
     }
     return count;
   }
+
+  // Add this node's resident pages before, inside, and after [begin, end).
+  static void split_resident(const Process* p, const VmaNode& node, u32 begin, u32 end, u32 (&counts)[3]) {
+    const u32 start = node.startPage;
+    const u32 stop = start + node.pageCount;
+    auto clip = [&](u32 page) { return page < start ? start : (page > stop ? stop : page); };
+    const u32 boundary[] = {start, clip(begin), clip(end), stop};
+    const u32 pages[] = {boundary[1] - start, boundary[2] - boundary[1], stop - boundary[2]};
+    unsigned largest = 0;
+    for (unsigned i = 1; i < 3; ++i) {
+      if (pages[i] > pages[largest]) { largest = i; }
+    }
+
+    u32 remaining = node.resident;
+    if (remaining > node.pageCount) { panic("VMA resident exceeds range", start, remaining); }
+    for (unsigned i = 0; i < 3; ++i) {
+      if (i == largest || !pages[i]) { continue; }
+      const u32 resident = count_resident(p, boundary[i], boundary[i + 1]);
+      if (resident > remaining) { panic("VMA resident split underflow", start, resident); }
+      counts[i] += resident;
+      remaining -= resident;
+    }
+    if (remaining > pages[largest]) { panic("VMA resident split exceeds range", start, remaining); }
+#ifdef SINO_SHELL_BRIDGE
+    const u32 actual = count_resident(p, boundary[largest], boundary[largest + 1]);
+    if (remaining != actual) { panic("VMA resident split mismatch", remaining, actual); }
+#endif
+    counts[largest] += remaining;
+  }
+
   static int protect_anon(Process* p, u32 base, u32 bytes, u32 protection) {
     const bool write = protection == (u32)MemoryProtection::ReadWrite;
     if ((!write && protection != (u32)MemoryProtection::Read) ||
@@ -302,25 +332,27 @@ namespace task {
       if (ordinary(next, id) && next->hasFlag(VmaNode::Flag::Write) == write) { last = next; }
     }
 
-    struct Piece { u32 begin, end; bool write; u16 resident; };
+    struct Piece { u32 begin, end; bool write; u32 resident; };
     Piece pieces[3] = {};
     unsigned outputs = 0;
-    auto append = [&](u32 lo, u32 hi, bool writable) {
-      if (lo == hi) { return; }
+    auto append = [&](u32 lo, u32 hi, bool writable) -> unsigned {
+      if (lo == hi) { return 0; }
       if (outputs && pieces[outputs - 1].end == lo && pieces[outputs - 1].write == writable) {
         pieces[outputs - 1].end = hi;
       } else { pieces[outputs++] = {lo, hi, writable, 0}; }
+      return outputs - 1;
     };
-    append(first->startPage, begin, first->hasFlag(VmaNode::Flag::Write));
-    append(begin, end, write);
-    append(end, last->startPage + last->pageCount, last->hasFlag(VmaNode::Flag::Write));
+    const unsigned destinations[] = {
+      append(first->startPage, begin, first->hasFlag(VmaNode::Flag::Write)),
+      append(begin, end, write),
+      append(end, last->startPage + last->pageCount, last->hasFlag(VmaNode::Flag::Write))
+    };
 
     VmaNode* nodes[ANON_MAX_FRAGMENTS];
-    unsigned inputs = 0, oldResident = 0;
+    unsigned inputs = 0;
     const bool head = first->hasFlag(VmaNode::Flag::Head);
     for (auto* n = first;; n = mm::vma_next(n)) {
       nodes[inputs++] = n;
-      oldResident += n->resident;
       if (n == last) { break; }
     }
     if (p->anonFragments - inputs + outputs > ANON_MAX_FRAGMENTS) { return S_LIMIT; }
@@ -335,12 +367,13 @@ namespace task {
         return S_LIMIT;
       }
     }
-    unsigned resident = 0;
-    for (unsigned i = 0; i < outputs; ++i) {
-      pieces[i].resident = count_resident(p, pieces[i].begin, pieces[i].end);
-      resident += pieces[i].resident;
+    u32 resident[3]{};
+    for (unsigned i = 0; i < inputs; ++i) {
+      split_resident(p, *nodes[i], begin, end, resident);
     }
-    if (resident != oldResident) { panic("Fragment residency", resident, oldResident); }
+    for (unsigned i = 0; i < 3; ++i) {
+      pieces[destinations[i]].resident += resident[i];
+    }
     for (unsigned i = 0; i < inputs; ++i) {
       if (!mm::vma_remove(p->vma_root, nodes[i])) { panic("Fragment detach", p->pid, base); }
     }
@@ -424,24 +457,24 @@ namespace task {
     }
     const u32 frontStart = first->startPage;
     const u32 lastEnd = last->startPage + last->pageCount;
-    const u16 frontResident = keepFront ? count_resident(p, frontStart, begin) : 0;
-    const u16 backResident = keepBack ? count_resident(p, end, lastEnd) : 0;
-    unsigned totalResident = 0;
-    for (unsigned i = 0; i < inputs; ++i) { totalResident += nodes[i]->resident; }
+    u32 resident[3]{};
+    for (unsigned i = 0; i < inputs; ++i) {
+      split_resident(p, *nodes[i], begin, end, resident);
+    }
     const u8 frontFlags = first->flags;
     const u8 backFlags = last->flags;
     for (unsigned i = 0; i < inputs; ++i) {
       if (!mm::vma_remove(p->vma_root, nodes[i])) { panic("Unmap range detach", p->pid, base); }
     }
     u32 freed = free_user_pages(p, base, base + bytes);
-    if (freed != totalResident - frontResident - backResident || freed > p->pages_used) {
-      panic("Unmap range resident", freed, totalResident);
+    if (freed != resident[1] || freed > p->pages_used) {
+      panic("Unmap range resident", freed, resident[1]);
     }
     p->pages_used -= freed;
     unsigned slot = 0;
     if (keepFront) {
       auto* n = nodes[slot];
-      *n = VmaNode{frontStart, begin - frontStart, frontResident, 0, 0, VmaType::Anonymous};
+      *n = VmaNode{frontStart, begin - frontStart, resident[0], 0, 0, VmaType::Anonymous};
       n->allocId = id;
       n->setFlag(VmaNode::Flag::Read, true);
       n->setFlag(VmaNode::Flag::Write, frontFlags & (u8)VmaNode::Flag::Write);
@@ -451,7 +484,7 @@ namespace task {
     }
     if (keepBack) {
       auto* n = nodes[slot];
-      *n = VmaNode{end, lastEnd - end, backResident, 0, 0, VmaType::Anonymous};
+      *n = VmaNode{end, lastEnd - end, resident[2], 0, 0, VmaType::Anonymous};
       n->allocId = id;
       n->setFlag(VmaNode::Flag::Read, true);
       n->setFlag(VmaNode::Flag::Write, backFlags & (u8)VmaNode::Flag::Write);
@@ -510,7 +543,8 @@ namespace task {
       return UserPageStatus::Invalid;
     }
     VmaNode* region = mm::vma_find(current->vma_root, page / PAGE_SIZE);
-    if (!region || region->type != VmaType::Anonymous || (write && !region->hasFlag(VmaNode::Flag::Write))) {
+    if (!region || region->type != VmaType::Anonymous || !region->hasFlag(VmaNode::Flag::Read) ||
+        (write && !region->hasFlag(VmaNode::Flag::Write))) {
       return UserPageStatus::Invalid;
     }
     if (!populate) {
@@ -526,6 +560,9 @@ namespace task {
 #endif
     const auto status = alloc_user_page(current, page, region->hasFlag(VmaNode::Flag::Write), true).status;
     if (status == UserPageStatus::Ok) {
+      if (region->resident >= region->pageCount || current->pages_used >= ANON_MAX_BYTES / PAGE_SIZE) {
+        panic("Anonymous resident count overflow", current->pages_used, region->resident);
+      }
       current->pages_used++;
       region->resident++;
       const auto watermark = page_watermark();
@@ -540,14 +577,8 @@ namespace task {
     return status;
   }
 
-  u32 userLimit(const u32* pd, u32 address) {
-    if (!current || current->pd != pd || address < USER_BASE) {
-      return 0;
-    }
-    if (address < USER_DYNAMIC_END) {
-      return USER_DYNAMIC_END;
-    }
-    return address < USER_END ? USER_END : 0;
+  const VmaNode* userAccessVmas(const u32* pd) {
+    return current && current->pd == pd ? current->vma_root : nullptr;
   }
   static int register_mapping(Process* p, u32 base, u32 bytes, VmaType type, bool writable, bool code = false) {
 #ifdef SINO_SHELL_BRIDGE
@@ -639,7 +670,9 @@ namespace task {
     }
     if (!exhaust) {
       if (!alloc_user_page(p, high, 0).page) { return S_NOMEM; }
-      int status = register_mapping(p, cross, 2 * PAGE_SIZE, VmaType::Probe, true);
+      int status = register_mapping(p, cross, PAGE_SIZE, VmaType::Probe, true);
+      if (status != S_OK) { return status; }
+      status = register_mapping(p, boundary, PAGE_SIZE, VmaType::Probe, true);
       if (status != S_OK) { return status; }
       return register_mapping(p, high, PAGE_SIZE, VmaType::Probe, false);
     }

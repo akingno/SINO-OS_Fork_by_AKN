@@ -272,7 +272,7 @@ bool vma_remove(VmaNode*& root, VmaNode* node) {
   return true;
 }
 
-VmaNode* vma_find(VmaNode* root, u32 page) {
+const VmaNode* vma_find(const VmaNode* root, u32 page) {
   while (root) {
     if (page < root->startPage) {
       root = root->left;
@@ -283,6 +283,10 @@ VmaNode* vma_find(VmaNode* root, u32 page) {
     }
   }
   return nullptr;
+}
+
+VmaNode* vma_find(VmaNode* root, u32 page) {
+  return const_cast<VmaNode*>(vma_find(static_cast<const VmaNode*>(root), page));
 }
 
 VmaNode* vma_find_exact(VmaNode* root, u32 startPage) {
@@ -308,6 +312,10 @@ VmaNode* vma_first(VmaNode* root) {
 }
 
 VmaNode* vma_next(VmaNode* node) {
+  return node ? next_node(node) : nullptr;
+}
+
+const VmaNode* vma_next(const VmaNode* node) {
   return node ? next_node(node) : nullptr;
 }
 
