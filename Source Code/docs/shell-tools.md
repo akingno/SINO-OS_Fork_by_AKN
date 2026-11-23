@@ -39,9 +39,7 @@ Unsupported escapes fail with code2 before printing any argument prefix.
 Regular Shell quoting/escaping still runs first. This restricted text contract
 does not accept arbitrary control bytes, hex escapes, variables or ANSI colors.
 
-mem/free, df and global ps are recognized as unavailable: current strict public
-queries do not expose their live global data. SystemInfo capacity limits are
-not used as fake usage counters. Arbitrary run paths, kill,
+Arbitrary run paths, kill,
 reboot/halt and other management commands remain on separate trusted paths.
 
 ## Read-only file tools

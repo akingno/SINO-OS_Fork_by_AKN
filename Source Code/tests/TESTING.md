@@ -42,7 +42,7 @@
 | 可丢弃匿名内存；`SYS_ANON_PURGEABLE / SYS_ANON_LOCK / SYS_ANON_UNLOCK / purgeOneRegion` | `node 'Source Code/tests/host/test-memory.js' purgeable '<ShellBridge 构建目录>'`；5 项，先用 `purgeable --list` 预览 | 匿名落页、解除映射和失效重建加 `anonymous` 7 项；水位回收及空闲待办变化加 `reclaim` 5 项、`process` 8 项、`shell-waits` 5 项；普通启动 1 项，共 31 项 |
 | 手动复位 Event、阻塞等待、Set/Reset/Close | `node 'Source Code/tests/host/test-event-waits.js' '<ShellBridge 构建目录>'`；8 项，先 `--list` | 调度/等待接入加 process 8；ABI/授权变化加 policy 2；SDK/启动能力位变化加普通启动 1。Event 独立专项不自动加入 core，复用同次构建、共享 VM 工具和私有盘 |
 | 线程传参、返回、join/detach 与 TID | `node 'Source Code/tests/host/test-thread-waits.js' '<ShellBridge 构建目录>'`；8 项，先 `--list` | 创建/退出接入加 process 8；用户栈变化加 images 11；新 ABI/授权加 policy 2；公共等待撤销增加 join 占用清理时加 Event 8、completion-waits 8；普通启动 1。本轮组合 46 项。线程模式由 probe.snx（SNX v2）运行，独立专项不自动加入 core |
-| PID 槽位/代数、陈旧标识、Object/cookie/TID 寿命 | `node 'Source Code/tests/host/test-pids.js' '<ShellBridge 构建目录>'`；8 项；`node 'Source Code/tests/host/test-identifiers.js'`；6 项；均先 `--list` | 进程资源变化加 process 8、历史完成记录加 completion 5、终端归属查找加 interactive 1、句柄代数/选槽变化加 policy 2、Event 8、线程 8；普通启动 1，共 47 项。独立专项不自动加入 core，不改统一 267 个 ID。真实负载消耗写入 PID 专项 shell-report 的 identifierAudit；耗尽边界用同一分配器的缩小范围及 ShellBridge 启动自检，不能在运行中重置用户编号 |
+| PID 槽位/代数、陈旧标识、Object/cookie/TID 寿命 | `node 'Source Code/tests/host/test-pids.js' '<ShellBridge 构建目录>'`；8 项；`node 'Source Code/tests/host/test-identifiers.js'`；6 项；均先 `--list` | 进程资源变化加 process 8、历史完成记录加 completion 5、终端归属查找加 interactive 1、句柄代数/选槽变化加 policy 2、Event 8、线程 8；普通启动 1，共 47 项。独立专项不自动加入 core，不改统一 263 个 ID。真实负载消耗写入 PID 专项 shell-report 的 identifierAudit；耗尽边界用同一分配器的缩小范围及 ShellBridge 启动自检，不能在运行中重置用户编号 |
 | 完成记录、取消、观察者 | `.\regression.ps1 -Suite completion`；5 项 | 阻塞/超时/唤醒变化加 `completion-waits`；8 项 |
 | 文件对象、目录授权、VFS 版本与发布 | `.\regression.ps1 -Suite files`；2 项，含自有冷启动 | 提交、Sync、磁盘快照或恢复变化加 `persistence`；4 项；故障注入路径另选针对性边界 |
 | 存储快照、磁盘持久化与恢复 | `.\regression.ps1 -Suite persistence`；4 项 | 发布/目录/文件语义变化加 `files`；额外存储故障检查按具体路径选择，不自动跑 50 项 infrastructure |
@@ -50,7 +50,7 @@
 | 终端 IPC / 字节会话后端 | `.\regression.ps1 -Suite terminal`；1 项 | 阻塞读取、控制者关闭或唤醒变化加 `terminal-waits`；11 项 |
 | 公共等待机制；`retry_wait` | 按受影响对象选择 `completion-waits` / `pipe-waits` / `terminal-waits` | 确认影响所有对象时组合三项，共 29 项；涉及 Shell/SDK 等待再加 `shell-waits`，不得带入其他无关套件 |
 | 有限 CLI / 标准输入输出 | `.\regression.ps1 -Suite cli`；1 项 | SCS2 帧、租约、取消、捕获或宿主协议变化加 `managed-cli`；12 项 |
-| Shell / SDK 阻塞等待 | `.\regression.ps1 -Suite shell-waits`；5 项 | 影响具体管道或终端等待 API 时追加对应等待专项；纯命令语法另按其解析器/命令选择，不自动跑 112 项 |
+| Shell / SDK 阻塞等待 | `.\regression.ps1 -Suite shell-waits`；5 项 | 影响具体管道或终端等待 API 时追加对应等待专项；纯命令语法另按其解析器/命令选择，不自动跑 108 项 |
 | 交互启动代理 / 会话所有权 | `.\regression.ps1 -Suite interactive`；1 项 | Shell 结果交付变化加 `shell-waits`；控制者/终端生命周期变化加 `terminal-waits` |
 | 回环网络 | `.\regression.ps1 -Suite network`；1 项 | 只追加实际影响的标准流/进程机制；不扩大为外部网络验收 |
 | RTC 采样、解码、缓存 | `.\regression.ps1 -Suite rtc-driver`；1 项 | 仅追加实际受影响的时间接口 |

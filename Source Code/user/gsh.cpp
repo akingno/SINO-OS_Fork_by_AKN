@@ -275,10 +275,9 @@ static void redirect_echo(u32 op_pos) {
 }
 static void help_catalog(void) {
   put("Commands: help NAME for purpose, parameters and options.\n");
-  const u32 kinds[] = {0, 1, 2, 5, 6, 3, 4};
+  const u32 kinds[] = {0, 1, 2, 5, 6};
   const char *labels[] = {"Shell", "Text/system", "Read files",
-      "Workspace (write session)", "Launch (write session)",
-      "Diagnostics", "Unavailable"};
+      "Workspace (write session)", "Launch (write session)"};
   for (u32 group = 0; group < sizeof(kinds) / sizeof(*kinds); group++) {
     put(labels[group]);
     put(":\n  ");
@@ -373,7 +372,7 @@ static void execute(void) {
       return;
     if (words.argc == 2) {
       const ShellCommand *item = shell_command(words.bytes + words.offsets[1]);
-      if (!item || (which && (item->kind == 4 || (item->kind == 6 && !writable)))) {
+      if (!item || (which && item->kind == 6 && !writable)) {
         put(which ? "which: unavailable command\n"
                   : "help: unavailable command\n");
         status(1, PROCESS_EXITED, 0);
@@ -518,12 +517,6 @@ static void execute(void) {
     else
       rights |= FS_READ | FS_WRITE | FS_CREATE;
     external(boot_copy ? (int)IX_BOOTCOPY : (int)IX_WRITETOOLS, rights);
-    return;
-  } else if (entry && entry->kind == 4) {
-    put("unavailable: ");
-    put(command);
-    put("\n");
-    status(127, PROCESS_EXITED, 0);
     return;
   } else if (entry && entry->kind == 2) {
     int ls = streq(command, "ls"),

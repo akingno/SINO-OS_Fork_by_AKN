@@ -187,18 +187,6 @@
       "name": "which nonexistent"
     },
     {
-      "id": "shell.commands.b522cc10374b",
-      "name": "mem"
-    },
-    {
-      "id": "shell.commands.d9d76d62bf94",
-      "name": "free"
-    },
-    {
-      "id": "shell.commands.e1c4e26d83b7",
-      "name": "df"
-    },
-    {
       "id": "shell.commands.1ad51330a7fa",
       "name": "uptime"
     },
@@ -517,10 +505,6 @@
     {
       "id": "shell.commands.96e8890e1242",
       "name": "rm occupied/file; rmdir occupied"
-    },
-    {
-      "id": "shell.commands.cbabcc852330",
-      "name": "ps"
     },
     {
       "id": "shell.commands.17515b845ddd",

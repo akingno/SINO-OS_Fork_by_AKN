@@ -2,7 +2,7 @@
 
 日常按 [模块选测指南](../tests/TESTING.md) 选择命令；本文是完整目录，无需每次通读。临时开发项独立登记在 [development/INDEX.md](../tests/development/INDEX.md)，不计入下面稳定回归。
 
-统一入口登记 **24 个功能组、267 个固定用例 ID**：`core` 23 组/258 项，`stress` 1 组/9 项。此数不包括下面独立列出的启动、内存、测试器单元检查和原有系统专项。组合按固定 ID 去重，重复入口不产生新覆盖；内部断言、夹具、兼容转发和辅助文件不额外计数。
+统一入口登记 **24 个功能组、263 个固定用例 ID**：`core` 23 组/254 项，`stress` 1 组/9 项。此数不包括下面独立列出的启动、内存、测试器单元检查和原有系统专项。组合按固定 ID 去重，重复入口不产生新覆盖；内部断言、夹具、兼容转发和辅助文件不额外计数。
 
 ## 统一入口：命令与接口
 
@@ -28,7 +28,7 @@
 | `infrastructure`（手动全量） | 47 | 存储、日志、语言资源和 6 个宿主模型 |
 | `rtc-driver` | 1 | RTC 解码、采样和缓存 |
 | `shell-transport`（手动全量） | 25 | Shell 通道和帧恢复 |
-| `shell-commands`（手动全量） | 112 | 命令、语法和 Shell 文件操作 |
+| `shell-commands`（手动全量） | 108 | 命令、语法和 Shell 文件操作 |
 | `runner-rejects-failure` | 1 | 测试器拒绝客户机失败 |
 
 `process` 和 `files` 包含各自的冷启动读取组；`persistence` 包含独立写入与读取组。这些数据依赖由注册表显式标明，业务套件不互相调用。
@@ -39,7 +39,7 @@
 
 ## 普通启动与内存
 
-`node 'Source Code/tests/host/test-task-queues.js'` 是 task 集合算法的 4 项独立宿主检查（`--list` 预览）：直接使用内核的侵入式 FIFO 和可撤销定时堆，验证 96 节点、所有权/重复登记、取消重插、容量、计时回绕及同期限次序。报告位于 `Build Output/dev/runs/task-queues-*/task-queues-report.json`，不自动加入 core，不改变统一注册表的 267 项。
+`node 'Source Code/tests/host/test-task-queues.js'` 是 task 集合算法的 4 项独立宿主检查（`--list` 预览）：直接使用内核的侵入式 FIFO 和可撤销定时堆，验证 96 节点、所有权/重复登记、取消重插、容量、计时回绕及同期限次序。报告位于 `Build Output/dev/runs/task-queues-*/task-queues-report.json`，不自动加入 core，不改变统一注册表的 263 项。
 
 | 入口（tests/host/） | 用例数 | 范围 |
 | --- | ---: | --- |
@@ -63,7 +63,7 @@
 
 上述入口均支持 `--list`（内存入口为 `test-memory.js images --list`）。内存用例按实际探针/配置契约执行计数，详细断言列在报告 conditions 中。默认配置为 4096 MiB、单核，并用 QMP 核对。定向注入覆盖映像、页表和匿名页的分配失败与回滚。
 
-`node 'Source Code/tests/host/test-vm-config.js' --list` 预览 4 项独立宿主检查：默认/专项参数、拒绝超出支持范围的参数、QMP 身份、开发/发行/测试入口一致性。报告为 Build Output/phase00a/vm-config-report.json，不计入统一注册表的 267 项。
+`node 'Source Code/tests/host/test-vm-config.js' --list` 预览 4 项独立宿主检查：默认/专项参数、拒绝超出支持范围的参数、QMP 身份、开发/发行/测试入口一致性。报告为 Build Output/phase00a/vm-config-report.json，不计入统一注册表的 263 项。
 
 四个 `test-*-waits.js <ShellBridge 目录>` 使用统一注册表：管道 10、完成记录 8、终端 11、Shell/SDK 5。它们与 `-Suite *-waits` 共用完全相同的用例，不额外计数；支持 `--list`。
 
@@ -108,4 +108,4 @@ infrastructure 还编译 6 个宿主模型：`test-terminal-model.cpp`、`test-g
 
 `node 'Source Code/tests/host/test-mm-boundaries.js' --list` 预览；去掉 --list 执行 10 项固定 ID（mm.boundaries.*）。
 覆盖地址对齐溢出、E820 内外取整/重叠/4 GiB、所属与活动页目录、权限、准备先于分配、部分落页 OOM、字符串和双向复制。
-独立入口不计入统一注册表的 267 项。产物在 Build Output/dev/runs/mm-boundaries-*；契约见 [mm-access.md](mm-access.md)。
+独立入口不计入统一注册表的 263 项。产物在 Build Output/dev/runs/mm-boundaries-*；契约见 [mm-access.md](mm-access.md)。

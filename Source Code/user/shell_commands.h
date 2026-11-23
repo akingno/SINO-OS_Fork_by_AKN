@@ -103,14 +103,6 @@ static const ShellCommand shell_commands[] = {
      "Wait until canceled with Ctrl+C. No arguments."},
     {"fault", 3, "fault",
      "Trigger an intentional invalid-instruction fault in the worker.\n  No arguments; the Shell should remain available afterward."},
-    {"mem", 4, "mem: needs a public live-memory query",
-     "Unavailable: the public interface has no live-memory query."},
-    {"free", 4, "free: needs a public live-memory query",
-     "Unavailable: the public interface has no live-memory query."},
-    {"df", 4, "df: needs a public storage query",
-     "Unavailable: the public interface has no storage-usage query."},
-    {"ps", 4, "ps: needs an authorized process query",
-     "Unavailable: the public interface has no global process query."},
 };
 static int shell_equal(const char *a, const char *b) {
   while (*a && *a == *b) {

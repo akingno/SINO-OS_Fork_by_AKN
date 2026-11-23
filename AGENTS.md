@@ -36,7 +36,7 @@
 - 通过后停止。仅因新的修改、失败或明确的未验证影响扩大或重跑；50/20 是上限，不是目标。测试器检查仅在测试框架变化时运行，纯文档/目录说明修改不启动系统回归。
 - `-Full` 仅供用户显式全量验收，AI 不以此绕过本步限制。压力和全量 core 不自动追加。同一轮共用构建与摘要；源码/测试身份变化后遵守重建检查，不强行复用旧镜像。
 
-稳定业务用例在 tests/host/suites/，不互相调用；固定 ID 在 tests/support/regression-cases.json，组合仅放在 regression-suites.js / regression-catalog.js。统一入口保留 24 个功能组 / 267 个固定 ID（core 23 组 / 258 项，stress 1 组 / 9 项）。新增或修改入口时同步更新模块指南；全部数量和其他专项见 [当前测试目录](Source Code/docs/test-catalog.md)。
+稳定业务用例在 tests/host/suites/，不互相调用；固定 ID 在 tests/support/regression-cases.json，组合仅放在 regression-suites.js / regression-catalog.js。统一入口保留 24 个功能组 / 263 个固定 ID（core 23 组 / 254 项，stress 1 组 / 9 项）。新增或修改入口时同步更新模块指南；全部数量和其他专项见 [当前测试目录](Source Code/docs/test-catalog.md)。
 
 常用测试选择（仓库根目录，PowerShell）：
 
@@ -59,7 +59,7 @@
 | 编译并验证 Ring 3 | `powershell -NoProfile -ExecutionPolicy Bypass -File .\dev.ps1 -VerifyOnly` | 转入 process 无界面专项，8 项，使用私有盘 |
 | 执行客户机命令 | `powershell -NoProfile -ExecutionPolicy Bypass -File .\test.ps1 -Command 'echo hello'` | 在私有无窗口 VM 中执行 |
 | Shell 通道自测 | `powershell -NoProfile -ExecutionPolicy Bypass -File .\test.ps1 -SelfTest -Full` | 验证文本、文件、管道、状态及协议 |
-| Shell 命令检查 | `powershell -NoProfile -ExecutionPolicy Bypass -File .\test.ps1 -SelfTest -Suite commands -Full` | 112 项命令与语法检查 |
+| Shell 命令检查 | `powershell -NoProfile -ExecutionPolicy Bypass -File .\test.ps1 -SelfTest -Suite commands -Full` | 108 项命令与语法检查 |
 | 全量基础回归 | `powershell -NoProfile -ExecutionPolicy Bypass -File .\regression.ps1 -Suite core -Full` | 按功能组合的非 GUI 回归，仅按需全量运行 |
 | 查看回归结果 | `.\test-summary.ps1 -RunDirectory 'Build Output/dev/runs/<编号>'` | 不重跑，正常通过不展开 |
 | 运行独立 CLI | `.\run.ps1 -Program /boot/clitest.snx -Arguments echo` | 严格进程，独立 stdout/stderr |
@@ -121,7 +121,7 @@ Shell 宿主测试参数：`-ExpectedExitCode 1` 断言预期失败，`-TimeoutS
 | 交互启动代理 | src32/interactive.h、task/process.cpp、terminal.cpp；tests/guest/interactive_tests.cpp | `regression.ps1 -Suite interactive`；契约 docs/interactive-runs.md |
 | Shell | user/gsh.cpp、gsh_parse.h、gcmd.cpp | `regression.ps1 -Suite shell-waits`；契约 docs/user-shell.md |
 | 只读文件工具 | user/tview.cpp、file_text.h | tests/host/test-file-text.cpp 宿主模型；契约 docs/file-tools.md |
-| 常用命令与欢迎文本 | user/gsh.cpp、gcmd.cpp、shell_commands.h、shell_banner.h | shell-commands（112 项，仅显式全量）；契约 docs/shell-tools.md |
+| 常用命令与欢迎文本 | user/gsh.cpp、gcmd.cpp、shell_commands.h、shell_banner.h | shell-commands（108 项，仅显式全量）；契约 docs/shell-tools.md |
 | 写工作区 | user/write_tool.cpp、gsh.cpp；task/process.cpp 可信来源 | 文件机制按 files 选测；契约 docs/workspace-shell.md |
 | 行编辑与文本模型 | user/gsh.cpp、line_edit.h、terminal_edit_model.h、terminal_model.h | tests/host/test-line-edit.cpp / test-line-model.cpp / test-terminal-model.cpp；契约 docs/shell-editing.md |
 | 保存与恢复 | src32/vfs.cpp → src32/storage.cpp → src32/disk.cpp | files / persistence |

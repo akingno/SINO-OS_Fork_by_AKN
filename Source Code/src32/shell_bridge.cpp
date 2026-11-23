@@ -42,12 +42,12 @@ int native_running;
 static Sink* native_sink;
 static const char* commands[] = {
     "help",    "ls",     "cd",       "pwd",     "cat",     "echo",   "clear",
-    "uname",   "ver",    "mem",      "free",    "uptime",  "date",   "time",
+    "uname",   "ver",    "uptime",   "date",    "time",
     "history", "whoami", "hostname", "env",     "which",   "touch",  "mkdir",
     "rmdir",   "rm",     "cp",       "mv",      "write",   "append", "head",
     "tail",    "wc",     "grep",     "hexdump", "stat",    "tree",   "find",
-    "df",      "run",    "source",   "sleep",   "ps",      "about",  "credits",
-    "reboot",  "halt",   "sync",     "nettest", "kill",   0};
+    "run",     "source", "sleep",    "about",   "credits",
+    "reboot",  "halt",   "sync",     "kill",   0};
 static void strcopy(char* d, const char* s) {
   while ((*d++ = *s++)) {
   }
@@ -407,9 +407,9 @@ static int command(Context* c, int argc, char** argv) {
         "  write file text   append file text   echo [-e|-n] text\n"
         "  run file.snx [argument]   run /boot/hello.f32   source file.sh\n"
         "  run -s file.snx [argument]  strict: no file or spawn authority\n"
-        "  uname [-a]  ver  mem/free  df  uptime  date  time  ps\n"
+        "  uname [-a]  ver  uptime  date  time\n"
         "  history  whoami  hostname [name]  env  which command\n"
-        "  sync   kill PID   sleep seconds   nettest (127.0.0.1 loopback)\n"
+        "  sync   kill PID   sleep seconds\n"
         "  clear  about/credits  reboot  halt\n\n"
         "run .snx reports process creation, not the program exit status.\n"
         "reboot/halt end the current session; sync saves home data first.\n"
