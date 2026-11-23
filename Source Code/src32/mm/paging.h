@@ -73,5 +73,9 @@ u32 paging_bootstrap_page_budget(u32 pageLimit);
 enum class UserMapResult : u8 { Ok, TableNoMemory, Invalid };
 /* Success transfers the data page to pd. Failure leaves it with the caller. */
 UserMapResult paging_user_map(u32* pd, u32 va, phys_t page, int write);
+
+enum class UserMigrationResult : u8 { Skipped, NoTable, Moved, NoDestination };
+// The scheduler must verify private anonymous ownership in the target VMA.
+UserMigrationResult paging_user_migrate_low(const u32* pd, u32 va);
 #endif
 #endif

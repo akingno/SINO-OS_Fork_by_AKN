@@ -289,6 +289,7 @@ u32 range_count;
 PageFrame* page_frames;
 u32 metadata_pfn, metadata_pages, published_pages;
 BuddyZone low, high;
+u32 high_release_epoch;
 bool logged_extended_allocation, logged_high_allocation;
 
 struct Watermarks {
@@ -319,6 +320,13 @@ bool valid_test_watermarks(u32 criticalBelow, u32 normalAbove) {
 PageWatermark pool_watermark(const BuddyZone& zone, const Watermarks& limits) {
   if (!watermarks_ready || !zone.publishedCount) { return PageWatermark::Normal; }
   return limits.classify(zone.freeCount);
+}
+
+const Watermarks& high_limits() {
+#ifdef SINO_SHELL_BRIDGE
+  if (test_pool_watermarks_active) { return test_high_watermarks; }
+#endif
+  return high_watermarks;
 }
 
 void log_watermarks(const char* label, u32 published, const Watermarks& limits) {
@@ -409,6 +417,7 @@ bool free_run(phys_t page, u32 count, PageState state) {
     return false;
   }
   free_pages += count;
+  if (&zone == &high) { ++high_release_epoch; }
   return true;
 }
 }
@@ -428,10 +437,7 @@ PageWatermark page_watermark_low() {
 }
 
 PageWatermark page_watermark_high() {
-#ifdef SINO_SHELL_BRIDGE
-  if (test_pool_watermarks_active) { return pool_watermark(high, test_high_watermarks); }
-#endif
-  return pool_watermark(high, high_watermarks);
+  return pool_watermark(high, high_limits());
 }
 
 PagePoolStats page_pool_low() {
@@ -440,6 +446,25 @@ PagePoolStats page_pool_low() {
 
 PagePoolStats page_pool_high() {
   return {high.freeCount, high.publishedCount, page_watermark_high()};
+}
+
+bool mm::migrationHasHeadroom() {
+  return high.freeCount && high_limits().classify(high.freeCount - 1) == PageWatermark::Normal;
+}
+
+u32 mm::highReleaseEpoch() { return high_release_epoch; }
+
+bool mm::isLowUserPage(phys_t page) {
+  const u32 pfn = page / PAGE_SIZE;
+  return page && low.contains(pfn, 1) && low.frame(pfn).state() == PageState::Used;
+}
+
+phys_t mm::allocMigrationPage() {
+  if (!migrationHasHeadroom()) { return PHYS_NULL; }
+  const u32 pfn = high.allocate(1, PageState::Used);
+  if (!pfn) { return PHYS_NULL; }
+  --free_pages;
+  return pfn * PAGE_SIZE;
 }
 
 #ifdef SINO_SHELL_BRIDGE

@@ -5,6 +5,7 @@
 #include "../sync/irq.h"
 #include "../lib/kstring.h"
 #include "../mm/page.h"
+#include "../mm/vma.h"
 
 extern "C" {
   task::ScheduleStats task_schedule_stats;
@@ -16,6 +17,13 @@ namespace task {
     phys_t kernelDirectory;
     PageWatermark observedWatermark, observedLowWatermark, observedHighWatermark;
     bool reclaimPending;
+    enum class MigrationState : u8 { Idle, Scanning, Exhausted, DestinationFailed };
+    MigrationState migrationState;
+    struct MigrationCursor { u32 slot, pid, page; };
+    MigrationCursor migrationCursor;
+    u32 migrationFailedAt;
+    constexpr u32 MigrationScanBudget = 64;
+    constexpr u32 MigrationCopyBudget = 4;
 
     void requireUnbound(bool interrupts) {
       if (current || currentThread != -1 || read_cr3() != kernelDirectory ||
@@ -55,6 +63,78 @@ namespace task {
       observePoolWatermark("high", page_pool_high(), observedHighWatermark);
     }
 
+    bool migrationAllowed() {
+      return page_watermark_low() == PageWatermark::Critical && mm::migrationHasHeadroom();
+    }
+
+    // Charge one visit for a slot, an empty range/table, or a single PTE.
+    // Every visit resolves the current PID and VMA; no pointers survive a step.
+    UserMigrationResult visitMigrationCandidate() {
+      auto& cursor = migrationCursor;
+      const Process& p = processes[cursor.slot];
+      if (cursor.pid != p.pid) {
+        cursor.pid = p.pid;
+        cursor.page = USER_DYNAMIC_BASE / PAGE_SIZE;
+      }
+      if (p.state == 1 && p.pd && p.pages_used) {
+        const mm::VmaNode* vma = mm::vma_find(p.vma_root, cursor.page);
+        if (!vma) { vma = mm::vma_lower_bound(p.vma_root, cursor.page); }
+        if (vma) {
+          const u32 end = vma->startPage + vma->pageCount;
+          if (vma->type != mm::VmaType::Anonymous || !vma->resident) {
+            cursor.page = end;
+            return UserMigrationResult::Skipped;
+          }
+          if (cursor.page < vma->startPage) { cursor.page = vma->startPage; }
+          const u32 va = cursor.page * PAGE_SIZE;
+          const auto result = paging_user_migrate_low(p.pd, va);
+          if (result == UserMigrationResult::NoTable) {
+            const u32 next = (pde_index(va) + 1) * (TABLE_BYTES / PAGE_SIZE);
+            cursor.page = next < end ? next : end;
+          } else {
+            ++cursor.page;
+          }
+          return result;
+        }
+      }
+      cursor = {cursor.slot + 1, 0, USER_DYNAMIC_BASE / PAGE_SIZE};
+      return UserMigrationResult::Skipped;
+    }
+
+    void migrateLowPages() {
+      if (!migrationAllowed()) {
+        migrationState = MigrationState::Idle;
+        return;
+      }
+      if (migrationState == MigrationState::Idle ||
+          (migrationState == MigrationState::DestinationFailed &&
+           migrationFailedAt != mm::highReleaseEpoch())) {
+        migrationCursor = {0, 0, USER_DYNAMIC_BASE / PAGE_SIZE};
+        migrationState = MigrationState::Scanning;
+      }
+      if (migrationState != MigrationState::Scanning) { return; }
+
+      u32 copies = 0;
+      for (u32 visits = 0; visits < MigrationScanBudget &&
+           migrationCursor.slot < MaxProcesses && copies < MigrationCopyBudget; ++visits) {
+        const auto result = visitMigrationCandidate();
+        if (result == UserMigrationResult::NoDestination) {
+          migrationFailedAt = mm::highReleaseEpoch();
+          migrationState = MigrationState::DestinationFailed;
+          return;
+        }
+        if (result == UserMigrationResult::Moved) {
+          ++copies;
+          if (!migrationAllowed()) {
+            migrationState = MigrationState::Idle;
+            break;
+          }
+        }
+      }
+      if (migrationCursor.slot == MaxProcesses) { migrationState = MigrationState::Exhausted; }
+      if (copies) { observeWatermark(); }
+    }
+
     void containFault(u32 vector) {
       process_faults++;
       current->retire(PROCESS_FAULTED, -(int)vector, vector);
@@ -92,7 +172,9 @@ namespace task {
   }
 
   void requestReclaim() { reclaimPending = true; }
-  bool hasWork(u32 now) { return reclaimPending || queuedWork(now); }
+  bool hasWork(u32 now) {
+    return reclaimPending || migrationState == MigrationState::Scanning || queuedWork(now);
+  }
 
   void initScheduler() {
     kernelDirectory = read_cr3();
@@ -205,6 +287,7 @@ namespace task {
       }
       observeWatermark();
     }
+    migrateLowPages();
     const u32 budget = readyCount();
     StepResult result = StepResult::NoDispatch;
     u32 attempts = 0;

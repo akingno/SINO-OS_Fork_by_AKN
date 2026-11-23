@@ -91,11 +91,15 @@ struct PagePoolStats {
   PageWatermark watermark;
 };
 
-// The global watermark drives reclaim. Pool watermarks describe each allocator.
+// Global reclaim and migration use independent pressure signals.
 PageWatermark page_watermark();
 PageWatermark page_watermark_low();
 PageWatermark page_watermark_high();
 PagePoolStats page_pool_low();
 PagePoolStats page_pool_high();
+namespace mm {
+bool migrationHasHeadroom();
+u32 highReleaseEpoch();
+}
 #endif
 #endif

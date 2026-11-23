@@ -513,14 +513,35 @@ int main() {
   if (streq(mode, "pool-populate") || streq(mode, "pool-denied")) {
     return poolPopulate(streq(mode, "pool-denied"));
   }
-  if (streq(mode, "pool-recovery")) {
-    volatile u8* memory = reserve(3);
+  if (streq(mode, "pool-recovery") || streq(mode, "pool-recovery-fail")) {
+    const bool readOnly = streq(mode, "pool-recovery-fail");
+    // Cross an absent PDE, then leave more than a round's PTE budget before the low page.
+    constexpr u32 LowOffset = (2 * 1024 + 96) * PageBytes;
+    constexpr u32 SecondOffset = LowOffset + 96 * PageBytes;
+    volatile u8* memory = reserve(SecondOffset / PageBytes + 2);
+    volatile u8* low = memory + LowOffset;
+    volatile u8* second = memory + SecondOffset;
+    low[0] = 0x4b;
+    if (!readOnly) { second[0] = 0x29; }
     for (u32 i = 0; i < PageBytes; ++i) {
-      memory[i] = (u8)(i ^ 0x4b);
-      memory[PageBytes + i] = (u8)(i ^ 0x79);
+      low[i] = (u8)(i ^ 0x4b);
+      if (!readOnly) { second[i] = (u8)(i ^ 0x29); }
+      memory[i] = (u8)(i ^ 0x79);
+    }
+    if (readOnly) {
+      require(sino::mprotect((void*)memory, LowOffset + PageBytes, Protection::Read) == S_OK,
+              "set sparse recovery mapping read-only");
     }
     logNumber("POOL RECOVERY READY ", (u32)memory);
-    hold();
+    for (;;) {
+      Yield(10);
+      for (u32 i = 0; i < PageBytes; ++i) {
+        require(low[i] == (u8)(i ^ 0x4b) && memory[i] == (u8)(i ^ 0x79), "recovery contents");
+        if (!readOnly) { require(second[i] == (u8)(i ^ 0x29), "second recovery page contents"); }
+      }
+      if (!readOnly) { low[PageBytes - 1] = (u8)((PageBytes - 1) ^ 0x4b); }
+      Log("POOL RECOVERY ACCESSED\n");
+    }
   }
   if (streq(mode, "purge-abi")) { return purgeAbi(); }
   if (streq(mode, "purge-cache")) { return purgeCache(); }

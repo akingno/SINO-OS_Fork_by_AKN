@@ -11,6 +11,7 @@ struct Fault {
   Stage stage{Stage::None};
   u32 allowed{};
   bool repeat{};
+  Stage next{Stage::None};
 
   bool take(Stage request) {
     if (stage != request) {
@@ -24,7 +25,8 @@ struct Fault {
     pr_debug_hex(static_cast<u32>(stage));
     pr_debug("\n");
     if (!repeat) {
-      stage = Stage::None;
+      stage = next;
+      next = Stage::None;
     }
     return true;
   }
@@ -34,14 +36,14 @@ Fault faults[8]{};
 const u32* pressureOwner;
 }
 
-void arm(const u32* owner, Stage stage, u32 allowed, bool repeat) {
+void arm(const u32* owner, Stage stage, u32 allowed, bool repeat, Stage next) {
   if (!owner || stage == Stage::None) {
     panic("Invalid memory probe owner", 0, 0);
   }
   clear(owner);
   for (auto& fault : faults) {
     if (!fault.owner) {
-      fault = Fault{owner, stage, allowed, repeat};
+      fault = Fault{owner, stage, allowed, repeat, next};
       return;
     }
   }

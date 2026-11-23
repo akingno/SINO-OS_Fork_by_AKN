@@ -2,6 +2,7 @@
 #include "../api.h"
 #include "../klog.h"
 #include "page.h"
+#include "page_internal.h"
 #include "paging.h"
 #include "kmap.h"
 #include "test_fault.h"
@@ -315,6 +316,39 @@ UserMapResult paging_user_map(u32* pd, u32 va, phys_t page, int write) {
 static u32 user_table_range_end(u32 base, u32 end) {
   const u32 boundary = (pde_index(base) + 1) * TABLE_BYTES;
   return boundary < end ? boundary : end;
+}
+
+UserMigrationResult paging_user_migrate_low(const u32* pd, u32 va) {
+  constexpr u32 Global = 1u << 8;
+  if (!pd || !page_aligned(va) || paging_is_active(pd)) { return UserMigrationResult::Skipped; }
+  u32* table = user_table(pd, va);
+  if (!table) { return UserMigrationResult::NoTable; }
+  u32& pte = table[pte_index(va)];
+  const u32 original = pte;
+  const phys_t source = entry_address(original);
+  if ((original & (USER_FLAGS | Global)) != USER_FLAGS || !mm::isLowUserPage(source)) {
+    return UserMigrationResult::Skipped;
+  }
+#ifdef SINO_SHELL_BRIDGE
+  if (mmtest::fail(pd, mmtest::Stage::MigrationHigh)) { return UserMigrationResult::NoDestination; }
+#endif
+  const phys_t target = mm::allocMigrationPage();
+  if (!target) { return UserMigrationResult::NoDestination; }
+
+  void* from = kmap(source);
+  void* to = kmap(target);
+  memcpy(to, from, PAGE_SIZE);
+  kunmap(to);
+  kunmap(from);
+  if (pte != original) {
+    if (!page_free(target)) { panic("Migration target release", target, va); }
+    return UserMigrationResult::Skipped;
+  }
+  // The inactive directory has only non-global user translations. Its next
+  // CR3 load picks up the new PFN with the original flags.
+  pte = make_entry(target, original & ~PAGE_MASK);
+  if (!page_free(source)) { panic("Migration source release", source, va); }
+  return UserMigrationResult::Moved;
 }
 
 u32 paging_user_unmap(u32* pd, u32 base, u32 end) {

@@ -106,7 +106,7 @@ Shell 宿主测试参数：`-ExpectedExitCode 1` 断言预期失败，`-TimeoutS
 | 系统调用与权限 | src32/api.h → src32/task/process.cpp:dispatchSyscall → src32/object.cpp；同步 user/sdk.h | `regression.ps1 -Suite policy`；契约 docs/os-interface.md |
 | 内存回收优先级 | src32/task/process.cpp:launch_policy / SYS_RECLAIM_PRIORITY；src32/terminal.cpp:set_foreground | `regression.ps1 -Suite 'process,policy,shell-waits'` 15 项 + 普通启动 1 项；契约 docs/os-interface.md |
 | 物理页水位与回收 | src32/mm/page.cpp:page_watermark；task/process.cpp:reclaimLowest；task/scheduler.cpp:step / retryAnonFault | `node 'Source Code/tests/host/test-memory.js' reclaim ''` 5 项（`reclaim --list`）；契约 docs/mm-access.md |
-| 双池水位与低端兜底 | src32/mm/page.cpp:page_watermark_low / page_watermark_high / page_alloc | `node 'Source Code/tests/host/test-memory.js' pools '<ShellBridge 构建目录>'` 4 项（`pools --list`）；契约 docs/mm-access.md |
+| 双池水位、低端兜底与迁移 | src32/mm/page.cpp:page_watermark_low / page_watermark_high / page_alloc；src32/mm/paging.cpp:paging_user_migrate_low；task/scheduler.cpp:migrateLowPages | `node 'Source Code/tests/host/test-memory.js' pools '<ShellBridge 构建目录>'` 4 项（`pools --list`）；PTE 迁移变化加 images 7、anonymous 7、普通启动 1；契约 docs/mm-access.md |
 | 进程组 | src32/task/process.cpp:SYS_PROCESS_GROUP / runStartBound / interactiveStart / reclaimLowest | `regression.ps1 -Suite 'process,cli,shell-waits'` 14 项、`reclaim` 5 项、普通启动 1 项；契约 docs/os-interface.md |
 | 可丢弃匿名内存 | src32/task/process.cpp:anon_purgeable / anon_lock / purgeOneRegion；src32/task/scheduler.cpp:step | `test-memory.js purgeable ` 5 项、anonymous 7、reclaim 5、process 8、shell-waits 5、普通启动 1；契约 docs/os-interface.md |
 | 完成记录 | src32/task/process.cpp:release / SYS_SPAWN_TRACKED / SYS_PROCESS_RESULT | `regression.ps1 -Suite completion`；契约 docs/os-interface.md |

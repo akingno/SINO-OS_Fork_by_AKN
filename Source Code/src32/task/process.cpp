@@ -874,8 +874,10 @@ namespace task {
         mmtest::arm(p->pd, mmtest::Stage::Fragment, 0);
       } else if (streq(probe_mode, "table-copy") || streq(probe_mode, "table-fault")) {
         mmtest::arm(p->pd, mmtest::Stage::Table, 0);
-      } else if (streq(probe_mode, "pool-recovery")) {
-        mmtest::arm(p->pd, mmtest::Stage::HighFallback, 0);
+      } else if (streq(probe_mode, "pool-recovery") || streq(probe_mode, "pool-recovery-fail")) {
+        const auto next = streq(probe_mode, "pool-recovery-fail") ? mmtest::Stage::MigrationHigh
+                                                                : mmtest::Stage::HighFallback;
+        mmtest::arm(p->pd, mmtest::Stage::HighFallback, 0, false, next);
         pr_debug("MM POOL OWNER pd=");
         pr_debug_hex(virt_to_phys(p->pd));
         pr_debug(" stack_bottom=");

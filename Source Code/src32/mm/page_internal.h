@@ -4,6 +4,9 @@
 #include "page.h"
 
 namespace mm {
+bool isLowUserPage(phys_t page);
+phys_t allocMigrationPage();  // High only. The caller must overwrite the entire page.
+
 struct BuddyZone {
   static constexpr u32 MaxOrder = 10;
   static constexpr u32 NoPfn = 0;
