@@ -632,8 +632,8 @@ void kpage_guard_release(void* page) {
   page_frames[pfn].reset(PageState::Kernel);
 }
 
-phys_t page_alloc(void) {
-  u32 pfn = high.allocate(1, PageState::Used);
+static phys_t allocate_user_page(bool tryHigh) {
+  u32 pfn = tryHigh ? high.allocate(1, PageState::Used) : 0;
   if (!pfn) {
     if (page_watermark_low() == PageWatermark::Critical) { return PHYS_NULL; }
     pfn = low.allocate(1, PageState::Used);
@@ -652,6 +652,11 @@ phys_t page_alloc(void) {
   }
   return page;
 }
+
+phys_t page_alloc(void) { return allocate_user_page(true); }
+#ifdef SINO_SHELL_BRIDGE
+phys_t mmtest::allocateFallbackPage() { return allocate_user_page(false); }
+#endif
 
 int page_free(phys_t page) {
   return free_run(page, 1, PageState::Used);

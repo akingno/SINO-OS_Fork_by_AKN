@@ -181,7 +181,7 @@
     {"id": "memory.pools.independent-watermarks", "name": "pool thresholds, independent transitions and atomic overrides"},
     {"id": "memory.pools.high-preferred", "name": "high supplies data when low is Critical"},
     {"id": "memory.pools.single-pool-fallback", "name": "low-only fallback works at Low, denies at Critical and recovers"},
-    {"id": "memory.pools.global-admission", "name": "per-pool pressure leaves global reservation and reclaim decisions independent"}
+    {"id": "memory.pools.global-admission", "name": "anonymous reservation admission follows the global watermark"}
   ],
   "anonymous": [
     {

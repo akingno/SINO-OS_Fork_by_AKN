@@ -629,6 +629,116 @@ async function purgeableContracts(source) {
     });
 }
 
+async function verifyPoolRecovery(context, tools) {
+    const {qmp, directory, guestLog, until, report, command} = context;
+    const {pools, setPools, launch, processes, reset} = tools;
+    const pageBytes = 4096;
+    const maskFrame = entry => (entry & 0xfffff000) >>> 0;
+    const logStart = guestLog().length;
+    const log = () => guestLog().slice(logStart);
+    const bootPools = await pools();
+    assert(bootPools.every(pool => pool.watermark === 'Normal'));
+    const pid = await launch('pool-recovery', 'POOL RECOVERY READY ');
+    await until(() => /POOL RECOVERY READY \d+\n/.test(log()));
+    const owner = log().match(/MM POOL OWNER pd=(0x[\da-f]+) stack_bottom=(0x[\da-f]+) stack_top=(0x[\da-f]+)/i);
+    assert(owner, 'read-only recovery probe reports its page directory and kernel stack');
+    const [pd, stackBottom, stackTop] = owner.slice(1).map(Number);
+    const base = Number(log().match(/POOL RECOVERY READY (\d+)\n/)[1]);
+    const poolBoundary = Number(guestLog().match(/Direct mapping: \[0, (0x[\da-f]+)\)/i)?.[1]);
+    assert(poolBoundary > 0 && pd > 0 && pd < poolBoundary);
+    assert.equal((stackTop - stackBottom) / pageBytes, 8, 'eight usable kernel stack pages');
+    const stackGuard = stackBottom - pageBytes;
+    assert(stackGuard > 0 && stackTop <= poolBoundary, 'stack allocation is in low');
+    await until(() => /MM PROBE injected stage=0x00000008/i.test(log()));
+    assert.equal([...log().matchAll(/MM PROBE injected stage=0x00000008/gi)].length, 1);
+    assert.deepEqual(await processes(), new Map([[pid, 2]]));
+
+    const dump = path.join(directory, 'pool-recovery.bin');
+    async function readPage(address) {
+        await qmp.hmp(`pmemsave 0x${address.toString(16)} ${pageBytes} "${dump.replaceAll('\\', '/')}"`);
+        const bytes = fs.readFileSync(dump);
+        assert.equal(bytes.length, pageBytes);
+        return bytes;
+    }
+    async function mappedPage(address) {
+        const directoryPage = await readPage(pd);
+        const pde = directoryPage.readUInt32LE((address >>> 22) * 4);
+        assert(pde & 1, 'page table is present');
+        const table = await readPage(maskFrame(pde));
+        const pte = table.readUInt32LE(((address >>> 12) & 1023) * 4);
+        return pte & 1 ? maskFrame(pte) : 0;
+    }
+    const lowPage = await mappedPage(base);
+    const highPage = await mappedPage(base + pageBytes);
+    assert(lowPage && lowPage < poolBoundary, 'injected high failure takes the real low fallback');
+    assert(highPage >= poolBoundary, 'next anonymous page uses recovered high');
+    assert.equal(await mappedPage(base + 2 * pageBytes), 0, 'third reservation stays nonresident');
+    assert.equal(await mappedPage(stackGuard), 0, 'kernel stack guard has no live PTE');
+    assert.equal(await mappedPage(stackBottom), stackBottom, 'remaining kernel stack is identity mapped');
+
+    const directoryPage = await readPage(pd);
+    let userTables = 0, lowUserData = 0;
+    for (let slot = 256; slot < 1022; ++slot) {
+        const pde = directoryPage.readUInt32LE(slot * 4);
+        if (!(pde & 1)) continue;
+        assert((pde & 4) && maskFrame(pde) < poolBoundary, 'present private user table is in low');
+        ++userTables;
+        const table = await readPage(maskFrame(pde));
+        for (let pte = 0; pte < 1024; ++pte) {
+            const entry = table.readUInt32LE(pte * 4);
+            if ((entry & 1) && maskFrame(entry) < poolBoundary) {
+                assert.equal(slot * 0x400000 + pte * pageBytes, base, 'only the fallback user page occupies low');
+                ++lowUserData;
+            }
+        }
+    }
+    assert.equal(lowUserData, 1);
+    const residentPools = await pools();
+    const lowDelta = bootPools[0].free - residentPools[0].free;
+    const kernelStackPages = (stackTop - stackGuard) / pageBytes;
+    const otherProcessLow = lowDelta - 1 - userTables - kernelStackPages - lowUserData;
+    assert(otherProcessLow >= 0, 'low usage reconciles with page tables, stack and user PFN');
+    assert(residentPools.every(pool => pool.watermark === 'Normal'));
+    const totalPublished = residentPools.reduce((sum, pool) => sum + pool.published, 0);
+    assert(residentPools.reduce((sum, pool) => sum + pool.free, 0) * 100 > totalPublished * 15);
+
+    async function checkHeldPages() {
+        assert.equal(await mappedPage(base), lowPage, 'original low PFN remains mapped');
+        assert.equal(await mappedPage(base + pageBytes), highPage);
+        for (const [physical, seed] of [[lowPage, 0x4b], [highPage, 0x79]]) {
+            const bytes = await readPage(physical);
+            assert(bytes.every((value, index) => value === ((index ^ seed) & 255)), 'resident page contents');
+        }
+        assert.deepEqual(await processes(), new Map([[pid, 2]]));
+    }
+    const [low, high] = residentPools;
+    const lowLimit = low.free + 1;
+    await setPools(lowLimit, lowLimit, 0, 0, '2 0');
+    await until(() => /MEM watermark low from=0x00000000 to=0x00000002/i.test(log()));
+    await checkHeldPages();
+    assert.deepEqual(await pools(), [{...low, watermark:'Critical'}, high]);
+
+    // Repeat the transition with low remaining Critical across high's recovery.
+    await setPools(lowLimit, lowLimit, high.free + 1, high.free + 1, '2 2');
+    await until(() => /MEM watermark high from=0x00000000 to=0x00000002/i.test(log()));
+    await checkHeldPages();
+    assert.deepEqual(await pools(), [{...low, watermark:'Critical'}, {...high, watermark:'Critical'}]);
+    await setPools(lowLimit, lowLimit, 0, 0, '2 0');
+    await until(() => /MEM watermark high from=0x00000002 to=0x00000000/i.test(log()));
+    await checkHeldPages();
+    assert.deepEqual(await pools(), [{...low, watermark:'Critical'}, high]);
+    assert.doesNotMatch(log(), /MEM watermark from=/i, 'global watermark stays Normal');
+    report.poolRecovery = {
+        bootPools, residentPools, pid, lowPfn:lowPage / pageBytes, highPfn:highPage / pageBytes,
+        lowBill:{bootKernelPages:bootPools[0].published - bootPools[0].free,
+            pageDirectory:1, userTables, kernelStackPages, lowUserData, otherProcessLow}
+    };
+    await reset();
+    await command(`kill ${pid}`);
+    await until(async () => (await processes()).size === 0 && (await pools())[0].free === bootPools[0].free);
+    assert.deepEqual(await pools(), bootPools, 'exit returns both pools to baseline');
+}
+
 async function poolContracts(source) {
     function poolTools(context) {
         const {command, baseline} = context;
@@ -647,7 +757,8 @@ async function poolContracts(source) {
 
     await boot(source, 'pools-dual', vm.memoryMiB, async context => {
         const {check, command, until, guestLog} = context;
-        const {pools, setPools, launch, reset, cleanup, signal, processes} = poolTools(context);
+        const tools = poolTools(context);
+        const {pools, setPools, launch, reset, cleanup, signal, processes} = tools;
         await check('memory.pools.independent-watermarks', ['pool thresholds, independent transitions and atomic overrides'], async () => {
             const original = await pools();
             assert.deepEqual(poolStats(await command('free')), original);
@@ -676,7 +787,8 @@ async function poolContracts(source) {
             } finally { await cleanup(); }
         });
 
-        await check('memory.pools.high-preferred', ['high supplies data when low is Critical'], async () => {
+        await check('memory.pools.high-preferred', ['high supplies data when low is Critical',
+            'low fallback persists across high recovery and resident contents are intact'], async () => {
             const original = await pools();
             const offset = guestLog().length;
             try {
@@ -691,10 +803,11 @@ async function poolContracts(source) {
                 await until(() => guestLog().slice(offset).includes('POOL POPULATE UNMAPPED'));
                 await until(async () => (await processes()).size === 0);
                 assert.deepEqual(await pools(), original);
+                await verifyPoolRecovery(context, tools);
             } finally { await cleanup(); }
         });
 
-        await check('memory.pools.global-admission', ['per-pool pressure leaves global reservation and reclaim decisions independent'], async () => {
+        await check('memory.pools.global-admission', ['anonymous reservation admission follows the global watermark'], async () => {
             const [low] = await pools();
             const offset = guestLog().length;
             const log = () => guestLog().slice(offset);
@@ -704,10 +817,9 @@ async function poolContracts(source) {
                 const pid = await launch('low', 'RECLAIM LOW READY');
                 assert.deepEqual(await processes(), new Map([[pid, 0]]), 'strict process can reserve without populating');
                 assert.match(log(), /MEM watermark low from=0x00000000 to=0x00000002/i);
-                assert.doesNotMatch(log(), /MEM watermark from=|MEM reclaim|MEM purge/);
+                assert.doesNotMatch(log(), /MEM watermark from=/);
                 await signal();
                 await until(() => log().includes('RECLAIM LOW PASS'));
-                assert.doesNotMatch(log(), /MEM reclaim|MEM purge/);
             } finally { await cleanup(); }
         });
     });

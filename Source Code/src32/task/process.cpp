@@ -172,8 +172,11 @@ namespace task {
     if (mmtest::fail(p->pd, mmtest::Stage::Image)) {
       return {PHYS_NULL, UserPageStatus::DataNoMemory};
     }
-    const phys_t page = anonymous && mmtest::fail(p->pd, mmtest::Stage::ReclaimData)
-      ? PHYS_NULL : page_alloc();
+    if (anonymous && mmtest::fail(p->pd, mmtest::Stage::ReclaimData)) {
+      return {PHYS_NULL, UserPageStatus::DataNoMemory};
+    }
+    const phys_t page = anonymous && mmtest::fail(p->pd, mmtest::Stage::HighFallback)
+      ? mmtest::allocateFallbackPage() : page_alloc();
 #else
     (void)anonymous;
     const phys_t page = page_alloc();
@@ -871,6 +874,15 @@ namespace task {
         mmtest::arm(p->pd, mmtest::Stage::Fragment, 0);
       } else if (streq(probe_mode, "table-copy") || streq(probe_mode, "table-fault")) {
         mmtest::arm(p->pd, mmtest::Stage::Table, 0);
+      } else if (streq(probe_mode, "pool-recovery")) {
+        mmtest::arm(p->pd, mmtest::Stage::HighFallback, 0);
+        pr_debug("MM POOL OWNER pd=");
+        pr_debug_hex(virt_to_phys(p->pd));
+        pr_debug(" stack_bottom=");
+        pr_debug_hex(p->kernelStack.bottom());
+        pr_debug(" stack_top=");
+        pr_debug_hex(p->kernelStack.top());
+        pr_debug("\n");
       }
     }
     if (policy == PROCESS_STRICT && n == vfs_lookup("/boot/poltest.snx") &&

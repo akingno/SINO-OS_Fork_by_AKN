@@ -55,9 +55,9 @@ int startGroupChild(const char* mode) {
   return child;
 }
 
-void logGroup(const char* label, int group) {
+void logNumber(const char* label, u32 value) {
   char text[11];
-  number((u32)group, text);
+  number(value, text);
   Log(label);
   Log(text);
   Log("\n");
@@ -513,6 +513,15 @@ int main() {
   if (streq(mode, "pool-populate") || streq(mode, "pool-denied")) {
     return poolPopulate(streq(mode, "pool-denied"));
   }
+  if (streq(mode, "pool-recovery")) {
+    volatile u8* memory = reserve(3);
+    for (u32 i = 0; i < PageBytes; ++i) {
+      memory[i] = (u8)(i ^ 0x4b);
+      memory[PageBytes + i] = (u8)(i ^ 0x79);
+    }
+    logNumber("POOL RECOVERY READY ", (u32)memory);
+    hold();
+  }
   if (streq(mode, "purge-abi")) { return purgeAbi(); }
   if (streq(mode, "purge-cache")) { return purgeCache(); }
   if (streq(mode, "purge-address-order")) { purgeAddressOrder(); }
@@ -530,7 +539,7 @@ int main() {
   if (streq(mode, "group-hold")) {
     volatile u8* memory = reserve(2);
     memory[0] = memory[PageBytes] = 1;
-    logGroup("RECLAIM GROUP MEMBER ", queryGroup());
+    logNumber("RECLAIM GROUP MEMBER ", (u32)queryGroup());
     hold();
   }
   if (streq(mode, "group-parent") || streq(mode, "group-parent-max")) {
@@ -547,7 +556,7 @@ int main() {
     volatile u8* memory = reserve(1);
     *memory = 1;
     startGroupChild("group-hold");
-    logGroup("RECLAIM GROUP PARENT ", group);
+    logNumber("RECLAIM GROUP PARENT ", (u32)group);
     hold();
   }
 
